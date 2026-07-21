@@ -1,0 +1,95 @@
+<Publish>
+	<!--This PublishConfiguration.xml is required to publish any mod on Paradox Mods website and is part of the CSII toolchain-->
+	<!--Id must be set in order to update existed mod. it is not required for publishing mod for the first time-->
+	<ModId Value="151583" />
+	<!--Name of the mod to display to players-->
+	<DisplayName Value="Traffic: Clear the Way [BETA]" />
+	<!--Short description of the mod-->
+	<ShortDescription Value="Emergency corridors, accidents that don't delete your traffic, and real towing." />
+	<!--Long description of the mod. Single line or multi line. Supports minimal markdown subset-->
+	<LongDescription>
+🚨 In vanilla, an ambulance queues at a red light like everybody else — and the traffic jammed behind a crash simply **evaporates**. This mod fixes the whole chain: getting there, the accident itself, and the clean-up afterwards.
+
+## 🚑 Emergency corridor
+Cars ahead of a vehicle running with lights and siren pull to the side of their lane and a corridor opens up — a real *Rettungsgasse*. If that is not enough, the responder escalates step by step:
+
+- ✅ Two-sided corridor along its whole route (configurable distance, default 120 m)
+- ✅ Traffic lights ahead switch green, so the queue can clear the crossing
+- ✅ Cars evade onto the shoulder when the responder is really stuck
+- ✅ Overtaking on a free parallel lane
+- ✅ Passing on the oncoming carriageway when there is a safe gap — and merging back in
+- ✅ Careful squeezing past cars that are boxed in themselves
+- ✅ **Pedestrians wait at the kerb** instead of strolling onto the crossing in front of the ambulance (vanilla only ever stops them at a red light)
+- ✅ Arrives and **stops at the scene** instead of circling the block forever
+
+## 💥 Accidents that behave
+- ✅ **Traffic behind a crash waits instead of despawning.** This is the big one: on a fully blocked road vanilla finds no route past the wreck and quietly deletes the entire queue.
+- ✅ Cars approaching a wreck brake in time instead of piling into it
+- ✅ Settled wrecks are consolidated onto the outermost lane, so at least one lane stays passable — traffic squeezes past instead of dissolving
+
+## 🚛 Real vehicle recovery
+- ✅ **Tow depot** — a new building that only recovers crashed vehicles, so its trucks go straight to the accident
+- ✅ **Tow truck** — a dedicated vehicle that actually **hauls the wreck away** instead of "repairing" it into thin air
+- ✅ The nearest capable van gets the job — or a tow truck from your depot if none is close
+- ✅ Recovery vehicles drive **directly** to the crash instead of finishing their road-repair round first
+- ✅ Amber beacons while responding, on scene and while towing
+- ✅ Traffic makes way for them too, and after 30 seconds stuck they force their light green and work through the jam
+
+## ⚙️ Compatibility &amp; safety
+- **No Harmony patches, no replaced game systems.** The mod writes vanilla component fields from its own small systems; towing adds two tiny marker tags that are safe to remove with the mod.
+- **Save games stay compatible** — adding or removing the mod at any time is tested. (After uninstalling, leftover tow-depot buildings simply lose their model and can be bulldozed.)
+- Works with right-hand and left-hand traffic cities.
+- Every feature has its own toggle in the settings, so you can run just the parts you want.
+- English and German localization.
+
+## 🔧 Options
+Every step of the chain can be switched off individually: corridor distance, squeezing, clearing undecided lanes, parallel-lane overtaking, green lights, oncoming lane, recovery priority, accident despawn protection, wreck consolidation, tow depot, towing, dedicated tow truck.
+
+## 💬 Feedback
+Found a case where a responder gets stuck, or traffic behaves oddly around an accident? Please report it — with a screenshot if you can. There is a verbose logging option that writes diagnostics to `Logs/ClearTheWay.log`; that log makes bug reports much easier to act on.
+
+Form without login:
+https://forms.gle/C2Yg6GXH6cZwAcdW9
+
+Form with login (to attach screenshots):
+https://forms.gle/Q6gyAGZtrC9qXg4AA
+
+tags: emergency, rettungsgasse, move over, ambulance, police, fire truck, accident, crash, tow truck, towing, wreck, traffic, despawn fix
+</LongDescription>
+
+	<!--Thumbnail-->
+	<Thumbnail Value="Properties/Thumbnail.jpg" />
+	<!--Screenshot, can be set multiple times-->
+	<Screenshot Value="Properties/Screenshot1.jpg" />
+	<Screenshot Value="Properties/Screenshot2.jpg" />
+	<Screenshot Value="Properties/Screenshot3.jpg" />
+	<!--Tag, can be set multiple times-->
+	<Tag Value="Code Mod" />
+	<!--Link to the forum post where the mod can be discussed-->
+	<ForumLink Value="" />
+	<!--Version of the mod-->
+	<ModVersion Value="0.1.11" />
+	<!--Recommended version of the base game to use the mod-->
+	<GameVersion Value="1.6.*" />
+	<!--Dependency for the mod, can be set multiple times-->
+	<Dependency Id="" />
+	<!--Required DLC, can be set multiple times. Supported values are "Landmark Buildings", "San Fransisco Set", "Beach Properties", "Urban Promenades", "Modern Architecture"-->
+	<RequiredDLC Value="" />
+	<!--Change log for new version. Single line or multi line. Supports minimal markdown subset-->
+	<ChangeLog>
+This release is about multi-lane roads - and about responders that used to simply stand still.
+
+**No more standing still for minutes**
+- A responder could come to a full stop in traffic and stay there for minutes, sometimes half out on the oncoming side, waiting for the road to clear on its own. Its corridor logic ran twice per simulation step and the two runs pulled it in opposite directions. It now decides once and keeps moving - and the mod does half the work it used to in heavy traffic.
+
+**Takes a free lane instead of prying open the middle**
+- On wide roads the corridor opened its gap in the MIDDLE of the carriageway even when an outer lane was completely empty, so the responder threaded the packed middle instead of simply moving over. If a lane ahead is free it heads there now - one lane per move, so a free lane two over is reached as well.
+
+**Vans, garbage trucks and buses clear properly**
+- Long vehicles now pull aside by an amount that matches their length, instead of the same distance a car gets. At a car's offset a garbage truck still had half its body lying across the corridor.
+</ChangeLog>
+	<!--External link, can be set multiple times. supported types are "discord", "github", "youtube", "twitch", "x", "paypal", "patreon", "buymeacoffee", "kofi", "crowdin", "gitlab", "gofundme"-->
+	<ExternalLink Type="" Url="" />
+	<!--Supported values Public, Private, Unlisted-->
+	<AccessLevel Value="Public" />
+</Publish>
