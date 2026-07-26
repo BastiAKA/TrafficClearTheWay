@@ -170,7 +170,7 @@ namespace ClearTheWay
                 s.m_PreviousStuck.m_HugUntilFrame = frame + kHugHoldFrames;
                 m_StuckStates[vehicle] = s.m_PreviousStuck;
             }
-            bool hugActive = s.m_Pushed > 0 || s.m_HardEvade || frame < s.m_PreviousStuck.m_HugUntilFrame;
+            bool hugActive = s.m_Pushed > 0 || s.m_Evade >= EvadeStage.Hard || frame < s.m_PreviousStuck.m_HugUntilFrame;
             s.m_LateralSteered = s.m_OncomingState > 0;
             if (s.m_OncomingState == 0 && !s.m_EvadeSideBlocked && !s.m_TurnLean && hugActive && s.m_CanManeuver && !s.m_NearArrivalTarget)
             {
@@ -180,7 +180,19 @@ namespace ClearTheWay
                 // corridor line once the latch expires.
                 bool passingBlocker = frame < s.m_PreviousStuck.m_SqueezeUntilFrame ||
                     (currentLane.m_LaneFlags & CarLaneFlags.IgnoreBlocker) != 0;
-                float meters = passingBlocker ? kPassEvadeMeters : (s.m_HardEvade ? kEvadeMeters : kEdgeMeters);
+                // Hug direction first - the crossable-room lookup below needs to know which side
+                // it is asking about. On a wide road running the central channel, hug toward the
+                // shared middle seam (m_Corridor.ChannelHugDir) instead of the corridor-side edge
+                // (-side), so every responder on the segment threads the same gap.
+                float hugDir = m_Corridor.ChannelHugDir != 0f ? m_Corridor.ChannelHugDir : -side;
+                float meters = passingBlocker ? kPassEvadeMeters : (s.m_Evade >= EvadeStage.Hard ? kEvadeMeters : kEdgeMeters);
+                // A tram bed or green strip beside the lane is room the RESPONDER may use too, not
+                // just the traffic it pushes. Only while evading or actually passing - one rolling
+                // through a corridor that already parted keeps its lane.
+                if (s.m_Evade >= EvadeStage.Hard || passingBlocker)
+                {
+                    meters += m_Ctx.Room.CrossableMeters(currentLane.m_Lane, hugDir, frame);
+                }
                 if (s.m_BehindColleague)
                 {
                     // Queue behind the colleague on the normal corridor line - no wide swing.
@@ -190,13 +202,10 @@ namespace ClearTheWay
                 // but at cruising speed the corridor ahead has seconds to part - it only needs
                 // to SHADE left, not ride the median at 120 km/h.
                 meters *= math.clamp(1f - (s.m_EmergencySpeed - kHugTaperStartSpeed) / kHugTaperRange, kHugMinScale, 1f);
-                float units = math.min(meters / m_Ctx.PrefabGeometry.LateralSlack(vehicle, currentLane.m_Lane), kMaxPushUnits);
-                // On a wide road running the central channel, hug toward the shared middle seam
-                // (m_Corridor.ChannelHugDir) instead of the corridor-side edge (-side), so every responder
-                // on the segment threads the same gap.
-                float hugDir = m_Corridor.ChannelHugDir != 0f ? m_Corridor.ChannelHugDir : -side;
+                meters = math.min(meters, m_Ctx.PrefabGeometry.MaxLateralMeters(vehicle));
+                float units = meters / m_Ctx.PrefabGeometry.LateralSlack(vehicle, currentLane.m_Lane);
                 float target = hugDir * units;
-                float newPos = math.lerp(currentLane.m_LanePosition, target, s.m_HardEvade ? kPullRate * 1.5f : kPullRate);
+                float newPos = math.lerp(currentLane.m_LanePosition, target, s.m_Evade >= EvadeStage.Hard ? kPullRate * 1.5f : kPullRate);
                 s.m_LateralSteered = true;
                 if (math.abs(newPos - currentLane.m_LanePosition) > 0.001f)
                 {
@@ -216,7 +225,7 @@ namespace ClearTheWay
             // turn change.
             if (s.m_TurnLean && s.m_OncomingState == 0)
             {
-                float turnUnits = math.min(kEdgeMeters / m_Ctx.PrefabGeometry.LateralSlack(vehicle, currentLane.m_Lane), kMaxPushUnits);
+                float turnUnits = math.min(kEdgeMeters, m_Ctx.PrefabGeometry.MaxLateralMeters(vehicle)) / m_Ctx.PrefabGeometry.LateralSlack(vehicle, currentLane.m_Lane);
                 float turnTarget = s.m_TurnHint * turnUnits;
                 float turnNewPos = math.lerp(currentLane.m_LanePosition, turnTarget, kPullRate);
                 s.m_LateralSteered = true;

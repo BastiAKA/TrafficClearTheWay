@@ -171,6 +171,110 @@ namespace ClearTheWay
                 ComponentType.ReadOnly<Game.Tools.Temp>()
             }
         };
+        // Orphan-wreck finder candidates (TowOrphanFinder, log-only for now): every wreck still
+        // identifiable as one - Damaged, Destroyed, or OutOfControl - that is Stopped and not
+        // moving. Deliberately WIDE: InvolvedInAccident is NOT excluded, so live accident wrecks
+        // the vanilla dispatch failed to serve are caught too, and no filter on Controller/TowMarker
+        // so every stranded state is seen. The movement test in the finder (not the query) is what
+        // separates a genuinely stranded wreck from one being hauled. Real trailers and parked
+        // (delivered) wrecks stay out.
+        public static EntityQueryDesc OrphanCandidateQuery => new EntityQueryDesc
+        {
+            All = new[]
+            {
+                ComponentType.ReadOnly<Car>(),
+                ComponentType.ReadOnly<Transform>(),
+                ComponentType.ReadOnly<Stopped>()
+            },
+            Any = new[]
+            {
+                ComponentType.ReadOnly<Damaged>(),
+                ComponentType.ReadOnly<Destroyed>(),
+                ComponentType.ReadOnly<Game.Vehicles.OutOfControl>()
+            },
+            None = new[]
+            {
+                ComponentType.ReadOnly<Moving>(),
+                ComponentType.ReadOnly<CarTrailer>(),
+                ComponentType.ReadOnly<CarTrailerLane>(),
+                ComponentType.ReadOnly<ParkedCar>(),
+                ComponentType.ReadOnly<Deleted>(),
+                ComponentType.ReadOnly<Game.Tools.Temp>()
+            }
+        };
+
+        // Stranded MARKED relics for the dead-object re-arm (TowRearmDeadObjects): a damaged or
+        // destroyed car that STILL carries our TowMarker but is no longer a live accident wreck
+        // and is not moving. Unlike RelicSweepDryRun this deliberately REQUIRES TowMarker - these
+        // are exactly the ones the normal relic re-arm skips (it excludes TowMarker), left behind
+        // when a tow was abandoned (their Controller usually points at themselves). Transform is
+        // required for the actively-towing-truck distance test; real trailers stay excluded.
+        public static EntityQueryDesc RearmDeadQuery => new EntityQueryDesc
+        {
+            All = new[]
+            {
+                ComponentType.ReadOnly<Car>(),
+                ComponentType.ReadOnly<TowMarker>(),
+                ComponentType.ReadOnly<Stopped>(),
+                ComponentType.ReadOnly<Transform>()
+            },
+            Any = new[]
+            {
+                ComponentType.ReadOnly<Damaged>(),
+                ComponentType.ReadOnly<Destroyed>()
+            },
+            None = new[]
+            {
+                ComponentType.ReadOnly<Game.Events.InvolvedInAccident>(),
+                ComponentType.ReadOnly<RelicRecovery>(),
+                ComponentType.ReadOnly<Moving>(),
+                ComponentType.ReadOnly<CarTrailer>(),
+                ComponentType.ReadOnly<CarTrailerLane>(),
+                ComponentType.ReadOnly<Deleted>(),
+                ComponentType.ReadOnly<Game.Tools.Temp>()
+            }
+        };
+        // Frozen-but-driveable cars for the release pass (TowReleaseFrozen): Stopped and
+        // OutOfControl, but with NOTHING left to recover - no Damaged, no Destroyed - and no
+        // longer part of a live accident.
+        //
+        // That combination cannot occur in vanilla and is ALWAYS our own doing. Vanilla only ever
+        // removes InvolvedInAccident and OutOfControl together, in AccidentVehicleSystem's
+        // ClearAccident; our tow coupling used to strip InvolvedInAccident alone. Since every
+        // *AISystem carries ComponentType.Exclude<OutOfControl>() and only ClearAccident ever takes
+        // OutOfControl off again, that one missing component froze intact cars on the road for
+        // good - and with no Damaged, DamagedVehicleSystem (All<Damaged, Stopped, Car>) never
+        // raises a recovery request either, so no truck is ever sent. Invisible to vanilla AND to
+        // every other query here, all of which require Any{Damaged, Destroyed}.
+        //
+        // These are NOT tow targets: with the damage gone they are roadworthy, which is exactly
+        // what vanilla's StartVehicle + ClearAccident would have let them do. The pass releases
+        // them instead. Trailers and parked cars stay out; a car genuinely on a hook is filtered
+        // in the pass by its live-carrier check, not here.
+        public static EntityQueryDesc FrozenReleaseQuery => new EntityQueryDesc
+        {
+            All = new[]
+            {
+                ComponentType.ReadOnly<Car>(),
+                ComponentType.ReadOnly<Transform>(),
+                ComponentType.ReadOnly<Stopped>(),
+                ComponentType.ReadOnly<Game.Vehicles.OutOfControl>()
+            },
+            None = new[]
+            {
+                ComponentType.ReadOnly<Damaged>(),
+                ComponentType.ReadOnly<Destroyed>(),
+                ComponentType.ReadOnly<Game.Events.InvolvedInAccident>(),
+                ComponentType.ReadOnly<Game.Events.OnFire>(),
+                ComponentType.ReadOnly<Moving>(),
+                ComponentType.ReadOnly<CarTrailer>(),
+                ComponentType.ReadOnly<CarTrailerLane>(),
+                ComponentType.ReadOnly<ParkedCar>(),
+                ComponentType.ReadOnly<Deleted>(),
+                ComponentType.ReadOnly<Game.Tools.Temp>()
+            }
+        };
+
         public static EntityQueryDesc ArmedRelicQuery => new EntityQueryDesc
         {
             All = new[] { ComponentType.ReadOnly<RelicRecovery>() },

@@ -123,7 +123,20 @@ namespace ClearTheWay
             {
                 m_Control.SetFloor(vehicle, kAdvanceClearSpeed, hasTarget: false, default, default);
             }
-            else if (s.m_HardEvade && !s.m_NearArrivalTarget && s.m_EmergencySpeed < 1f &&
+            // Committing to the gap. A lane change INTO the corridor is exactly when a responder
+            // needs to keep rolling, and it is the one case every floor above excludes (they all
+            // require m_ChangeLane == null). Stalling halfway is the worst outcome: the vehicle
+            // sits across two lanes, its lateral offset decays back toward centre, and nothing
+            // recovers it until the 15 s defreeze. Gated on real room ahead, so it only ever
+            // completes a move into space that is actually there.
+            else if (!s.m_NearArrivalTarget && !s.m_FullCrossover &&
+                     currentLane.m_ChangeLane != Entity.Null &&
+                     s.m_EmergencySpeed < kMergeCommitSpeed &&
+                     HasRoomToCommit(vehicle, currentLane))
+            {
+                m_Control.SetFloor(vehicle, kMergeCommitSpeed, hasTarget: false, default, default);
+            }
+            else if (s.m_Evade >= EvadeStage.Hard && !s.m_NearArrivalTarget && s.m_EmergencySpeed < 1f &&
                      currentLane.m_ChangeLane == Entity.Null &&
                      math.abs(currentLane.m_LanePosition) > 0.3f &&
                      m_Ctx.LanePosition.TryGetLateralTarget(vehicle, currentLane, 2f, out float3 noseTarget, out quaternion noseRotation))
@@ -171,8 +184,18 @@ namespace ClearTheWay
 
             if (setting.VerboseLogging && frame % kLogIntervalFrames == (uint)(vehicle.Index % (int)kLogIntervalFrames))
             {
-                m_Ctx.Escalation.LogVehicleState(vehicle, currentLane, s.m_Pushed, frame, s.m_HardEvade, s.m_OncomingState, s.m_EvadeSideBlocked, s.m_DrainAhead);
+                m_Ctx.Escalation.LogVehicleState(vehicle, currentLane, s.m_Pushed, frame, s.m_Evade, s.m_OncomingState, s.m_EvadeSideBlocked, s.m_DrainAhead);
             }
         }
+        /// <summary>
+        /// Is there enough space in front to finish a lane change under power? A negative
+        /// separation means no blocker at all - the road ahead is open.
+        /// </summary>
+        private bool HasRoomToCommit(Entity vehicle, CarCurrentLane currentLane)
+        {
+            float separation = m_Geometry.GetBlockerSeparation(vehicle, currentLane);
+            return separation < 0f || separation >= kMergeCommitSeparation;
+        }
+
     }
 }

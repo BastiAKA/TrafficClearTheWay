@@ -97,7 +97,15 @@ namespace ClearTheWay.FunctionGroup.WayClearance.WayClearing
             // able to inch forward, otherwise a held queue never drains and the whole cluster
             // stays stuck. The ceiling still lets its navigation stop it behind a car that
             // genuinely cannot move, so it only ever creeps into real space.
-            if (math.abs(otherLane.m_LanePosition) >= kMinAsidePosition)
+            // "Has made room" is relative to what THIS car was told to do, not a flat number.
+            // With today's targets (2-4 units) the old constant slowed a car after ~8% of its
+            // way out; since a car realises its offset only by driving, it then just steered
+            // and stayed put - the "they only turn, they never pull out" report. Fall back to
+            // the flat threshold when no claim is on record (nobody pushed it this pass).
+            float reached = m_PushClaims.TryGetValue(other, out PushClaim heldClaim) && heldClaim.m_TargetUnits > 0f
+                ? heldClaim.m_TargetUnits * kAsideReachedFraction
+                : kMinAsidePosition;
+            if (math.abs(otherLane.m_LanePosition) >= reached)
             {
                 m_Control.SetCeiling(other, kMinCreepSpeed);
             }

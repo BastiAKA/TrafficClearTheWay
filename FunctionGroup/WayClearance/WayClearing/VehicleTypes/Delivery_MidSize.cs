@@ -52,8 +52,16 @@ namespace ClearTheWay.FunctionGroup.WayClearance.WayClearing.VehicleTypes
             {
                 return baseMeters;
             }
-            float byLength = math.min(length * kLongVehicleFraction, kLongVehicleMaxMeters);
-            return math.max(baseMeters, byLength);
+            // A BONUS on top of whatever stage the caller asked for - deliberately not a floor.
+            // As a floor (max(baseMeters, length/4)) the size rule silently swallowed the whole
+            // escalation once the stage values grew: with soft 1.4 and hard 2.0 both landed on the
+            // same 2.2, so a bus got an identical offset whether the corridor was gentle or the
+            // responder had been stuck for half a minute - and its SOFT offset exceeded a car's
+            // HARD one. Sebastian: big vehicles behave oddly and never soft-evade properly.
+            // Measured from kLongVehicleLength up, so a vehicle just over car length gets almost
+            // nothing extra and the bonus grows with how much road the body actually covers.
+            float bonus = math.min((length - kLongVehicleLength) * kLongVehicleFraction, kLongVehicleMaxMeters);
+            return baseMeters + bonus;
         }
     }
 }

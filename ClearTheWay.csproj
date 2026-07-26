@@ -9,7 +9,7 @@
     <AssemblyName>ClearTheWay</AssemblyName>
     <RootNamespace>ClearTheWay</RootNamespace>
     <!-- Keep in sync with ModVersion in Properties/PublishConfiguration.xml -->
-    <Version>0.1.11</Version>
+    <Version>0.1.12</Version>
     <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
     <PublishConfigurationPath>Properties\PublishConfiguration.xml</PublishConfigurationPath>

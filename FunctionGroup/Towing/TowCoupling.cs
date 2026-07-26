@@ -50,6 +50,15 @@ namespace ClearTheWay
         private EntityQuery m_RelicSweepDryRun => m_Ctx.RelicSweepDryRun;
         private EntityQuery m_AccidentSiteQuery => m_Ctx.AccidentSiteQuery;
 
+        /// <summary>Trucks already reported as "not the dedicated tow truck", so the unchanging
+        /// fact is stated once each instead of every diagnostic pass.</summary>
+        internal readonly HashSet<Entity> NotTowTruckLogged = new HashSet<Entity>();
+        private HashSet<Entity> m_NotTowTruckLogged => NotTowTruckLogged;
+
+        /// <summary>Wrecks already reported as an invalid hookup target - same reasoning.</summary>
+        internal readonly HashSet<Entity> InvalidTargetLogged = new HashSet<Entity>();
+        private HashSet<Entity> m_InvalidTargetLogged => InvalidTargetLogged;
+
         public TowCoupling(TowingContext ctx)
         {
             m_Ctx = ctx;
@@ -65,6 +74,7 @@ namespace ClearTheWay
 
         private void TryHookupImpl(Entity truck, uint frame)
         {
+            bool diag = Mod.Setting.VerboseLogging && frame % 120u == 0u;
             // Only vehicle-recovery capable trucks, one load at a time.
             Entity prefab = EntityManager.GetComponentData<PrefabRef>(truck).m_Prefab;
             if (!EntityManager.HasComponent<MaintenanceVehicleData>(prefab) ||
@@ -81,6 +91,17 @@ namespace ClearTheWay
             // is our proper flatbed. (When TowTruckPrefab is off, every recovery truck drawbars.)
             if (Mod.Setting.TowTruckPrefab && !EntityManager.HasComponent<CarTractorData>(prefab))
             {
+                // ONCE per truck, never on a timer: whether a vehicle has CarTractorData is a
+                // static property of its prefab and cannot change. Logged per pass it produced
+                // 7403 of 12454 log lines in nine minutes - 112 ordinary maintenance vans each
+                // repeating the same unchanging fact every 120 frames, 2.3 MB of file I/O on the
+                // simulation thread. The line earned its keep once (it is what identified van
+                // 302199 as "not our tow truck, skipped by design"); after that it is noise.
+                if (Mod.Setting.VerboseLogging && m_NotTowTruckLogged.Add(truck))
+                {
+                    Mod.Log.Info($"[towdiag] truck={truck.Index} skipped: not the dedicated tow " +
+                        $"truck (no CarTractorData) and TowTruckPrefab is on");
+                }
                 return;
             }
             // Target must be a settled, not burning wreck.
@@ -92,9 +113,45 @@ namespace ClearTheWay
                  !EntityManager.HasComponent<RelicRecovery>(wreck)) ||
                 !EntityManager.HasComponent<Car>(wreck))
             {
+                // Deliberately loud: RecoveryAssist sends a truck on "Damaged OR
+                // InvolvedInAccident", this gate wants "InvolvedInAccident OR RelicRecovery". A
+                // wreck that lost InvolvedInAccident without getting the relic tag falls exactly
+                // between the two - the truck drives there and then silently refuses forever.
+                if (diag && wreck != Entity.Null && EntityManager.Exists(wreck) &&
+                    m_InvalidTargetLogged.Add(wreck))
+                {
+                    Mod.Log.Info($"[towdiag] truck={truck.Index} wreck={wreck.Index} skipped: not a valid " +
+                        $"target - invAcc={(EntityManager.HasComponent<Game.Events.InvolvedInAccident>(wreck) ? 1 : 0)} " +
+                        $"relicRec={(EntityManager.HasComponent<RelicRecovery>(wreck) ? 1 : 0)} " +
+                        $"car={(EntityManager.HasComponent<Car>(wreck) ? 1 : 0)}");
+                }
                 return;
             }
-            bool diag = Mod.Setting.VerboseLogging && frame % 120u == 0u;
+            // If a tow truck has been sent here, it tows. Damage state does not decide.
+            //
+            // The gate briefly required Destroyed, on the theory that a merely Damaged car gets
+            // repaired in place by a van and drives on (which IS vanilla's model - see
+            // MaintenanceVehicleAISystem, it works Damaged.m_Damage down to zero and
+            // AccidentVehicleSystem then restarts the car). The field says otherwise: in one
+            // session that gate produced 372 refusals against a single successful hookup, with
+            // five tow trucks parked in front of three wrecks repeating the same refusal every
+            // 2.5 s, giving up after 90 s and driving home - while the cars they had been sent to
+            // just stood there. Nobody was repairing them. And "Damaged" says nothing about
+            // whether a car is driveable: Sebastian's screenshot of one flipped onto its nose is
+            // still only Damaged, and it is never going to drive again.
+            //
+            // So the decision belongs to the DISPATCH, not to this gate: something judged this
+            // wreck worth a recovery vehicle, the recovery vehicle is here, and it does the job.
+            // Only Destroyed remains special elsewhere - it is what vanilla never repairs at all.
+            if (!EntityManager.HasComponent<Damaged>(wreck) && !EntityManager.HasComponent<Destroyed>(wreck))
+            {
+                if (diag)
+                {
+                    Mod.Log.Info($"[towdiag] truck={truck.Index} wreck={wreck.Index} skipped: " +
+                        $"undamaged - nothing to recover here");
+                }
+                return;
+            }
             if (!EntityManager.HasComponent<Transform>(wreck) ||
                 !EntityManager.HasComponent<Stopped>(wreck) ||
                 EntityManager.HasComponent<Game.Events.OnFire>(wreck) ||

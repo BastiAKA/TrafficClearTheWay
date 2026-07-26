@@ -229,7 +229,15 @@ namespace ClearTheWay.FunctionGroup.WayClearance.Squeezing
             // through the blocker. Until then the creep-out and the evade keep building
             // that distance; if the road is truly too tight, the vehicle waits, like a
             // real one would.
-            if (m_Geometry.GetLateralSeparation(vehicle, currentLane, blockingEntity) < kMinSqueezeSeparation)
+            // Exception: a STANDING recovery vehicle. It will not drive off and it cannot pull
+            // over any further than the corridor already asked it to, so waiting for the full
+            // clearance means waiting forever (the deadlocked tow-truck chain). Both vehicles
+            // are stationary here, so passing a little closer is safe.
+            bool standingColleague = EntityManager.HasComponent<Game.Vehicles.MaintenanceVehicle>(blockerHead) &&
+                (!EntityManager.HasComponent<Moving>(blockingEntity) ||
+                 math.lengthsq(EntityManager.GetComponentData<Moving>(blockingEntity).m_Velocity) < 0.25f);
+            float requiredSeparation = standingColleague ? kColleagueSqueezeSeparation : kMinSqueezeSeparation;
+            if (m_Geometry.GetLateralSeparation(vehicle, currentLane, blockingEntity) < requiredSeparation)
             {
                 return false;
             }

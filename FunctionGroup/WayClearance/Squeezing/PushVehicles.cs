@@ -53,15 +53,18 @@ namespace ClearTheWay.FunctionGroup.WayClearance.Squeezing
             m_Ctx = ctx;
         }
 
-        public int PullCarsAside(Entity vehicle, CorridorLane corridorLane, uint frame, bool hardEvade, bool allowHold = true, bool drainAhead = false, bool shakeStuck = false)
+        /// <param name="evadeMeters">How far an evading car is pushed aside, in metres. The caller
+        /// owns the escalation policy - the default is the normal hard evade, and a responder that
+        /// has been stuck long enough simply asks for more (kDeepEvadeMeters).</param>
+        public int PullCarsAside(Entity vehicle, CorridorLane corridorLane, uint frame, bool hardEvade, bool allowHold = true, bool drainAhead = false, bool shakeStuck = false, float evadeMeters = kEvadeMeters)
         {
             using (ModProfiler.Sample(kProfile, "TrafficShaper.PullCarsAside"))
             {
-                return PullCarsAsideImpl(vehicle, corridorLane, frame, hardEvade, allowHold, drainAhead, shakeStuck);
+                return PullCarsAsideImpl(vehicle, corridorLane, frame, hardEvade, allowHold, drainAhead, shakeStuck, evadeMeters);
             }
         }
 
-        private int PullCarsAsideImpl(Entity vehicle, CorridorLane corridorLane, uint frame, bool hardEvade, bool allowHold, bool drainAhead, bool shakeStuck)
+        private int PullCarsAsideImpl(Entity vehicle, CorridorLane corridorLane, uint frame, bool hardEvade, bool allowHold, bool drainAhead, bool shakeStuck, float evadeMeters)
         {
             if (!EntityManager.HasBuffer<LaneObject>(corridorLane.m_Lane))
             {
@@ -120,13 +123,29 @@ namespace ClearTheWay.FunctionGroup.WayClearance.Squeezing
                 {
                     continue;
                 }
-                // Other emergency vehicles keep their line. So do maintenance/recovery
-                // vehicles: tow trucks driving in convoy to a pile-up are corridor OWNERS
-                // themselves and kept shoving each other onto the kerb, slowing the lot down.
-                if ((EntityManager.GetComponentData<Car>(other).m_Flags & CarFlags.Emergency) != 0 ||
-                    EntityManager.HasComponent<Game.Vehicles.MaintenanceVehicle>(other))
+                // Other emergency vehicles keep their line.
+                if ((EntityManager.GetComponentData<Car>(other).m_Flags & CarFlags.Emergency) != 0)
                 {
                     continue;
+                }
+                // Recovery vehicles keep their line too - but only while they are ROLLING. That
+                // rule exists because tow trucks driving in convoy to a pile-up are corridor
+                // owners themselves and kept shoving each other onto the kerb. A STOPPED one is
+                // the opposite case: it is what the colleague behind it is wedged against, and
+                // since we never touched it, nothing could ever open that chain (field log:
+                // three recovery trucks nose to tail, each blockedBy the next, all at 0.0 for
+                // ~2 minutes, no lateral gap for anyone to squeeze through). Easing a standing
+                // one aside costs it nothing - it is not going anywhere - and is what lets the
+                // queue behind it get past.
+                if (EntityManager.HasComponent<Game.Vehicles.MaintenanceVehicle>(other))
+                {
+                    float otherSpeed = EntityManager.HasComponent<Moving>(other)
+                        ? math.length(EntityManager.GetComponentData<Moving>(other).m_Velocity)
+                        : 0f;
+                    if (otherSpeed >= kMaintenancePushMaxSpeed)
+                    {
+                        continue;
+                    }
                 }
                 // Trailers follow their controller.
                 if (VehicleTrailerExt.IsTrailer(EntityManager, other))
@@ -223,13 +242,27 @@ namespace ClearTheWay.FunctionGroup.WayClearance.Squeezing
                 // Central-channel lanes carry their own graduated offset (outer lanes clear
                 // further); classic lanes leave it 0 and fall back to the flat kEdgeMeters.
                 float baseMeters = corridorLane.m_PushMeters > 0f ? corridorLane.m_PushMeters : kEdgeMeters;
-                float meters = evade ? math.max(kEvadeMeters, baseMeters) : baseMeters;
+                float meters = evade ? math.max(evadeMeters, baseMeters) : baseMeters;
                 // A van, garbage truck or bus needs MORE than a car: it clears the lane by being
                 // pushed diagonally forward, and at ~45 degrees the room it makes is a quarter of
                 // its own length (Delivery_MidSize). At a car's offset its body still lies across
                 // the gap.
                 meters = m_Ctx.MidSize.PushMeters(other, meters);
-                float units = math.min(meters / m_Ctx.PrefabGeometry.LateralSlack(other, corridorLaneWidth), kMaxPushUnits);
+                // Past the lane edge there is often a tram bed, green strip or median that a car
+                // can perfectly well stand on - and on a narrow road, clearing only to the edge
+                // leaves no gap at all (the field report this was built for). Only while EVADING:
+                // the gentle corridor keeps traffic inside its lane, and driving on the grass
+                // stays an escalation, not the normal picture. LateralRoom returns 0 when there is
+                // nothing crossable there, or when a tram is currently on the bed.
+                if (evade)
+                {
+                    meters += m_Ctx.Room.CrossableMeters(corridorLane.m_Lane, corridorLane.m_PushDirection, frame);
+                }
+                meters = math.min(meters, m_Ctx.PrefabGeometry.MaxLateralMeters(other));
+                float units = meters / m_Ctx.PrefabGeometry.LateralSlack(other, corridorLaneWidth);
+                // Record where this car was actually sent, so HoldVehicles can tell "has made
+                // room" from "has barely twitched" and does not brake it after a few centimetres.
+                m_PushClaims[other] = new PushClaim { m_Dir = pushDir, m_Frame = frame, m_TargetUnits = units };
                 float target = corridorLane.m_PushDirection * units;
                 float rate = evade ? kPullRate * 1.5f : kPullRate;
                 float newPos = math.lerp(otherLane.m_LanePosition, target, rate);

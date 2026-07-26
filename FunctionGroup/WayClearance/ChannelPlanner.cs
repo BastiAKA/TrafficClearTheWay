@@ -83,6 +83,72 @@ namespace ClearTheWay.FunctionGroup.WayClearance
         /// Only called for slow responders on channel-width roads (the caller's useChannel gate),
         /// so the per-lane occupancy scan stays off the many cruising sirens.
         /// </summary>
+
+        /// <summary>
+        /// Is there a parking strip immediately beside this lane? Such a lane is permanently lined
+        /// with standing cars, so "no moving traffic ahead" badly overstates how usable it is.
+        /// Walks outward from the lane in the SubLane buffer and stops at the first real thing,
+        /// the same shape ChannelShoulderBonus uses.
+        /// </summary>
+        private bool HasParkingBeside(Entity lane, Entity owner)
+        {
+            // Cached per lane: whether a parking strip lies alongside cannot change while the road
+            // stands, but the walk below runs inside FindFreeLaneDir - once per responder per
+            // corridor build, every tick. Same reasoning as the lane-width and vehicle-geometry
+            // caches. Keyed by LANE (not prefab) because it is a property of this stretch of road;
+            // entries for lanes that no longer exist are dropped with the channel plans.
+            if (m_ParkingBeside.TryGetValue(lane, out bool cached))
+            {
+                return cached;
+            }
+            bool result = ComputeParkingBeside(lane, owner);
+            m_ParkingBeside[lane] = result;
+            return result;
+        }
+
+        private readonly Dictionary<Entity, bool> m_ParkingBeside = new Dictionary<Entity, bool>();
+
+        private bool ComputeParkingBeside(Entity lane, Entity owner)
+        {
+            if (!EntityManager.HasBuffer<Game.Net.SubLane>(owner))
+            {
+                return false;
+            }
+            DynamicBuffer<Game.Net.SubLane> subLanes = EntityManager.GetBuffer<Game.Net.SubLane>(owner, isReadOnly: true);
+            int idx = -1;
+            for (int i = 0; i < subLanes.Length; i++)
+            {
+                if (subLanes[i].m_SubLane == lane) { idx = i; break; }
+            }
+            if (idx < 0)
+            {
+                return false;
+            }
+            for (int step = -1; step <= 1; step += 2)
+            {
+                for (int i = idx + step; i >= 0 && i < subLanes.Length; i += step)
+                {
+                    Entity sl = subLanes[i].m_SubLane;
+                    if (sl == Entity.Null || !EntityManager.Exists(sl))
+                    {
+                        continue;
+                    }
+                    if (EntityManager.HasComponent<Game.Net.ParkingLane>(sl))
+                    {
+                        return true;
+                    }
+                    // Another driving lane between us and any parking strip: that strip is no
+                    // longer "beside" this lane and does not affect it.
+                    if (EntityManager.HasComponent<Game.Net.CarLane>(sl) &&
+                        !EntityManager.HasComponent<Game.Net.MasterLane>(sl))
+                    {
+                        break;
+                    }
+                }
+            }
+            return false;
+        }
+
         public float FindFreeLaneDir(Entity vehicle, Entity refLane, float curvePosition, bool inverted)
         {
             m_FreeLaneDir = 0f;
@@ -104,6 +170,12 @@ namespace ClearTheWay.FunctionGroup.WayClearance
             {
                 return 0f;
             }
+            // Hold a choice already made. Re-deciding from scratch every pass is what made the
+            // responder oscillate; while the latch runs, the same direction is kept as long as the
+            // lane stays merely USABLE (a car or two), not strictly empty.
+            m_Ctx.States.Stuck.TryGetValue(vehicle, out StuckState freeLatch);
+            bool latched = freeLatch.m_FreeLaneDir != 0f &&
+                m_SimulationSystem.frameIndex < freeLatch.m_FreeLaneUntilFrame;
             CarFlags carFlags = EntityManager.HasComponent<Car>(vehicle)
                 ? EntityManager.GetComponentData<Car>(vehicle).m_Flags
                 : default;
@@ -131,8 +203,25 @@ namespace ClearTheWay.FunctionGroup.WayClearance
                     {
                         continue;
                     }
-                    if (m_Ctx.Geometry.LaneVehiclesAhead(candidate, curvePosition, inverted) == 0)
+                    // Committing needs an empty lane; KEEPING the latched one tolerates a little
+                    // traffic, so the decision cannot flip with every car that enters it.
+                    // A lane with a PARKING strip alongside is not the escape it looks like:
+                    // parked cars stand there permanently, and the responder ends up threading
+                    // between them and the queue instead of getting past (Sebastian). Vehicles
+                    // that are merely ROLLING do not count as blocking - see kFreeLaneFlowSpeed.
+                    if (HasParkingBeside(candidate, owner))
                     {
+                        continue;
+                    }
+                    int ahead = m_Ctx.Geometry.LaneVehiclesAhead(candidate, curvePosition, inverted, kFreeLaneFlowSpeed, kFreeLaneClearMeters);
+                    bool usable = latched && dir == freeLatch.m_FreeLaneDir
+                        ? ahead <= kFreeLaneReleaseVehicles
+                        : ahead == 0;
+                    if (usable)
+                    {
+                        freeLatch.m_FreeLaneDir = dir;
+                        freeLatch.m_FreeLaneUntilFrame = m_SimulationSystem.frameIndex + kFreeLaneLatchFrames;
+                        m_Ctx.States.Stuck[vehicle] = freeLatch;
                         m_FreeLaneDir = dir;
                         // Lean toward the free lane while the change is still pending: the hug
                         // reuses the channel's own steering path, so pointing it at the free lane
@@ -166,7 +255,12 @@ namespace ClearTheWay.FunctionGroup.WayClearance
                 m_ChannelCache.Remove(m_ChannelCachePrune[i]);
             }
             m_ChannelCachePrune.Clear();
+            // The parking-strip answers are keyed by lane and have no TTL of their own - a lane
+            // that was rebuilt or deleted would otherwise sit here for the rest of the session.
+            EntityMapPrune.PruneDead(EntityManager, m_ParkingBeside, m_ParkingPrune);
         }
+
+        private readonly List<Entity> m_ParkingPrune = new List<Entity>();
         public ChannelPlanner(WayClearanceContext ctx)
         {
             m_Ctx = ctx;

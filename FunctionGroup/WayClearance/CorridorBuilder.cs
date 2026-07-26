@@ -87,11 +87,17 @@ namespace ClearTheWay
             // The whole-carriageway central channel only when the responder is actually slow
             // (a cluster/jam). A free-flowing responder uses the light classic corridor.
             bool useChannel = setting.ClearParallelLanes && emergencySpeed < kChannelMaxSpeed;
-            // ...and not at all when one of the lanes is simply EMPTY ahead. The seam is placed
-            // geometrically, so it would steer the responder into the packed middle right next to
-            // free asphalt - and then keep it there, because a pushing channel counts as a
-            // working corridor and a working corridor suppresses the lane change. Finding the
-            // free lane instead points the hug at it and opens that gate (see EscalationSteering).
+            // A genuinely free lane always wins over prying the middle open (Sebastian): the seam
+            // is placed geometrically, so the channel would steer the responder into the packed
+            // middle right next to open asphalt - and then hold it there, because a pushing channel
+            // counts as a working corridor and that suppresses the lane change.
+            //
+            // What went wrong before was not this rule but the price of "free": the test counted
+            // any object within kDensityWindow, so a lane cleared for a few car lengths qualified,
+            // and our own green light made the count churn as the queue pulled away. Responder
+            // 1901774 then oscillated between the corridor and a kerb lane without committing to
+            // either. Free now has to mean free - kFreeLaneClearMeters of it, not counting traffic
+            // that is merely rolling, never a lane lined with parked cars, and latched once chosen.
             if (useChannel &&
                 m_Ctx.Channel.FindFreeLaneDir(vehicle, currentLane.m_Lane, currentLane.m_CurvePosition.x,
                     currentLane.m_CurvePosition.z < currentLane.m_CurvePosition.x) != 0f)

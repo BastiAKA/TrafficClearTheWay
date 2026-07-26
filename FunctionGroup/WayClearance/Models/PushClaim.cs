@@ -14,5 +14,10 @@ namespace ClearTheWay
     {
         public float m_Dir;
         public uint m_Frame;
+        /// <summary>The lateral offset (in lane-position units, unsigned) this car was last told
+        /// to reach. HoldVehicles needs it to tell "has made room" from "has barely twitched":
+        /// a car only realises its offset by DRIVING, so it may be slowed once it is nearly
+        /// there - never while it still has most of the way to go.</summary>
+        public float m_TargetUnits;
     }
 }

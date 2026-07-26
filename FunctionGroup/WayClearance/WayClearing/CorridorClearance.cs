@@ -48,7 +48,7 @@ namespace ClearTheWay
                 // lights are requested along the whole path in every state.
                 if (!s.m_FullCrossover)
                 {
-                    s.m_Pushed += m_Ctx.Push.PullCarsAside(vehicle, corridorLane, frame, s.m_HardEvade, allowHold: !s.m_Merging, drainAhead: s.m_DrainAhead, shakeStuck: s.m_Desperate);
+                    s.m_Pushed += m_Ctx.Push.PullCarsAside(vehicle, corridorLane, frame, s.m_Evade >= EvadeStage.Hard, allowHold: !s.m_Merging, drainAhead: s.m_DrainAhead, shakeStuck: s.m_Desperate, evadeMeters: s.m_Evade == EvadeStage.Deep ? kDeepEvadeMeters : kEvadeMeters);
                 }
 
                 // Turn the traffic lights along the corridor green (see GreenLightChain). The

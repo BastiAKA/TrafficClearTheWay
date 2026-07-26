@@ -72,6 +72,20 @@ namespace ClearTheWay
                 for (int i = 0; i < vehicles.Length; i++)
                 {
                     Entity vehicle = vehicles[i];
+                    // Parked = off duty, beacons off. This needs an explicit CLEAR, not just a
+                    // skip: we re-assert Warning every tick after the AI has run, so a truck that
+                    // parked while its Target still pointed at a wreck kept flashing on the depot
+                    // apron forever - nothing else ever takes the flag back off.
+                    if (EntityManager.HasComponent<Game.Vehicles.ParkedCar>(vehicle))
+                    {
+                        Car parked = EntityManager.GetComponentData<Car>(vehicle);
+                        if ((parked.m_Flags & CarFlags.Warning) != 0)
+                        {
+                            parked.m_Flags &= ~CarFlags.Warning;
+                            EntityManager.SetComponentData(vehicle, parked);
+                        }
+                        continue;
+                    }
                     bool onRecoveryDuty = m_HookupSystem.TrucksWithLoad.Contains(vehicle);
                     if (!onRecoveryDuty)
                     {

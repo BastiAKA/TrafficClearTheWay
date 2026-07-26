@@ -119,17 +119,12 @@ namespace ClearTheWay
             {
                 return;
             }
-            PathOwner pathOwner = EntityManager.GetComponentData<PathOwner>(van);
-            if ((pathOwner.m_State & (PathFlags.Failed | PathFlags.Stuck)) == 0)
+            // Same shape as the towing case, and it had the same hole: clearing the flag without
+            // asking for a new path leaves the van driving blind until the next stagger slot.
+            if (!PathShield.Shield(EntityManager, m_Ctx.PathRetry, van, frame))
             {
                 return;
             }
-            pathOwner.m_State &= ~(PathFlags.Failed | PathFlags.Stuck);
-            if (((frame + (uint)van.Index) & 0xFFu) == 0u) // ~every 256 frames per vehicle
-            {
-                pathOwner.m_State |= PathFlags.Obsolete;
-            }
-            EntityManager.SetComponentData(van, pathOwner);
             if (Mod.Setting.VerboseLogging && frame % 180u == 0u)
             {
                 Mod.Log.Info($"[dispatch] van={van.Index} path to its wreck failed - shielded (would have been sent home)");

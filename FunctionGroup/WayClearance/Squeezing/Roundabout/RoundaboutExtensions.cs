@@ -118,10 +118,10 @@ namespace ClearTheWay.FunctionGroup.WayClearance.Squeezing.Roundabout
             {
                 return;
             }
-            float rMeters = s.m_HardEvade ? kEvadeMeters : kEdgeMeters;
-            float rUnits = math.min(rMeters / m_Ctx.PrefabGeometry.LateralSlack(vehicle, currentLane.m_Lane), kMaxPushUnits);
+            float rMeters = s.m_Evade >= EvadeStage.Hard ? kEvadeMeters : kEdgeMeters;
+            float rUnits = math.min(rMeters, m_Ctx.PrefabGeometry.MaxLateralMeters(vehicle)) / m_Ctx.PrefabGeometry.LateralSlack(vehicle, currentLane.m_Lane);
             float rTarget = side * rUnits; // + = outer edge of the ring
-            float rNewPos = math.lerp(currentLane.m_LanePosition, rTarget, s.m_HardEvade ? kPullRate * 1.5f : kPullRate);
+            float rNewPos = math.lerp(currentLane.m_LanePosition, rTarget, s.m_Evade >= EvadeStage.Hard ? kPullRate * 1.5f : kPullRate);
             s.m_LateralSteered = true;
             if (math.abs(rNewPos - currentLane.m_LanePosition) > 0.001f)
             {

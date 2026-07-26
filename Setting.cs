@@ -58,6 +58,11 @@ namespace ClearTheWay
         [SettingsUISection(kSection, kBehaviorGroup)]
         public bool AssistTowTrucks { get; set; }
 
+        /// <summary>Last resort for a recovery vehicle wedged for minutes: remove the single
+        /// vehicle standing in its way so the whole chain can move again.</summary>
+        [SettingsUISection(kSection, kBehaviorGroup)]
+        public bool UnblockRecoveryVehicles { get; set; }
+
         /// <summary>Vehicles queued behind an accident wait instead of despawning.</summary>
         [SettingsUISection(kSection, kBehaviorGroup)]
         public bool PreventAccidentDespawn { get; set; }
@@ -65,6 +70,11 @@ namespace ClearTheWay
         /// <summary>Settled wrecks are moved onto one lane so traffic can pass and stops evaporating.</summary>
         [SettingsUISection(kSection, kBehaviorGroup)]
         public bool ClearWrecksAside { get; set; }
+
+        /// <summary>Traffic may clear onto tram beds, grass strips and medians - never onto an
+        /// occupied tram bed or a platform.</summary>
+        [SettingsUISection(kSection, kBehaviorGroup)]
+        public bool CrossMedians { get; set; }
 
         /// <summary>Adds the buildable tow depot (cloned road maintenance depot, vehicle recovery only).</summary>
         [SettingsUISection(kSection, kBehaviorGroup)]
@@ -82,6 +92,13 @@ namespace ClearTheWay
         [SettingsUISection(kSection, kBehaviorGroup)]
         public bool VerboseLogging { get; set; }
 
+        /// <summary>DEBUG: entity index of a single vehicle to dump full state for a few times a
+        /// second, taken from a veh=/blocker=/car= number in ClearTheWay.log. Empty or 0 = off.
+        /// Only active while Verbose logging is on.</summary>
+        [SettingsUITextInput]
+        [SettingsUISection(kSection, kBehaviorGroup)]
+        public string WatchVehicle { get; set; }
+
         public sealed override void SetDefaults()
         {
             Enabled = true;
@@ -94,12 +111,15 @@ namespace ClearTheWay
             ClearRoundaboutInner = true;
             StopPedestrians = true;
             AssistTowTrucks = true;
+            UnblockRecoveryVehicles = true;
             PreventAccidentDespawn = true;
             ClearWrecksAside = true;
+            CrossMedians = true;
             TowDepot = true;
             TowWrecks = true;
             TowTruckPrefab = true; // dedicated tow-truck prefab + flatbed towing (on by default per Sebastian)
             VerboseLogging = false;
+            WatchVehicle = "";
         }
     }
 }

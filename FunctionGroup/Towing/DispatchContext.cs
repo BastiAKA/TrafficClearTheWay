@@ -41,6 +41,14 @@ namespace ClearTheWay
         /// straight back by the other wreck, or the two ping-pong it between them forever.</summary>
         public readonly Dictionary<Entity, uint> VanSentHome = new Dictionary<Entity, uint>();
 
+        /// <summary>Frame each van was last GIVEN a wreck order. A truck already on its way keeps
+        /// it for kTakeoverGraceFrames, so a cluster of wrecks cannot re-decide the assignment out
+        /// from under it every pass. See TowAssignment.</summary>
+        /// <summary>Frame a van last asked for a new route to its wreck. See <see cref="PathShield"/>.</summary>
+        public readonly Dictionary<Entity, uint> PathRetry = new Dictionary<Entity, uint>();
+
+        public readonly Dictionary<Entity, uint> VanAssigned = new Dictionary<Entity, uint>();
+
         /// <summary>Van -> the ONE wreck it is working, resolved once per pass. See the class
         /// summary: this is what stopped the dispatch thrash.</summary>
         public readonly Dictionary<Entity, Entity> VanJob = new Dictionary<Entity, Entity>();
