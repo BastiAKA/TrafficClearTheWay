@@ -66,5 +66,6 @@ namespace ClearTheWay
         // --- Results of the steering and speed stages ---
         public bool m_LateralSteered;    // some stage wrote m_LanePosition, so do not drift back to centre
         public bool m_Squeezing;         // IgnoreBlocker is set
+        public bool m_NoseCreep;         // got the creep budget + lateral target to turn its offset into real distance
     }
 }

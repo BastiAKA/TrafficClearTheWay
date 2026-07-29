@@ -327,7 +327,7 @@ namespace ClearTheWay
             return true;
         }
 
-        public void LogVehicleState(Entity vehicle, CarCurrentLane currentLane, int pushed, uint frame, EvadeStage evade, int oncomingState, bool evadeSideBlocked, bool drainAhead)
+        public void LogVehicleState(Entity vehicle, CarCurrentLane currentLane, int pushed, uint frame, EvadeStage evade, int oncomingState, bool evadeSideBlocked, bool drainAhead, bool noseCreep)
         {
             float speed = math.length(EntityManager.GetComponentData<Moving>(vehicle).m_Velocity);
             Blocker blocker = EntityManager.GetComponentData<Blocker>(vehicle);
@@ -361,7 +361,7 @@ namespace ClearTheWay
                 $"ignore={((currentLane.m_LaneFlags & CarLaneFlags.IgnoreBlocker) != 0 ? 1 : 0)} " +
                 $"blocker={blocker.m_Blocker.Index} type={blocker.m_Type} bSpeed={blockerSpeed:F1} bLanePos={blockerLanePos:F2} sep={separation:F2} " +
                 $"stuckFor={(stuck.m_Blocker != Entity.Null ? frame - stuck.m_BlockerSinceFrame : 0)} latch={(frame < stuck.m_SqueezeUntilFrame ? 1 : 0)} evade={evade} onc={oncomingState} nearFor={stuck.m_NearTargetFrames} evadeBlk={(evadeSideBlocked ? 1 : 0)} drain={(drainAhead ? 1 : 0)} " +
-                $"hug={m_Corridor.ChannelHugDir:F0} free={m_Corridor.FreeLaneDir:F0}");
+                $"hug={m_Corridor.ChannelHugDir:F0} free={m_Corridor.FreeLaneDir:F0} creep={(noseCreep ? 1 : 0)}");
         }
     }
 }
