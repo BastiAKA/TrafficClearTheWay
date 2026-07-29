@@ -133,32 +133,45 @@ namespace ClearTheWay
             // the truck, so its own AI decides what happens to it.
             bool pathGaveUp = m_Ctx.PathFailingSince.TryGetValue(truck, out uint failingSince) &&
                 frame - failingSince > kTowPathGiveUpFrames;
+            if (pathGaveUp)
+            {
+                ReleaseTow(wreck, truck, frame, setting);
+                m_Ctx.SafeDelete(truck);
+                return;
+            }
             // ...and the case a failed PATH cannot describe: a truck that drove itself somewhere
             // with no way out (a car park interior) may carry no Failed flag at all, so only its
-            // standing still gives it away. Both end the same way - put it back on a road, and if
-            // there is no road to be found, let go of the wreck and delete the truck rather than
-            // leave a permanent monument that also blocks every cleanup net behind it.
+            // standing still gives it away.
+            //
+            // Standing still is NOT enough to act on, though - a truck queueing in a jam looks
+            // exactly the same. So ask the network: is there a driving lane under its wheels? If
+            // yes it is queueing and nothing here touches it (that case belongs to the deadlock
+            // machinery), and it is simply counted; if no - or if it has been counted through
+            // kTowWedgeStrikes checks without ever moving - the wreck goes back to the recovery
+            // pipeline and the truck is deleted.
+            //
+            // It used to be REPOSITIONED here instead. That wrote the vehicle's lane fields by
+            // hand, which bypasses the game's lane registry and hard-crashes a Burst job (see
+            // TowStuckRecovery). Losing a truck is the cheaper failure by a wide margin.
             Transform stuckCheck = EntityManager.GetComponentData<Transform>(truck);
-            bool wedged = m_Ctx.StuckRecovery.IsWedged(truck, stuckCheck.m_Position, frame);
-            if (pathGaveUp || wedged)
+            if (m_Ctx.StuckRecovery.IsWedged(truck, stuckCheck.m_Position, frame))
             {
+                bool onRoad = false;
                 Game.Net.SearchSystem netSearch = m_Ctx.NetSearch;
-                bool rescued = false;
                 if (netSearch != null)
                 {
                     NativeQuadTree<Entity, QuadTreeBoundsXZ> netTree =
                         netSearch.GetNetSearchTree(readOnly: true, out JobHandle netDeps);
                     netDeps.Complete();
-                    rescued = m_Ctx.StuckRecovery.PutBackOnRoad(truck, stuckCheck.m_Position, netTree, setting);
+                    onRoad = m_Ctx.StuckRecovery.StandsOnRoad(stuckCheck.m_Position, netTree);
                     netSearch.AddNetSearchTreeReader(default);
                 }
-                if (!rescued)
+                if (!onRoad || m_Ctx.StuckRecovery.NoteOnRoadStrike(truck, frame, setting))
                 {
                     ReleaseTow(wreck, truck, frame, setting);
                     m_Ctx.SafeDelete(truck);
                     return;
                 }
-                m_Ctx.PathFailingSince.Remove(truck);
             }
             m_TrucksWithLoad.Add(truck);
             // A loaded truck must ALWAYS deliver first. The game's MaintenanceVehicleAISystem can

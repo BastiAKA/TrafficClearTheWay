@@ -3,42 +3,50 @@ using Colossal.Collections;
 using Colossal.Mathematics;
 using Game.Common;
 using Game.Net;
-using Game.Objects;
-using Game.Pathfind;
 using Unity.Collections;
 using Unity.Entities;
 using Unity.Mathematics;
-using CarLaneFlags = Game.Vehicles.CarLaneFlags;
 using static ClearTheWay.Tuning;
 
 namespace ClearTheWay
 {
-    /// <summary>Where a hauling truck last was, and since when it has not moved.</summary>
+    /// <summary>Where a hauling truck last was, since when it has not moved, and how often it has been judged wedged there.</summary>
     internal struct TruckRest
     {
         public float3 m_Pos;
         public uint m_Since;
+        public uint m_Strikes;
     }
 
     /// <summary>
-    /// Getting a tow truck that has driven itself somewhere impossible back onto a road.
+    /// Deciding what to do with a tow truck that has stopped moving while hauling.
     ///
     /// This is the price of the path shield. Clearing PathFlags.Failed stops vanilla deleting a
     /// loaded truck, but a vehicle without a route drives dead straight - and one of them drove
     /// straight into a multi-storey car park and parked itself inside the building, still holding
-    /// its wreck. Nothing could reach it there:
-    ///  - the release-on-failed-path timer never started, because a vehicle with no path at all
-    ///    does not necessarily carry the Failed flag,
-    ///  - the orphan sweep deliberately skips any wreck whose controller is a LIVE recovery truck,
-    ///    so its 10-minute backstop was disabled by the very truck that was stuck,
-    ///  - and repathing cannot help: there is no route from inside a building.
-    /// The truck was, in effect, immortal and unreachable.
+    /// its wreck. Nothing could reach it there: the release-on-failed-path timer never started
+    /// (a vehicle with no path at all does not necessarily carry the Failed flag), the orphan sweep
+    /// deliberately skips any wreck whose controller is a LIVE recovery truck, and repathing cannot
+    /// help because there is no route from inside a building.
     ///
-    /// So the test here is MOVEMENT, not path state - the same reasoning TowOrphanFinder uses. A
-    /// truck that is hauling but has not moved a metre in kTowStuckFrames is not towing, whatever
-    /// its components say. It is put back on the nearest road (Sebastian: vanilla does this too),
-    /// and only deleted if there is no road anywhere near - better one lost truck than a permanent
-    /// monument inside a car park.
+    /// So the test is MOVEMENT, not path state. But movement alone cannot tell "wedged inside a
+    /// building" from "queueing in a jam", and that distinction turned out to matter a lot:
+    ///
+    /// This class used to REPOSITION such a truck - write its Transform, its CarCurrentLane
+    /// (m_Lane, m_CurvePosition) and null its m_ChangeLane. Two things were wrong with that. The
+    /// small one: a truck merely stuck in traffic was "recovered" onto the lane it was already on,
+    /// logged as "0m away", every 900 frames forever (914 recoveries in one 100-minute session,
+    /// 904 of them no-ops). The serious one: writing those lane fields by hand bypasses the game's
+    /// lane registry - the vehicle stays listed in its old lane's LaneObject buffer - and that is
+    /// exactly what the defreeze note in EmergencyEscalation warns about, because it hard-crashes
+    /// a Burst job. That session ended in a null-pointer access violation inside the game's
+    /// Burst-compiled job library.
+    ///
+    /// So there is no repositioning any more. A wedged truck standing ON a road is left completely
+    /// alone (it is queueing; the deadlock machinery owns that case), and one that is genuinely off
+    /// the network - or one that has been motionless through kTowWedgeStrikes checks - has its
+    /// wreck handed back to the recovery pipeline and is deleted. Sebastian's call, and the right
+    /// trade: losing a truck costs one vehicle, corrupting the lane registry costs the session.
     /// </summary>
     internal sealed class TowStuckRecovery
     {
@@ -53,14 +61,15 @@ namespace ClearTheWay
 
         /// <summary>
         /// True when this hauling truck has been motionless long enough to count as wedged. Call
-        /// once per tick per towing truck; it keeps the movement history itself.
+        /// once per tick per towing truck; it keeps the movement history itself. Any real movement
+        /// also clears the strike count - a truck that is making progress starts from scratch.
         /// </summary>
         public bool IsWedged(Entity truck, float3 pos, uint frame)
         {
             if (!m_Rest.TryGetValue(truck, out TruckRest rest) ||
                 math.distancesq(rest.m_Pos.xz, pos.xz) > kTowStuckMeters * kTowStuckMeters)
             {
-                m_Rest[truck] = new TruckRest { m_Pos = pos, m_Since = frame };
+                m_Rest[truck] = new TruckRest { m_Pos = pos, m_Since = frame, m_Strikes = 0u };
                 return false;
             }
             return frame - rest.m_Since >= kTowStuckFrames;
@@ -72,27 +81,23 @@ namespace ClearTheWay
         }
 
         /// <summary>
-        /// Put the truck back on the nearest road and give it a fresh route. Returns false when
-        /// there is no usable road in range, which is the caller's signal to give up on it.
+        /// Is there a real driving lane right where the truck stands? Then it is not wedged in the
+        /// geometry, it is waiting in traffic - and nothing here should touch it.
         ///
-        /// Repositioning a VEHICLE is more than a teleport: unlike a settled wreck it carries a
-        /// lane assignment and a path, and moving only its Transform would leave it believing it
-        /// is still where it was - it would drive off the new spot exactly as blindly. So the lane
-        /// is reassigned with the position, the lateral offset is zeroed, any half-finished lane
-        /// change is dropped, and the path is invalidated so the game plots a new one from here.
+        /// Read-only on purpose: this asks a question about the network, it does not change the
+        /// vehicle. The search box is small because the question is "am I on a road", not "where is
+        /// the nearest road"; the distance test is 3D, so a truck sitting a storey above a street
+        /// still comes out off-road.
         /// </summary>
-        public bool PutBackOnRoad(Entity truck, float3 pos, NativeQuadTree<Entity, QuadTreeBoundsXZ> netTree,
-            Setting setting)
+        public bool StandsOnRoad(float3 pos, NativeQuadTree<Entity, QuadTreeBoundsXZ> netTree)
         {
-            Entity bestLane = Entity.Null;
-            float bestDist = float.MaxValue;
-            float bestT = 0f;
+            float searchRadius = kTowOnRoadMeters * 4f;
             NativeList<Entity> nets = new NativeList<Entity>(Allocator.Temp);
             try
             {
                 AreaIterator iterator = new AreaIterator
                 {
-                    m_Bounds = new Bounds3(pos - kTowReturnSearchRadius, pos + kTowReturnSearchRadius),
+                    m_Bounds = new Bounds3(pos - searchRadius, pos + searchRadius),
                     m_Results = nets
                 };
                 netTree.Iterate(ref iterator);
@@ -119,12 +124,9 @@ namespace ClearTheWay
                             continue;
                         }
                         Curve laneCurve = EntityManager.GetComponentData<Curve>(lane);
-                        float dist = MathUtils.Distance(laneCurve.m_Bezier, pos, out float t);
-                        if (dist < bestDist)
+                        if (MathUtils.Distance(laneCurve.m_Bezier, pos, out float _) <= kTowOnRoadMeters)
                         {
-                            bestDist = dist;
-                            bestLane = lane;
-                            bestT = t;
+                            return true;
                         }
                     }
                 }
@@ -133,49 +135,32 @@ namespace ClearTheWay
             {
                 nets.Dispose();
             }
-            if (bestLane == Entity.Null)
-            {
-                return false;
-            }
+            return false;
+        }
 
-            Curve curve = EntityManager.GetComponentData<Curve>(bestLane);
-            float3 target = MathUtils.Position(curve.m_Bezier, bestT);
-            float3 tangent = math.normalizesafe(MathUtils.Tangent(curve.m_Bezier, bestT));
-            Transform transform = EntityManager.GetComponentData<Transform>(truck);
-            transform.m_Position = target;
-            if (math.lengthsq(tangent) > 0.001f)
-            {
-                transform.m_Rotation = quaternion.LookRotationSafe(tangent, math.up());
-            }
-            EntityManager.SetComponentData(truck, transform);
-
-            if (EntityManager.HasComponent<Game.Vehicles.CarCurrentLane>(truck))
-            {
-                Game.Vehicles.CarCurrentLane lane = EntityManager.GetComponentData<Game.Vehicles.CarCurrentLane>(truck);
-                lane.m_Lane = bestLane;
-                lane.m_CurvePosition = new float3(bestT, bestT, 1f);
-                lane.m_ChangeLane = Entity.Null;
-                lane.m_ChangeProgress = 0f;
-                lane.m_LanePosition = 0f;
-                lane.m_LaneFlags &= ~(CarLaneFlags.EndOfPath | CarLaneFlags.EndReached |
-                    CarLaneFlags.FixedLane | CarLaneFlags.IgnoreBlocker);
-                EntityManager.SetComponentData(truck, lane);
-            }
-            if (EntityManager.HasComponent<PathOwner>(truck))
-            {
-                PathOwner pathOwner = EntityManager.GetComponentData<PathOwner>(truck);
-                pathOwner.m_State &= ~(PathFlags.Failed | PathFlags.Stuck);
-                pathOwner.m_State |= PathFlags.Obsolete; // plot a route from where it actually is now
-                EntityManager.SetComponentData(truck, pathOwner);
-            }
-            EntityManager.AddComponent<Updated>(truck);
-            m_Rest.Remove(truck);
+        /// <summary>
+        /// Records that the truck was found wedged but standing on a road, and re-arms the movement
+        /// timer so the next check is another kTowStuckFrames away (that throttle is the only thing
+        /// keeping this off the per-tick path).
+        ///
+        /// Returns true once it has been counted kTowWedgeStrikes times, i.e. it has stood still for
+        /// minutes with a road under its wheels: at that point it is not queueing either and the
+        /// caller should let it go, rather than leave a loaded truck as a permanent monument that
+        /// also blocks every cleanup net behind it.
+        /// </summary>
+        public bool NoteOnRoadStrike(Entity truck, uint frame, Setting setting)
+        {
+            m_Rest.TryGetValue(truck, out TruckRest rest);
+            rest.m_Since = frame;
+            rest.m_Strikes++;
+            m_Rest[truck] = rest;
+            bool giveUp = rest.m_Strikes >= kTowWedgeStrikes;
             if (setting.VerboseLogging)
             {
-                Mod.Log.Info($"[towstuck] truck={truck.Index} was wedged at ({pos.x:F0},{pos.z:F0}) - " +
-                    $"put back on the road at ({target.x:F0},{target.z:F0}), {bestDist:F0}m away");
+                Mod.Log.Info($"[towstuck] truck={truck.Index} motionless on a road (strike " +
+                    $"{rest.m_Strikes}/{kTowWedgeStrikes}) - " + (giveUp ? "giving up on it" : "left alone, it is queueing"));
             }
-            return true;
+            return giveUp;
         }
     }
 }
