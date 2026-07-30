@@ -124,14 +124,27 @@ namespace ClearTheWay
             {
                 return 0f;
             }
-            // Same mapping ChannelShoulderBonus uses: physical-left is the LOWER sublane index
-            // exactly when the lane is not inverted, and lane-position is signed in travel terms
-            // (+ = right of travel), so both flip together under Invert.
+            // The SubLane buffer belongs to the EDGE, so its index order is fixed in the edge
+            // frame - physical-left is the lower index, full stop. It cannot flip per lane: one
+            // buffer holds both carriageways, and the loop below filters them by Invert, so a
+            // per-lane order would have to be two orders at once.
+            //
+            // pushDirection is signed in TRAVEL terms (+ = right of travel), which differs from
+            // the edge frame exactly when the lane runs against the edge. That conversion is the
+            // line below, and it happens ONCE. (It used to be applied a second time via a
+            // leftIsLower = !laneInverted term lifted from ChannelShoulderBonus - where the
+            // argument is still travel-signed, so the term belongs there. Here the value is
+            // already physical, and the two Invert factors cancelled: the walk then ran to the
+            // opposite physical side on every inverted lane, reporting a tram bed or parking
+            // strip that is on the OTHER side of the road. SurfaceMeters below converts
+            // correctly, so Measure returned max() of two opposite sides and handed out up to
+            // kCrossableRoomCap of room that is not there - field log 2026-07-30: a pushed car
+            // at lanePos 6.22, roughly twelve times the offset that already puts it on the
+            // pavement.)
             bool laneInverted =
                 (EntityManager.GetComponentData<Game.Net.CarLane>(lane).m_Flags & Game.Net.CarLaneFlags.Invert) != 0;
             bool physicalLeftSide = (pushDirection < 0f) != laneInverted;
-            bool leftIsLower = !laneInverted;
-            int step = (physicalLeftSide == leftIsLower) ? -1 : 1;
+            int step = physicalLeftSide ? -1 : 1;
 
             float room = 0f;
             bool footwayAhead = false;

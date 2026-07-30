@@ -44,7 +44,23 @@ Release version: https://mods.paradoxplaza.com/mods/151583/Windows
 	<RequiredDLC Value="" />
 	<!--Change log for new version. Single line or multi line. Supports minimal markdown subset-->
 	<ChangeLog>
-Development snapshot - see the session notes for what changed. Not a release.
+First dev snapshot. Everything below is newer than the public release - that is the point of this page.
+
+**Worth knowing before you start**
+- Cars are allowed onto flat medians, grass strips and empty tram beds to clear the way. That is deliberate and switchable ("Cross medians"), not a bug.
+- Never run this alongside the public release.
+
+**Towing**
+- Wrecks get hauled away and delivered instead of the truck giving up halfway.
+- A recovery truck that is merely queueing in traffic is no longer "rescued" every 15 seconds. It used to be teleported back onto the lane it was already standing on, forever - 904 no-op recoveries in one 100-minute session - and doing so rewrote lane fields behind the game's back, which can take the whole simulation down.
+- A truck that is genuinely off the network, or has not moved for ~5 minutes, is removed and its wreck goes back into the queue. Losing one truck beats an unstable save.
+
+**Emergency corridor**
+- A responder squeezing past two cars abreast could stall completely: the game only ever ignores ONE blocker, and with two stopped cars the blocker flipped every tick so neither was ignored. It now noses out of that state on its own.
+- Cars are pulled aside by an amount that matches the room actually beside THEIR side of the road. On carriageways running against the road direction the mod measured the far side and handed out up to 4 m of space that was not there, which is what threw cars across parking bays and onto kerbs.
+
+**What to report**
+Log with "Verbose logging" enabled, plus roughly where it happened. Responders that stand still, cars ending up somewhere they physically should not be, and anything that stutters are all interesting.
 </ChangeLog>
 	<!--External link, can be set multiple times. supported types are "discord", "github", "youtube", "twitch", "x", "paypal", "patreon", "buymeacoffee", "kofi", "crowdin", "gitlab", "gofundme"-->
 	<ExternalLink Type="" Url="" />

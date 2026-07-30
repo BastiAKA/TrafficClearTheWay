@@ -400,7 +400,7 @@ namespace ClearTheWay.FunctionGroup.WayClearance
         /// lane's own width as the available room (capped). Returns 0 when there is no shoulder
         /// there, so a car is never nudged off a road that has none.
         /// </summary>
-        public float ChannelShoulderBonus(DynamicBuffer<Game.Net.SubLane> subLanes, Entity outerCarLane, bool laneInverted, bool physicalLeftSide)
+        public float ChannelShoulderBonus(DynamicBuffer<Game.Net.SubLane> subLanes, Entity outerCarLane, bool laneInverted, bool travelLeftSide)
         {
             int outerIdx = -1;
             for (int i = 0; i < subLanes.Length; i++)
@@ -411,11 +411,13 @@ namespace ClearTheWay.FunctionGroup.WayClearance
             {
                 return 0f;
             }
-            // Physical-left is the lower sublane index iff the lane is not inverted. So stepping
-            // physically OUTWARD to the left means decreasing index (or increasing when inverted);
-            // outward to the right is the opposite.
+            // travelLeftSide is signed in TRAVEL terms; sublane indices run in the EDGE frame with
+            // physical-left at the lower index. Converting between the two is the !laneInverted
+            // term here, and it must appear exactly ONCE. Do NOT copy these two lines to a caller
+            // that has already converted its side to physical - LateralRoom.Measure did, the two
+            // Invert factors cancelled, and the walk ran to the wrong side of every inverted lane.
             bool leftIsLower = !laneInverted;
-            int step = (physicalLeftSide == leftIsLower) ? -1 : 1;
+            int step = (travelLeftSide == leftIsLower) ? -1 : 1;
             for (int i = outerIdx + step; i >= 0 && i < subLanes.Length; i += step)
             {
                 Entity sl = subLanes[i].m_SubLane;
