@@ -99,7 +99,7 @@ A game restart is required to reload a rebuilt DLL.
 
 ## Testing in game
 
-Start the game with `-developerMode` to get the debug overlay (Ctrl+Backspace), pick a moving
+Start the game with `-developerMode` to get the debug overlay (Tab), pick a moving
 car and start a traffic-accident event on it. Enable *Verbose logging* to get diagnostics in
 `Logs/ClearTheWay.log`.
 
