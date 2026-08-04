@@ -98,7 +98,7 @@ This release is about wrecks that actually get cleared, a corridor that stops ch
 - The room beside a lane is measured on the side the car is actually being pushed towards. On carriageways running against the road direction the mod measured the far side and handed out up to 4 m of clearance that was not there - which is what threw cars across parking bays and onto kerbs.
 </ChangeLog>
 	<!--External link, can be set multiple times. supported types are "discord", "github", "youtube", "twitch", "x", "paypal", "patreon", "buymeacoffee", "kofi", "crowdin", "gitlab", "gofundme"-->
-	<ExternalLink Type="" Url="" />
+	<ExternalLink Type="github" Url="https://github.com/BastiAKA/TrafficClearTheWay" />
 	<!--Supported values Public, Private, Unlisted-->
 	<AccessLevel Value="Public" />
 </Publish>
