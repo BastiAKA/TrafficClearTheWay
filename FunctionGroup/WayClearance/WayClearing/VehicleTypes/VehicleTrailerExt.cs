@@ -100,7 +100,8 @@ namespace ClearTheWay.FunctionGroup.WayClearance.WayClearing.VehicleTypes
                 bool rigChanged = false;
                 // Ease the whole body toward the corridor side - pure lateral drift, no
                 // heading change, so the trailer tracks in line and never swings.
-                float rigUnits = math.min(kArticEdgeMeters / m_Ctx.PrefabGeometry.LateralSlack(rig, corridorLaneWidth), kArticMaxPushUnits);
+                float rigMeters = math.min(kArticEdgeMeters, m_Ctx.PrefabGeometry.MaxLateralMeters(rig, articulated: true));
+                float rigUnits = rigMeters / m_Ctx.PrefabGeometry.LateralSlack(rig, corridorLaneWidth);
                 float rigTarget = corridorLane.m_PushDirection * rigUnits;
                 float rigNewPos = math.lerp(rigLane.m_LanePosition, rigTarget, kPullRate * kArticRateScale);
                 if (math.abs(rigNewPos - rigLane.m_LanePosition) > 0.0005f)

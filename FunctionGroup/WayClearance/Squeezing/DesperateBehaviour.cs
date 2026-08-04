@@ -65,17 +65,22 @@ namespace ClearTheWay.FunctionGroup.WayClearance.Squeezing
         /// Returns: 0 = not using the oncoming lane, 1 = straddling the center line
         /// (merging / waiting for a gap), 2 = fully on the oncoming carriageway.
         /// </summary>
-        public int TryOncomingDisplacement(Entity vehicle, ref CarCurrentLane currentLane, float side, bool desperate, uint frame, out float oncomingClearAhead)
+        public int TryOncomingDisplacement(Entity vehicle, ref CarCurrentLane currentLane, float side, bool desperate, uint frame,
+            out float oncomingClearAhead, out OncomingReason reason, out float nearestOffset)
         {
             using (ModProfiler.Sample(kProfile, "DesperateBehaviour"))
             {
-                return TryOncomingDisplacementImpl(vehicle, ref currentLane, side, desperate, frame, out oncomingClearAhead);
+                return TryOncomingDisplacementImpl(vehicle, ref currentLane, side, desperate, frame,
+                    out oncomingClearAhead, out reason, out nearestOffset);
             }
         }
 
-        private int TryOncomingDisplacementImpl(Entity vehicle, ref CarCurrentLane currentLane, float side, bool desperate, uint frame, out float oncomingClearAhead)
+        private int TryOncomingDisplacementImpl(Entity vehicle, ref CarCurrentLane currentLane, float side, bool desperate, uint frame,
+            out float oncomingClearAhead, out OncomingReason reason, out float nearestOffset)
         {
             oncomingClearAhead = 0f;
+            reason = OncomingReason.NoLane;
+            nearestOffset = -1f;
             Entity lane = currentLane.m_Lane;
             if (!EntityManager.HasComponent<Curve>(lane) ||
                 !EntityManager.HasComponent<Game.Net.CarLane>(lane) ||
@@ -153,6 +158,14 @@ namespace ClearTheWay.FunctionGroup.WayClearance.Squeezing
                 float s = useForward ? t : 1f - t;
                 float3 candidatePos = useForward ? posForward : posReverse;
                 float offset = math.dot(candidatePos.xz - myPos.xz, corridorDir);
+                // Report the nearest oncoming lane REGARDLESS of the window, so a rejection can be
+                // read: a value just over kOncomingMaxOffset means the window is what stopped us
+                // (typically the responder is a lane or two in from the centre line, or there is a
+                // median), while -1 means the road genuinely has no oncoming side here.
+                if (offset >= kOncomingMinOffset && (nearestOffset < 0f || offset < nearestOffset))
+                {
+                    nearestOffset = offset;
+                }
                 if (offset < kOncomingMinOffset || offset > kOncomingMaxOffset)
                 {
                     continue;
@@ -167,6 +180,7 @@ namespace ClearTheWay.FunctionGroup.WayClearance.Squeezing
             }
             if (bestLane == Entity.Null)
             {
+                reason = OncomingReason.NoLane;
                 return 0;
             }
 
@@ -277,10 +291,29 @@ namespace ClearTheWay.FunctionGroup.WayClearance.Squeezing
             }
             else
             {
-                if (nearestAhead < kOncomingCommitSight || frame < oncomingStuck.m_OncBlockUntil)
+                // A DESPERATE responder commits on a much smaller gap. This is the rule
+                // kDesperateFrames has described from the start - "stuck this long => cross over
+                // even against oncoming traffic" - and it was never implemented: the flag was
+                // passed into this method and the body ignored it, so a responder standing for a
+                // minute needed the same 75 m of clear road as one that had just started evading.
+                // In city traffic that gap does not come, which is why the crossover essentially
+                // never happened (veh 2350571: onc=0 in every log line, on a SINGLE-LANE road
+                // where the oncoming side is the only way past a stopped truck at all).
+                // Still well above kOncomingHardMergeSight, so it cannot commit into a car it
+                // would have to merge away from on the next tick.
+                float commitSight = desperate ? kOncomingDesperateCommitSight : kOncomingCommitSight;
+                if (frame < oncomingStuck.m_OncBlockUntil)
                 {
                     m_StuckStates[vehicle] = oncomingStuck;
-                    return 0; // no room to commit (or a stalled pass just merged back); wait in-lane
+                    reason = OncomingReason.Blocked;
+                    return 0; // a stalled pass merged back here recently - let the normal machinery try
+                }
+                if (nearestAhead < commitSight)
+                {
+                    m_StuckStates[vehicle] = oncomingStuck;
+                    reason = OncomingReason.Gap;
+                    oncomingClearAhead = nearestAhead;
+                    return 0; // no room to commit; wait in-lane
                 }
                 oncomingStuck.m_OncomingActiveUntil = frame + kOncomingStickyFrames;
                 mergeBack = false;
@@ -322,6 +355,7 @@ namespace ClearTheWay.FunctionGroup.WayClearance.Squeezing
             // Report how clear the oncoming lane is ahead so the caller can grant pass speed
             // only on a genuinely free lane and crawl up to a close (held) car otherwise.
             oncomingClearAhead = nearestAhead;
+            reason = OncomingReason.Active;
             return mergeBack ? 1 : 2;
         }
     }

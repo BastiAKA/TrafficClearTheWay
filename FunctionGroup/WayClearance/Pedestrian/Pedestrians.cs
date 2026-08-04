@@ -40,7 +40,30 @@ namespace ClearTheWay
     {
         private const float kStopRange = 40f;     // an emergency vehicle this close makes them wait
         private const float kBehindRange = -8f;   // ... unless it has already passed them
-        private const uint kSearchInterval = 4u;  // run the expensive lane search only every N ticks; re-apply the hold to the (small) held set cheaply in between
+        // Search cadence. Was 4, which measured at ~10% of the whole sim tick in Sebastian's
+        // city (2026-08-04 A/B: same session, same save, StopPedestrians toggled mid-run -
+        // 53.0 -> 47.6 at 45-49 responders, 51.3 -> 46.4 at 55-59). The cost is directly
+        // proportional to this number and almost nothing is lost by raising it: the hold is
+        // re-asserted on EVERY tick from the cached set (see below), so only the DETECTION of
+        // a newly approaching pedestrian is delayed - ~0.2 s at 47 ticks/s, about 30 cm of
+        // walking.
+        private const uint kSearchInterval = 10u;
+        // Lateral / vertical half-extent of the search box. The old box was a cube of
+        // +-kStopRange, i.e. 40 m up, down, sideways AND backwards, even though everything
+        // behind kBehindRange is thrown away again by the dot test in TryHoldPedestrian and
+        // nothing above or below street level can ever be a pedestrian about to cross in front
+        // of this responder. On a map with tunnels or elevated roads that vertical reach pulled
+        // whole extra lane layers into the result set.
+        // Sebastian's call after watching it in-game (2026-08-04): 20 m, not 40. What this pass
+        // has to get right is the crossing DIRECTLY in front of the responder; a pedestrian 30 m
+        // abeam is on another street and holding it never helped. Note the box follows the
+        // vehicle's HEADING (math.forward), not its route - the route-bound one is the corridor
+        // in CorridorBuilder. So a responder turning into a junction sweeps its box around as the
+        // nose comes round, and picks up the exit leg's crossing a little later than a box
+        // centred on the vehicle would have. Accepted deliberately: pedestrians are erratic
+        // anyway, and no downside was visible in play.
+        private const float kSideRange = 20f;
+        private const float kHeightRange = 8f;
 
         private SimulationSystem m_SimulationSystem;
         private Game.Net.SearchSystem m_NetSearchSystem;
@@ -63,6 +86,13 @@ namespace ClearTheWay
             m_SimulationSystem = World.GetOrCreateSystemManaged<SimulationSystem>();
             m_NetSearchSystem = World.GetOrCreateSystemManaged<Game.Net.SearchSystem>();
 
+            // The Any filter is what keeps this affordable. Without it the query matches EVERY
+            // moving car in the city: IsEmptyIgnoreFilter below then never trips, and each
+            // search tick pulled the whole fleet through ToEntityArray plus two component
+            // lookups per car (the CarFlags.Emergency test and IsTrailer) just to find the two
+            // or three vehicles actually running a siren. Sirens only ever sit on these three
+            // vehicle types - same reasoning as WayClearanceQueries.Emergency, which is why the
+            // archetype filter belongs here and not only in the loop.
             m_EmergencyQuery = GetEntityQuery(new EntityQueryDesc
             {
                 All = new[]
@@ -70,6 +100,12 @@ namespace ClearTheWay
                     ComponentType.ReadOnly<Car>(),
                     ComponentType.ReadOnly<Transform>(),
                     ComponentType.ReadOnly<Moving>()
+                },
+                Any = new[]
+                {
+                    ComponentType.ReadOnly<Game.Vehicles.PoliceCar>(),
+                    ComponentType.ReadOnly<Game.Vehicles.Ambulance>(),
+                    ComponentType.ReadOnly<Game.Vehicles.FireEngine>()
                 },
                 None = new[]
                 {
@@ -80,7 +116,23 @@ namespace ClearTheWay
             });
         }
 
+        // Main-thread profiling switch for this pass - see ModProfiler for how to use it.
+        // This class had no switch at all, which is why its cost had to be established the hard
+        // way (toggling StopPedestrians mid-session and comparing halves) instead of simply
+        // being read off a [perf] line. It measured at ~10% of the tick, so it is exactly the
+        // pass that needed one.
+        private static readonly bool kProfile = false;
+
         protected override void OnUpdate()
+        {
+            using (ModProfiler.Sample(kProfile, "Pedestrians"))
+            {
+                RunPass();
+            }
+            ModProfiler.EndTick(kProfile, "Pedestrians");
+        }
+
+        private void RunPass()
         {
             Setting setting = Mod.Setting;
             if (setting == null || !setting.Enabled || !setting.StopPedestrians ||
@@ -152,10 +204,21 @@ namespace ClearTheWay
                     Transform vehicleTransform = EntityManager.GetComponentData<Transform>(vehicle);
                     float3 forward = math.forward(vehicleTransform.m_Rotation);
                     foundLanes.Clear();
+                    // Forward-biased box instead of a cube around the vehicle. The region that
+                    // can actually produce a hold runs from kBehindRange (8 m behind) to
+                    // kStopRange (40 m ahead) ALONG THE HEADING - a cube around the vehicle
+                    // spends more than half its volume on ground that TryHoldPedestrian rejects
+                    // on its first test. Bounds3 is axis-aligned and the heading is not, so the
+                    // box is the AABB enclosing both ends of that stretch, padded sideways and
+                    // vertically. AreaIterator does test Y (MathUtils.Intersect on the full
+                    // Bounds3), so the height bound bites too.
+                    float3 nearEnd = vehicleTransform.m_Position + forward * kBehindRange;
+                    float3 farEnd = vehicleTransform.m_Position + forward * kStopRange;
+                    float3 pad = new float3(kSideRange, kHeightRange, kSideRange);
                     AreaIterator iterator = new AreaIterator
                     {
-                        m_Bounds = new Bounds3(vehicleTransform.m_Position - kStopRange,
-                                               vehicleTransform.m_Position + kStopRange),
+                        m_Bounds = new Bounds3(math.min(nearEnd, farEnd) - pad,
+                                               math.max(nearEnd, farEnd) + pad),
                         m_Results = foundLanes
                     };
                     laneTree.Iterate(ref iterator);
@@ -217,10 +280,25 @@ namespace ClearTheWay
         /// of the responder. Returns true when it was held this tick.</summary>
         private bool TryHoldPedestrian(Entity pedestrian, float3 vehiclePos, float3 vehicleForward)
         {
+            // BEHIND-TEST FIRST. It used to sit ninth, after six HasComponent calls plus the
+            // CurrentVehicle and Human-flag lookups - and it is the test that rejects the most,
+            // because the search box necessarily reaches past the responder. It needs nothing
+            // but Transform, so everything the responder has already driven past now costs one
+            // lookup instead of nine. Order only, no behavioural change: every occupant that
+            // survived to here before still survives to here now.
+            if (!EntityManager.HasComponent<Transform>(pedestrian))
+            {
+                return false;
+            }
+            Transform transform = EntityManager.GetComponentData<Transform>(pedestrian);
+            if (math.dot(transform.m_Position - vehiclePos, vehicleForward) < kBehindRange)
+            {
+                return false;
+            }
+
             if (!EntityManager.HasComponent<Human>(pedestrian) ||
                 !EntityManager.HasComponent<HumanNavigation>(pedestrian) ||
                 !EntityManager.HasComponent<HumanCurrentLane>(pedestrian) ||
-                !EntityManager.HasComponent<Transform>(pedestrian) ||
                 !EntityManager.HasComponent<PathOwner>(pedestrian) ||
                 !EntityManager.HasBuffer<PathElement>(pedestrian))
             {
@@ -233,13 +311,6 @@ namespace ClearTheWay
                 return false;
             }
             if ((EntityManager.GetComponentData<Human>(pedestrian).m_Flags & HumanFlags.Emergency) != 0)
-            {
-                return false;
-            }
-
-            Transform transform = EntityManager.GetComponentData<Transform>(pedestrian);
-            // Behind the responder already? Then it may walk.
-            if (math.dot(transform.m_Position - vehiclePos, vehicleForward) < kBehindRange)
             {
                 return false;
             }

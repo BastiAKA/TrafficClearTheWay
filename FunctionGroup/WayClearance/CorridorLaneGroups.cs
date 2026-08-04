@@ -55,6 +55,28 @@ namespace ClearTheWay
             }
             DynamicBuffer<Game.Net.SubLane> subLanes = EntityManager.GetBuffer<Game.Net.SubLane>(owner.m_Owner, isReadOnly: true);
             int max = math.min(master.m_MaxIndex, subLanes.Length - 1);
+
+            // ONLY THE MASTER LANE'S OWN DIRECTION. The SubLane buffer belongs to the edge and
+            // holds BOTH carriageways, and a push direction is signed in the pushed car's OWN
+            // travel frame - so handing an opposite-direction lane the responder's `side` sends
+            // its traffic to the physically opposite side: towards the centre line, straight into
+            // the path we are trying to clear. That is what Sebastian photographed, the oncoming
+            // column pulling INTO the corridor instead of away from it.
+            //
+            // Every other pass that puts lanes into the corridor already guards this and says so:
+            // AddCounterEvadeNeighbor ("never shove the rig onto the oncoming carriageway"),
+            // ComputeChannelPlan and the roundabout ring sweep all filter on Invert. This one was
+            // the single unguarded path.
+            //
+            // The reference is the MASTER lane's own flag - master lane and sub-lanes share the
+            // owner, so their Invert flags are comparable (they would NOT be across two edges).
+            // Where the master carries no CarLane we fall back to the first usable sub-lane, which
+            // is what the old code did implicitly; the filter below then still keeps the group
+            // internally consistent instead of mixing two carriageways.
+            bool haveReference = EntityManager.HasComponent<Game.Net.CarLane>(masterLane);
+            bool groupInverted = haveReference &&
+                (EntityManager.GetComponentData<Game.Net.CarLane>(masterLane).m_Flags & Game.Net.CarLaneFlags.Invert) != 0;
+
             // German-style corridor on an undecided lane group: the corridor-side edge
             // lane (leftmost in right-hand traffic) evades outward, all others the other
             // way, opening the gap between the first and second lane.
@@ -69,6 +91,16 @@ namespace ClearTheWay
                 {
                     continue;
                 }
+                bool subInverted = (EntityManager.GetComponentData<Game.Net.CarLane>(subLane).m_Flags & Game.Net.CarLaneFlags.Invert) != 0;
+                if (!haveReference)
+                {
+                    groupInverted = subInverted; // first usable lane defines the group
+                    haveReference = true;
+                }
+                else if (subInverted != groupInverted)
+                {
+                    continue; // other carriageway - not ours to part
+                }
                 if (lowestValid < 0)
                 {
                     lowestValid = i;
@@ -79,8 +111,7 @@ namespace ClearTheWay
             {
                 return;
             }
-            bool laneInverted2 = (EntityManager.GetComponentData<Game.Net.CarLane>(subLanes[lowestValid].m_SubLane).m_Flags & Game.Net.CarLaneFlags.Invert) != 0;
-            int edgeIndex = ((side > 0f) != laneInverted2) ? lowestValid : highestValid;
+            int edgeIndex = ((side > 0f) != groupInverted) ? lowestValid : highestValid;
             for (int i = lowestValid; i <= highestValid; i++)
             {
                 Entity subLane = subLanes[i].m_SubLane;
@@ -89,6 +120,10 @@ namespace ClearTheWay
                     EntityManager.HasComponent<MasterLane>(subLane))
                 {
                     continue;
+                }
+                if (((EntityManager.GetComponentData<Game.Net.CarLane>(subLane).m_Flags & Game.Net.CarLaneFlags.Invert) != 0) != groupInverted)
+                {
+                    continue; // same filter as the pass above - both loops must agree
                 }
                 float pushDirection = (i == edgeIndex) ? -side : side;
                 m_Ctx.Corridor.AddCorridorLane(subLane, minPos, pushDirection, inverted, startOffset, onPath: true);

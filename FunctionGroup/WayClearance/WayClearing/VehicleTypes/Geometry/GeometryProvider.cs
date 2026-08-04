@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using Game.Prefabs;
 using Unity.Entities;
 using Unity.Mathematics;
+using static ClearTheWay.Tuning;
 
 namespace ClearTheWay.FunctionGroup.WayClearance.WayClearing.VehicleTypes.Geometry
 {
@@ -66,6 +67,27 @@ namespace ClearTheWay.FunctionGroup.WayClearance.WayClearing.VehicleTypes.Geomet
             }
             m_Geometries[prefab] = geometry;
             return geometry;
+        }
+
+        /// <summary>
+        /// The furthest this vehicle may be displaced sideways, in METRES - derived from its own
+        /// body instead of a flat constant, and cached per prefab like every other measurement here.
+        ///
+        /// Sebastian's call, after the same mistake bit three times in one day: a limit expressed in
+        /// lane-position UNITS (kMaxPushUnits, kArticMaxPushUnits, the old long-vehicle floor) is a
+        /// limit on metres/slack, and slack is floored at 0.5 m - so it clamps hardest on exactly the
+        /// WIDE vehicles that need to move furthest, and silently swallows any increase to the stage
+        /// distances. In metres the intent survives, and it scales the right way: a longer body has to
+        /// travel further sideways before its rear is out of the corridor.
+        ///
+        /// Articulated rigs get a tighter allowance - a trailer has no lateral lever of its own and
+        /// swings out when the tractor is dragged across, which narrows the gap instead of opening it.
+        /// </summary>
+        public float MaxLateralMeters(Entity vehicle, bool articulated = false)
+        {
+            float byLength = GetGeometry(vehicle).length * kLateralPerLength;
+            float capped = math.clamp(byLength, kLateralMinMeters, kLateralMaxMeters);
+            return articulated ? capped * kArticLateralScale : capped;
         }
 
         /// <summary>Across the vehicle (m).</summary>

@@ -34,7 +34,7 @@ namespace ClearTheWay
 
         // --- Gates decided before any action is taken ---
         public bool m_NearArrivalTarget;  // at the dispatch site: most machinery is suppressed so it can stop
-        public bool m_HardEvade;          // stuck long enough that cars ahead clear onto the pavement
+        public EvadeStage m_Evade;        // how hard the traffic ahead is being asked to clear - Soft corridor / Hard (onto the kerb) / Deep (fully onto the pavement). See EvadeStage.
         public bool m_Desperate;          // stuck ~10 s: unlocks crossing to the oncoming side
         public bool m_BehindColleague;    // another responder right ahead - queue behind it, do not fan out
         public bool m_CanManeuver;        // lane state permits lateral maneuvers at all
@@ -44,6 +44,8 @@ namespace ClearTheWay
         public float m_OncomingClearAhead; // how far the oncoming lane is clear
         public bool m_FullCrossover;       // == m_OncomingState 2
         public bool m_Merging;             // == m_OncomingState 1
+        public OncomingReason m_OncReason; // why it is (not) out there - see OncomingReason
+        public float m_OncNearestOffset;   // nearest opposite-direction lane found, in metres (-1 = none at all), regardless of the offset window - tells a window problem apart from a road that simply has no oncoming side
 
         // --- Escalations for a responder that is going nowhere ---
         public bool m_DrainAhead;      // let the queue ahead drive off rather than freezing it
@@ -66,5 +68,6 @@ namespace ClearTheWay
         // --- Results of the steering and speed stages ---
         public bool m_LateralSteered;    // some stage wrote m_LanePosition, so do not drift back to centre
         public bool m_Squeezing;         // IgnoreBlocker is set
+        public bool m_NoseCreep;         // got the creep budget + lateral target to turn its offset into real distance
     }
 }

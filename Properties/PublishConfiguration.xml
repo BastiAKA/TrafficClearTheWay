@@ -68,7 +68,7 @@ tags: emergency, rettungsgasse, move over, ambulance, police, fire truck, accide
 	<!--Link to the forum post where the mod can be discussed-->
 	<ForumLink Value="" />
 	<!--Version of the mod-->
-	<ModVersion Value="0.1.11" />
+	<ModVersion Value="0.1.12" />
 	<!--Recommended version of the base game to use the mod-->
 	<GameVersion Value="1.6.*" />
 	<!--Dependency for the mod, can be set multiple times-->
@@ -77,19 +77,28 @@ tags: emergency, rettungsgasse, move over, ambulance, police, fire truck, accide
 	<RequiredDLC Value="" />
 	<!--Change log for new version. Single line or multi line. Supports minimal markdown subset-->
 	<ChangeLog>
-This release is about multi-lane roads - and about responders that used to simply stand still.
+This release is about wrecks that actually get cleared, a corridor that stops changing its mind - and a simulation that runs measurably faster.
 
-**No more standing still for minutes**
-- A responder could come to a full stop in traffic and stay there for minutes, sometimes half out on the oncoming side, waiting for the road to clear on its own. Its corridor logic ran twice per simulation step and the two runs pulled it in opposite directions. It now decides once and keeps moving - and the mod does half the work it used to in heavy traffic.
+**Faster**
+- The mod costs noticeably less per simulation step. Measured on the same city at the same load: **+14% simulation speed** over the previous release, and the busier it gets the more it helps - with 50+ emergency vehicles running at once it was +19%. Over a 3.5-hour session the tick rate in the last twenty minutes was the same as in the first, so it holds up.
+- Almost all of it came from one place: the pass that holds pedestrians at the kerb. It was searching a cube of 40 m in every direction around every siren - including 40 m backwards, and 40 m up and down, which on a map with tunnels or elevated roads dragged whole extra layers of footpath into the search and then threw them away again. It now looks only along the stretch the responder is actually driving.
 
-**Takes a free lane instead of prying open the middle**
-- On wide roads the corridor opened its gap in the MIDDLE of the carriageway even when an outer lane was completely empty, so the responder threaded the packed middle instead of simply moving over. If a lane ahead is free it heads there now - one lane per move, so a free lane two over is reached as well.
+**A stability fix worth naming**
+- A recovery truck that was merely queueing in traffic used to be "rescued" every 15 seconds - teleported back onto the lane it was already standing on, forever. One 100-minute session logged 904 of these, none of which did anything. Worse, doing it rewrote lane bookkeeping behind the game's back, which can take the whole simulation down. That is gone.
 
-**Vans, garbage trucks and buses clear properly**
-- Long vehicles now pull aside by an amount that matches their length, instead of the same distance a car gets. At a car's offset a garbage truck still had half its body lying across the corridor.
+**Wrecks get cleared**
+- Wrecks are hauled away and delivered instead of the truck giving up halfway.
+- A truck that is genuinely off the road network, or has not moved for about five minutes, is now removed and its wreck goes back into the queue for another one. Losing a single truck is much cheaper than an unstable save.
+
+**The corridor commits**
+- The responder picks ONE shape - the classic single gap, a central channel on wide roads, or heading for a free lane - and sticks with it. Previously three separate tests ran every step and disagreed with each other, so a responder standing in one spot kept changing its mind about which way to go and therefore never went anywhere.
+- A responder squeezing between two cars side by side could stall completely: the game only ever ignores ONE obstacle, and with two stopped cars it flipped between them every step so neither was ignored. It noses its way out of that now.
+
+**Cars pulled aside onto space that exists**
+- The room beside a lane is measured on the side the car is actually being pushed towards. On carriageways running against the road direction the mod measured the far side and handed out up to 4 m of clearance that was not there - which is what threw cars across parking bays and onto kerbs.
 </ChangeLog>
 	<!--External link, can be set multiple times. supported types are "discord", "github", "youtube", "twitch", "x", "paypal", "patreon", "buymeacoffee", "kofi", "crowdin", "gitlab", "gofundme"-->
-	<ExternalLink Type="" Url="" />
+	<ExternalLink Type="github" Url="https://github.com/BastiAKA/TrafficClearTheWay" />
 	<!--Supported values Public, Private, Unlisted-->
 	<AccessLevel Value="Public" />
 </Publish>

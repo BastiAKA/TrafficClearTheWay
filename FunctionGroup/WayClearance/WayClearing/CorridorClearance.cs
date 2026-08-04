@@ -48,7 +48,7 @@ namespace ClearTheWay
                 // lights are requested along the whole path in every state.
                 if (!s.m_FullCrossover)
                 {
-                    s.m_Pushed += m_Ctx.Push.PullCarsAside(vehicle, corridorLane, frame, s.m_HardEvade, allowHold: !s.m_Merging, drainAhead: s.m_DrainAhead, shakeStuck: s.m_Desperate);
+                    s.m_Pushed += m_Ctx.Push.PullCarsAside(vehicle, corridorLane, frame, s.m_Evade >= EvadeStage.Hard, allowHold: !s.m_Merging, drainAhead: s.m_DrainAhead, shakeStuck: s.m_Desperate, evadeMeters: s.m_Evade == EvadeStage.Deep ? kDeepEvadeMeters : kEvadeMeters);
                 }
 
                 // Turn the traffic lights along the corridor green (see GreenLightChain). The
@@ -68,6 +68,19 @@ namespace ClearTheWay
                 {
                     m_Ctx.Hold.PushQueueForward(vehicle, corridorLane);
                 }
+            }
+
+            // A corridor that is actually MOVING traffic keeps the shape it was built with: while
+            // cars are being pushed for it the decision is not re-opened at all (see
+            // ChannelPlanner.ChooseShape). That is what makes a formed Rettungsgasse behave
+            // consistently - re-planning underneath it hands the same cars opposite push
+            // directions from one tick to the next and tears up the gap the queue just made.
+            // A desperate responder is the deliberate exception: there the corridor has
+            // demonstrably failed and every escape - free lane, channel, oncoming - must stay
+            // reachable, so the commitment is allowed to lapse.
+            if (s.m_Pushed > 0 && !s.m_Desperate)
+            {
+                m_Ctx.Channel.RefreshShapeCommitment(vehicle, ref s.m_PreviousStuck, frame);
             }
 
             // While zipping past on the oncoming lane the vehicle is logically still behind

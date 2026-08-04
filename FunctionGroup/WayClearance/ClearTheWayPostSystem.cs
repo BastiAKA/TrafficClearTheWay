@@ -27,13 +27,23 @@ namespace ClearTheWay
 
         private ClearTheWaySystem m_MainSystem;
         private TowHookupSystem m_HookupSystem;
+        private SimulationSystem m_SimulationSystem;
         private EntityQuery m_ServiceQuery;
+
+        /// <summary>Vehicles the last duty scan found to be on recovery duty. The flag itself is
+        /// re-asserted from this set EVERY tick (the AI clears it), but deciding who belongs in it
+        /// is the expensive part and runs only every kBeaconScanInterval ticks - the same
+        /// scan-rarely / re-apply-always split the pedestrian hold uses.</summary>
+        private readonly HashSet<Entity> m_OnRecoveryDuty = new HashSet<Entity>();
+        private readonly List<Entity> m_DutyScratch = new List<Entity>();
+        private const uint kBeaconScanInterval = 4u;
 
         protected override void OnCreate()
         {
             base.OnCreate();
             m_MainSystem = World.GetOrCreateSystemManaged<ClearTheWaySystem>();
             m_HookupSystem = World.GetOrCreateSystemManaged<TowHookupSystem>();
+            m_SimulationSystem = World.GetOrCreateSystemManaged<SimulationSystem>();
             // Maintenance vehicles on the road, for the amber-beacon pass.
             m_ServiceQuery = GetEntityQuery(new EntityQueryDesc
             {
@@ -64,14 +74,60 @@ namespace ClearTheWay
         {
             if (m_ServiceQuery.IsEmptyIgnoreFilter)
             {
+                m_OnRecoveryDuty.Clear();
                 return;
             }
+            // Off-tick: the duty verdict is stable for a few ticks, so only re-assert the flag on
+            // the (small) set already known to be on duty. Scanning EVERY maintenance vehicle in
+            // the city - a Target lookup plus up to four component tests each - every single tick
+            // was pure repetition: whether a truck is hauling a wreck does not change at 58 Hz.
+            if (m_SimulationSystem.frameIndex % kBeaconScanInterval != 0u)
+            {
+                if (m_OnRecoveryDuty.Count == 0)
+                {
+                    return;
+                }
+                m_DutyScratch.Clear();
+                m_DutyScratch.AddRange(m_OnRecoveryDuty);
+                for (int i = 0; i < m_DutyScratch.Count; i++)
+                {
+                    Entity vehicle = m_DutyScratch[i];
+                    // Gone or parked: drop it and take the beacon back off. Nothing else ever
+                    // clears the flag, so a truck that parked between scans must not keep
+                    // flashing on the depot apron until the next one.
+                    if (!EntityManager.Exists(vehicle) || !EntityManager.HasComponent<Car>(vehicle) ||
+                        EntityManager.HasComponent<Game.Vehicles.ParkedCar>(vehicle))
+                    {
+                        m_OnRecoveryDuty.Remove(vehicle);
+                        ClearBeacon(vehicle);
+                        continue;
+                    }
+                    Car onDutyCar = EntityManager.GetComponentData<Car>(vehicle);
+                    if ((onDutyCar.m_Flags & CarFlags.Warning) == 0)
+                    {
+                        onDutyCar.m_Flags |= CarFlags.Warning;
+                        EntityManager.SetComponentData(vehicle, onDutyCar);
+                    }
+                }
+                return;
+            }
+
+            m_OnRecoveryDuty.Clear();
             NativeArray<Entity> vehicles = m_ServiceQuery.ToEntityArray(Allocator.Temp);
             try
             {
                 for (int i = 0; i < vehicles.Length; i++)
                 {
                     Entity vehicle = vehicles[i];
+                    // Parked = off duty, beacons off. This needs an explicit CLEAR, not just a
+                    // skip: we re-assert Warning every tick after the AI has run, so a truck that
+                    // parked while its Target still pointed at a wreck kept flashing on the depot
+                    // apron forever - nothing else ever takes the flag back off.
+                    if (EntityManager.HasComponent<Game.Vehicles.ParkedCar>(vehicle))
+                    {
+                        ClearBeacon(vehicle);
+                        continue;
+                    }
                     bool onRecoveryDuty = m_HookupSystem.TrucksWithLoad.Contains(vehicle);
                     if (!onRecoveryDuty)
                     {
@@ -84,6 +140,7 @@ namespace ClearTheWay
                     {
                         continue;
                     }
+                    m_OnRecoveryDuty.Add(vehicle);
                     Car car = EntityManager.GetComponentData<Car>(vehicle);
                     if ((car.m_Flags & CarFlags.Warning) == 0)
                     {
@@ -95,6 +152,23 @@ namespace ClearTheWay
             finally
             {
                 vehicles.Dispose();
+            }
+        }
+
+        /// <summary>Takes the amber beacon back off a vehicle that is off recovery duty. Explicit,
+        /// because we are the only thing that ever sets the flag for recovery runs - nothing else
+        /// clears it again.</summary>
+        private void ClearBeacon(Entity vehicle)
+        {
+            if (!EntityManager.Exists(vehicle) || !EntityManager.HasComponent<Car>(vehicle))
+            {
+                return;
+            }
+            Car car = EntityManager.GetComponentData<Car>(vehicle);
+            if ((car.m_Flags & CarFlags.Warning) != 0)
+            {
+                car.m_Flags &= ~CarFlags.Warning;
+                EntityManager.SetComponentData(vehicle, car);
             }
         }
 

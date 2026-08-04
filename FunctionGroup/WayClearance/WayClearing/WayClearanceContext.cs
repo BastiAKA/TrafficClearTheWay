@@ -37,6 +37,10 @@ namespace ClearTheWay
         public Game.Objects.SearchSystem ObjectSearch;
         public Game.Net.SearchSystem NetSearch;
 
+        /// <summary>Broad "every live car" query used only by the debug vehicle watch to resolve an
+        /// entity index to its live Entity. Created by the system; see <see cref="VehicleWatch"/>.</summary>
+        public EntityQuery WatchScanQuery;
+
         // Leaves - no dependencies of their own.
         /// <summary>Every measurement taken off a prefab (body sizes, lane widths), cached.</summary>
         public GeometryProvider PrefabGeometry;
@@ -54,6 +58,9 @@ namespace ClearTheWay
         public Delivery_MidSize MidSize;
         public GreenLightChain Lights;
         public ChannelPlanner Channel;
+        /// <summary>How far past its own lane edge a vehicle may go because a tram bed / green strip
+        /// lies there. Pure query, shared by every pass that pushes something sideways.</summary>
+        public LateralRoom Room;
         public PushVehicles Push;
         public HoldVehicles Hold;
         public SqueezePast Squeeze;
@@ -71,5 +78,8 @@ namespace ClearTheWay
         public WreckClearing WreckClearing;
         public WreckLifetime WreckLifetime;
         public AccidentGuard Accidents;
+
+        /// <summary>Debug-only single-vehicle state dump (off unless the WatchVehicle setting is set).</summary>
+        public VehicleWatch Watch;
     }
 }

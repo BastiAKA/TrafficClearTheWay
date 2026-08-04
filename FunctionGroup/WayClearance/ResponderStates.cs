@@ -30,6 +30,15 @@ namespace ClearTheWay
         /// <summary>Vehicle -> frame a lane change was forced, for timing it out.</summary>
         public readonly Dictionary<Entity, uint> ForcedChanges = new Dictionary<Entity, uint>();
 
+        /// <summary>Deliberately sacrificed lead blockers: civilian car -> frame until which it is
+        /// exempt from NearWreckProtection's keep-alive. When a responder is hard-stuck behind the
+        /// car directly ahead, the escalation flags that car Obsolete so the game re-paths it - and,
+        /// if its route is genuinely dead, despawns it, freeing the whole queue behind WITHOUT a
+        /// repath flood. The protection sweep would otherwise resurrect it every tick, so it is
+        /// listed here and skipped for the window. Time-boxed: survives the window => protected
+        /// again. Written by EmergencyEscalation.TryReleaseLeadBlocker, read by NearWreckProtection.</summary>
+        public readonly Dictionary<Entity, uint> Sacrifice = new Dictionary<Entity, uint>();
+
         public ResponderStates(EntityManager entityManager)
         {
             EntityManager = entityManager;

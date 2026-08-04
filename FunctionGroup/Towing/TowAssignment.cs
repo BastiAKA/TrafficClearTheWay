@@ -43,6 +43,7 @@ namespace ClearTheWay
         private EntityArchetype m_HandleRequestArchetype => m_Ctx.HandleRequestArchetype;
         private Dictionary<Entity, uint> m_LastAction => m_Ctx.LastAction;
         private Dictionary<Entity, uint> m_VanSentHome => m_Ctx.VanSentHome;
+        private Dictionary<Entity, uint> m_VanAssigned => m_Ctx.VanAssigned;
         private Dictionary<Entity, Entity> m_VanJob => m_Ctx.VanJob;
         private List<Entity> m_PruneScratch => m_Ctx.PruneScratch;
 
@@ -116,10 +117,23 @@ namespace ClearTheWay
             {
                 bool responderIsTowTruck = EntityManager.HasComponent<CarTractorData>(
                     EntityManager.GetComponentData<PrefabRef>(responder).m_Prefab);
+                // A van much closer than the current responder takes over - but only if the swap
+                // is actually WORTH it. Three guards, all learned from one field case (2026-07-26,
+                // van 2270668 cancelled just short of its wreck):
+                //  - a relative halving alone fires on trivial gains at short range (90 m -> 40 m)
+                //    and these are straight-line distances, so the "gain" may not even be real on
+                //    the road. Demand an absolute margin too.
+                //  - a van only just put on the job keeps it for kTakeoverGraceFrames. Otherwise a
+                //    cluster of wrecks re-decides every pass, and each van sent home is instantly
+                //    free to become the "nearest" for the next wreck - five sent-home in three
+                //    minutes, nobody ever arriving.
+                bool recentlyAssigned = m_VanAssigned.TryGetValue(responder, out uint assignedFrame) &&
+                    frame - assignedFrame < kTakeoverGraceFrames;
                 if (nearest != Entity.Null && nearestDist <= kNearVanRange &&
-                    nearestDist < responderDist * kMuchCloserFactor)
+                    nearestDist < responderDist * kMuchCloserFactor &&
+                    responderDist - nearestDist >= kTakeoverMinGainMeters &&
+                    !recentlyAssigned)
                 {
-                    // A van much closer than the current responder takes over.
                     m_Ctx.Beeline.SendHome(responder, frame);
                     AssignToVan(nearest, wreck, request, frame);
                 }
@@ -175,6 +189,7 @@ namespace ClearTheWay
         public void AssignToVan(Entity van, Entity wreck, Entity request, uint frame)
         {
             m_VanSentHome.Remove(van); // a real assignment clears any stale sent-home cooldown
+            m_VanAssigned[van] = frame;  // starts its takeover grace - let it drive there before re-deciding
             DynamicBuffer<ServiceDispatch> dispatches = EntityManager.HasBuffer<ServiceDispatch>(van)
                 ? EntityManager.GetBuffer<ServiceDispatch>(van)
                 : EntityManager.AddBuffer<ServiceDispatch>(van);

@@ -97,7 +97,15 @@ namespace ClearTheWay.FunctionGroup.WayClearance.WayClearing
             // able to inch forward, otherwise a held queue never drains and the whole cluster
             // stays stuck. The ceiling still lets its navigation stop it behind a car that
             // genuinely cannot move, so it only ever creeps into real space.
-            if (math.abs(otherLane.m_LanePosition) >= kMinAsidePosition)
+            // "Has made room" is relative to what THIS car was told to do, not a flat number.
+            // With today's targets (2-4 units) the old constant slowed a car after ~8% of its
+            // way out; since a car realises its offset only by driving, it then just steered
+            // and stayed put - the "they only turn, they never pull out" report. Fall back to
+            // the flat threshold when no claim is on record (nobody pushed it this pass).
+            float reached = m_PushClaims.TryGetValue(other, out PushClaim heldClaim) && heldClaim.m_TargetUnits > 0f
+                ? heldClaim.m_TargetUnits * kAsideReachedFraction
+                : kMinAsidePosition;
+            if (math.abs(otherLane.m_LanePosition) >= reached)
             {
                 m_Control.SetCeiling(other, kMinCreepSpeed);
             }
@@ -128,6 +136,26 @@ namespace ClearTheWay.FunctionGroup.WayClearance.WayClearing
                 for (int i = 0; i < laneObjects.Length; i++)
                 {
                     LaneObject laneObject = laneObjects[i];
+                    // Window-gate BEFORE any component lookup, exactly as PullCarsAside does:
+                    // aheadDistance needs only the buffer's own curve position, so gating on it
+                    // costs one multiply - whereas the ~7 lookups below were being paid for EVERY
+                    // car on the lane, and this runs over every corridor lane of every passing
+                    // responder. The buffer is sorted by curve position (NetUtils.AddLaneObject),
+                    // so once past the far edge of the pass window we stop entirely.
+                    float delta = corridorLane.m_Inverted
+                        ? corridorLane.m_MinPos - laneObject.m_CurvePosition.x
+                        : laneObject.m_CurvePosition.x - corridorLane.m_MinPos;
+                    float aheadDistance = corridorLane.m_StartOffset + delta * curveLength;
+                    if (corridorLane.m_Inverted)
+                    {
+                        if (aheadDistance > kPassWindowAhead) continue;      // ahead of the window; closer cars still follow
+                        if (aheadDistance < -kPassWindowBehind) break;       // behind it; the rest are further behind
+                    }
+                    else
+                    {
+                        if (aheadDistance < -kPassWindowBehind) continue;    // behind the window; cars ahead still follow
+                        if (aheadDistance > kPassWindowAhead) break;         // ahead of it; the rest are further ahead
+                    }
                     Entity other = laneObject.m_LaneObject;
                     if (other == vehicle || !EntityManager.Exists(other) ||
                         !EntityManager.HasComponent<Car>(other) ||
@@ -143,14 +171,6 @@ namespace ClearTheWay.FunctionGroup.WayClearance.WayClearing
                         continue;
                     }
                     if (VehicleTypes.VehicleTrailerExt.IsTrailer(EntityManager, other))
-                    {
-                        continue;
-                    }
-                    float delta = corridorLane.m_Inverted
-                        ? corridorLane.m_MinPos - laneObject.m_CurvePosition.x
-                        : laneObject.m_CurvePosition.x - corridorLane.m_MinPos;
-                    float aheadDistance = corridorLane.m_StartOffset + delta * curveLength;
-                    if (aheadDistance < -kPassWindowBehind || aheadDistance > kPassWindowAhead)
                     {
                         continue;
                     }

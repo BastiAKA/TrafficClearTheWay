@@ -13,6 +13,7 @@ using static ClearTheWay.Tuning;
 using ClearTheWay.FunctionGroup.WayClearance.WayClearing;
 using ClearTheWay.FunctionGroup.WayClearance.WayClearing.LanePathFinding;
 using ClearTheWay.FunctionGroup.WayClearance.TrafficLights;
+using ClearTheWay.FunctionGroup.WayClearance.WayClearing.VehicleTypes;
 // Game.Net has a LaneGeometry of its own - ours wins here, like the CarLaneFlags alias above.
 using LaneGeometry = ClearTheWay.FunctionGroup.WayClearance.WayClearing.LanePathFinding.M_LaneGeometry;
 
@@ -129,6 +130,18 @@ namespace ClearTheWay
             // emergency vehicles - our corridor slows it down, the game must not delete it.
             m_Control.ClearStuck(vehicle);
 
+            // Release the FixedLane pin of a finished or abandoned overtake (below), the same
+            // way the emergency pass does. Nothing else would ever clear it for a recovery
+            // vehicle, and a permanently pinned lane is worse than never changing lane at all.
+            Dictionary<Entity, uint> forcedChanges = m_Ctx.States.ForcedChanges;
+            if (forcedChanges.TryGetValue(vehicle, out uint changeStartFrame) &&
+                (currentLane.m_ChangeLane == Entity.Null || frame - changeStartFrame > kForcedChangeTimeout))
+            {
+                currentLane.m_LaneFlags &= ~CarLaneFlags.FixedLane;
+                forcedChanges.Remove(vehicle);
+                EntityManager.SetComponentData(vehicle, currentLane);
+            }
+
             // Progress bookkeeping first: once it has failed to get meaningfully CLOSER to
             // its wreck for ~30 s, escalate from the gentle corridor to the emergency
             // toolbox (hard evade + squeeze + green lights) - a full accident jam never
@@ -158,12 +171,15 @@ namespace ClearTheWay
             }
             m_AssistProgress[vehicle] = progress;
 
+            float assistSpeed = math.length(EntityManager.GetComponentData<Moving>(vehicle).m_Velocity);
+
             // Give-up cap: past ~90 s of zero progress within escalate range the recovery is
-            // wedged in an unwinnable deadlock. Escalating changes nothing (dist stays fixed
-            // for minutes) and only churns the surrounding traffic - so back off ENTIRELY (no
-            // corridor, no evade/squeeze/green) and let the wreck's give-up despawn clean it.
-            // Emit a full diagnostic of HOW it wedged (once, then every 10 s) - we may later try
-            // to actually free such trucks instead of abandoning the recovery.
+            // wedged in an unwinnable deadlock. What is pointless there is CHURNING TRAFFIC for
+            // it - corridor, hard evade, forced greens - so all of that stops. Getting itself out
+            // of the lane does not churn anything and is exactly what it still needs: an earlier
+            // version returned outright here and thereby switched off the one escape that could
+            // have freed it (field log: four trucks, all "GAVE UP", not a single lane change
+            // attempted afterwards). Diagnostic once, then every 10 s.
             if (stuckLong && frame - progress.m_SinceFrame >= kAssistGiveUpFrames)
             {
                 if (Mod.Setting.VerboseLogging && (!progress.m_GaveUpLogged || frame % 600u == 0u))
@@ -172,6 +188,8 @@ namespace ClearTheWay
                     progress.m_GaveUpLogged = true;
                     m_AssistProgress[vehicle] = progress;
                 }
+                TryGetAround(vehicle, ref currentLane, assistSpeed, targetDistance, frame);
+                TryUnblock(vehicle, assistSpeed, targetDistance, frame);
                 return;
             }
 
@@ -179,20 +197,49 @@ namespace ClearTheWay
             // of progress. A cruising truck gets NO special treatment ("Rettungsgassenmodus
             // die ganze Zeit an") - that disturbed traffic along the whole route for
             // nothing, and tow trucks in convoy kept shoving each other aside.
-            float assistSpeed = math.length(EntityManager.GetComponentData<Moving>(vehicle).m_Velocity);
-            if (assistSpeed >= kAssistHelpSpeed && !stuckLong)
+            // A recovery vehicle queues like everybody else until it is genuinely STUCK.
+            //
+            // The gate used to be speed-based (slower than kAssistHelpSpeed => build the corridor),
+            // which meant every maintenance van crawling through ordinary traffic shoved the cars
+            // around it aside on sight. Sebastian: they should just drive along normally as long as
+            // they are not stuck. Being slow in a queue is not being stuck - the progress watch
+            // above (kAssistStuckFrames, distance-gated by kAssistEscalateRange) is what decides
+            // that, and it keeps running for every assist vehicle regardless of this return.
+            if (!stuckLong)
             {
                 return;
             }
 
-            m_Corridor.BuildCorridor(vehicle, ref currentLane, Mod.Setting, side, assistSpeed);
+            // desperate: true - we only get here at all when the truck is genuinely stuck
+            // (stuckLong above), and that is exactly the state in which the corridor shape must
+            // stay re-plannable so every escape keeps being reachable. The speed hysteresis and
+            // the free-lane latch inside ChooseShape still apply; only the "a working corridor
+            // keeps its shape" lock is waived, which for a wedged truck is what we want.
+            m_Corridor.BuildCorridor(vehicle, ref currentLane, Mod.Setting, side, assistSpeed, desperate: true);
             for (int i = 0; i < m_Corridor.CorridorLanes.Count; i++)
             {
-                m_Ctx.Push.PullCarsAside(vehicle, m_Corridor.CorridorLanes[i], frame, hardEvade: stuckLong);
+                m_Ctx.Push.PullCarsAside(vehicle, m_Corridor.CorridorLanes[i], frame, hardEvade: true);
             }
-            if (!stuckLong)
+
+            // Move ITSELF over. This was missing entirely, and it is why nothing else worked: a
+            // recovery vehicle built the corridor, pushed everyone else - and stood dead centre
+            // in its own lane (every wedged truck in the log reported lanePos 0,0). An emergency
+            // vehicle hugs the corridor seam, and that hug is half of the lateral clearance a
+            // squeeze needs; without it the separation gate can never open, no matter how far the
+            // blocker moves. Only while stuck, and toward the free lane when there is one.
+            float hugDir = m_Corridor.FreeLaneDir != 0f ? m_Corridor.FreeLaneDir
+                : (m_Corridor.ChannelHugDir != 0f ? m_Corridor.ChannelHugDir : -side);
+            // The same crossable room the emergency corridor gets: a recovery truck wedged on a
+            // narrow street may hug onto the tram bed or green strip beside it too. Inherited by
+            // simply asking LateralRoom - nothing tow-specific to keep in step here. Only in the
+            // stuckLong branch, so a truck making normal progress still keeps its lane.
+            float hugMeters = kEdgeMeters + m_Ctx.Room.CrossableMeters(currentLane.m_Lane, hugDir, frame);
+            float hugUnits = math.min(hugMeters, m_Ctx.PrefabGeometry.MaxLateralMeters(vehicle)) / m_Ctx.PrefabGeometry.LateralSlack(vehicle, currentLane.m_Lane);
+            float hugPos = math.lerp(currentLane.m_LanePosition, hugDir * hugUnits, kPullRate);
+            if (math.abs(hugPos - currentLane.m_LanePosition) > 0.001f)
             {
-                return;
+                currentLane.m_LanePosition = hugPos;
+                EntityManager.SetComponentData(vehicle, currentLane);
             }
 
             // Squeeze past a pulled-aside/boxed-in blocker exactly like an emergency
@@ -203,6 +250,9 @@ namespace ClearTheWay
             {
                 EntityManager.SetComponentData(vehicle, currentLane);
             }
+            // ... and, when the way past is physically impossible, go AROUND.
+            TryGetAround(vehicle, ref currentLane, assistSpeed, targetDistance, frame);
+
             // ... and petition the lights green at recovery priority (106): civilian petitions
             // (100) lose, emergency petitions (108) still win. No preemption - a tow truck is
             // not worth cutting a running green phase short for.
@@ -212,6 +262,185 @@ namespace ClearTheWay
                 Mod.Log.Info($"[assist] veh={vehicle.Index} no progress for {(frame - progress.m_SinceFrame) / 60u}s " +
                     $"(dist={targetDistance:F0} best={progress.m_BestDistance:F0}) - escalating (evade+squeeze+green)");
             }
+        }
+
+        /// <summary>
+        /// Change lane to get around whatever is in the way. The one escape the rest of the
+        /// toolkit cannot provide: a recovery vehicle queued behind ANOTHER one. Our corridor
+        /// only eases a standing colleague aside, and two vehicles nose to tail in one lane may
+        /// still leave no gap - then going around is all that is left. Density relaxed and the
+        /// free lane preferred, exactly like a stuck responder: a recovery run is supposed to be
+        /// let through a jam, not to queue in it. Kept running even after the give-up, because
+        /// this costs the surrounding traffic nothing.
+        /// </summary>
+        private void TryGetAround(Entity vehicle, ref CarCurrentLane currentLane, float assistSpeed,
+            float targetDistance, uint frame)
+        {
+            if (!Mod.Setting.OvertakeStuckTraffic ||
+                assistSpeed >= kOvertakeSlowSpeed ||
+                currentLane.m_ChangeLane != Entity.Null ||
+                m_Ctx.States.ForcedChanges.ContainsKey(vehicle))
+            {
+                return;
+            }
+            Dictionary<Entity, StuckState> stuckStates = m_Ctx.States.Stuck;
+            stuckStates.TryGetValue(vehicle, out StuckState assistStuck);
+            if (frame < assistStuck.m_NextOvertakeFrame ||
+                !m_Ctx.LaneChange.TryOvertakeLaneChange(vehicle, ref currentLane, frame, turnHint: 0,
+                    relaxDensity: true, preferDir: m_Corridor.FreeLaneDir))
+            {
+                return;
+            }
+            assistStuck.m_NextOvertakeFrame = frame + kOvertakeCooldown;
+            assistStuck.m_LastSeenFrame = frame;
+            stuckStates[vehicle] = assistStuck;
+            EntityManager.SetComponentData(vehicle, currentLane);
+            if (Mod.Setting.VerboseLogging)
+            {
+                Mod.Log.Info($"[assist] veh={vehicle.Index} changing lane to get around " +
+                    $"(dist={targetDistance:F0} free={m_Corridor.FreeLaneDir:F0})");
+            }
+        }
+
+        /// <summary>
+        /// The very last resort: clear the ONE vehicle standing directly in front of a recovery
+        /// vehicle that has been deadlocked past its give-up.
+        ///
+        /// Sebastian verified by hand in-game that removing a single car ahead of the leading tow
+        /// truck is enough: it triggers the route recompute that gives every vehicle in the column
+        /// its options back, and the whole chain starts moving. That is why this deliberately does
+        /// NOT touch the vehicles around the crash (their repath is what the path-end guard exists
+        /// to PREVENT: at a full block the pathfinder hands out a disposal path and the queue
+        /// evaporates) - only the single blocker, well away from the wreck.
+        ///
+        /// Two stages, gentlest first:
+        ///  1. SOFT - flag the rig Obsolete (the same lever as the emergency lead-release): the
+        ///     game re-localizes and re-paths it, and if its route is genuinely dead it despawns.
+        ///     No structural change, so none of the trailer-delete crash surface. Preferred.
+        ///  2. HARD - only if that exact rig is STILL standing in the way after
+        ///     kSacrificeShieldWindow (the soft flag bought nothing), fall back to the proven
+        ///     deletion. A rig is removed as a WHOLE - tractor plus every trailer in its layout -
+        ///     because deleting only the part in the way leaves a dangling LayoutElement, the exact
+        ///     shape of the crash we spent an evening on.
+        ///
+        /// Never an emergency vehicle, never another recovery vehicle (it is on a mission of its
+        /// own), never a crashed one (that is the accident, not an obstacle), and rate-limited by
+        /// kUnblockRetryFrames so a truck cannot chew through a whole queue.
+        /// </summary>
+        private void TryUnblock(Entity vehicle, float assistSpeed, float targetDistance, uint frame)
+        {
+            if (!Mod.Setting.UnblockRecoveryVehicles ||
+                assistSpeed >= kUnblockMaxSpeed ||
+                !EntityManager.HasComponent<Blocker>(vehicle))
+            {
+                return;
+            }
+            m_AssistProgress.TryGetValue(vehicle, out AssistProgress progress);
+
+            Entity blocker = EntityManager.GetComponentData<Blocker>(vehicle).m_Blocker;
+            if (blocker == Entity.Null || !EntityManager.Exists(blocker))
+            {
+                return;
+            }
+            // A trailer in the way means the RIG is in the way - work on its tractor.
+            Entity head = VehicleTrailerExt.ResolveHead(EntityManager, blocker);
+            if (!EntityManager.Exists(head) || !EntityManager.HasComponent<Car>(head) ||
+                EntityManager.HasComponent<Deleted>(head))
+            {
+                return;
+            }
+            if ((EntityManager.GetComponentData<Car>(head).m_Flags & CarFlags.Emergency) != 0 ||
+                EntityManager.HasComponent<Game.Vehicles.MaintenanceVehicle>(head) ||
+                EntityManager.HasComponent<Game.Events.InvolvedInAccident>(head) ||
+                EntityManager.HasComponent<Damaged>(head))
+            {
+                return;
+            }
+            // Only a blocker that is truly standing - a rolling one will clear on its own.
+            if (EntityManager.HasComponent<Moving>(head) &&
+                math.lengthsq(EntityManager.GetComponentData<Moving>(head).m_Velocity) > kUnblockMaxSpeed * kUnblockMaxSpeed)
+            {
+                return;
+            }
+
+            // Stage 1 (soft) unless THIS exact rig was already flagged and is still in the way.
+            bool alreadySoftFlagged = head == progress.m_SoftFlaggedHead && progress.m_SoftFlagFrame != 0u;
+            if (!alreadySoftFlagged)
+            {
+                // Rate-limit soft attempts the same way as the removal, so a truck cannot flag a
+                // whole queue in one burst.
+                if (progress.m_LastUnblockFrame != 0u && frame - progress.m_LastUnblockFrame < kUnblockRetryFrames)
+                {
+                    return;
+                }
+                // Skip a rig mid lane-change: forcing Obsolete on a foreign car while m_ChangeLane
+                // is set risks dangling it in the change lane's LaneObject buffer (see
+                // EmergencyEscalation.TryReleaseLeadBlocker for the full reasoning).
+                if (!EntityManager.HasComponent<CarCurrentLane>(head))
+                {
+                    return;
+                }
+                CarCurrentLane headLane = EntityManager.GetComponentData<CarCurrentLane>(head);
+                if (headLane.m_ChangeLane != Entity.Null)
+                {
+                    return;
+                }
+                headLane.m_LaneFlags |= CarLaneFlags.Obsolete;
+                EntityManager.SetComponentData(head, headLane);
+                m_Ctx.States.Sacrifice[head] = frame + kSacrificeShieldWindow;
+                progress.m_SoftFlaggedHead = head;
+                progress.m_SoftFlagFrame = frame;
+                progress.m_LastUnblockFrame = frame;
+                m_AssistProgress[vehicle] = progress;
+                if (Mod.Setting.VerboseLogging)
+                {
+                    Mod.Log.Info($"[assist] veh={vehicle.Index} deadlocked at dist={targetDistance:F0} - " +
+                        $"flagged blocker={head.Index} Obsolete (soft) - will remove it if it stays put");
+                }
+                return;
+            }
+
+            // Stage 2 (hard): the soft flag has had its window and the same rig is still standing.
+            if (frame - progress.m_SoftFlagFrame < kSacrificeShieldWindow)
+            {
+                return; // still inside the grace window - give the gentle path time to work
+            }
+
+            int parts = 0;
+            if (EntityManager.HasBuffer<LayoutElement>(head))
+            {
+                DynamicBuffer<LayoutElement> layout = EntityManager.GetBuffer<LayoutElement>(head, isReadOnly: true);
+                for (int i = 0; i < layout.Length; i++)
+                {
+                    Entity part = layout[i].m_Vehicle;
+                    if (part != Entity.Null && EntityManager.Exists(part) && part != head)
+                    {
+                        SafeDelete(part);
+                        parts++;
+                    }
+                }
+            }
+            SafeDelete(head);
+            progress.m_LastUnblockFrame = frame;
+            progress.m_SoftFlaggedHead = Entity.Null;
+            progress.m_SoftFlagFrame = 0u;
+            m_AssistProgress[vehicle] = progress;
+            if (Mod.Setting.VerboseLogging)
+            {
+                Mod.Log.Info($"[assist] veh={vehicle.Index} deadlocked at dist={targetDistance:F0} - " +
+                    $"removed blocker={head.Index} (+{parts} trailer part(s)) after the soft flag failed");
+            }
+        }
+
+        /// <summary>Deletes a vehicle the way the towing passes do: a Moving-less entity that still
+        /// carries a Game.Simulation.UpdateFrame null-derefs UpdateGroupSystem, so strip it first.</summary>
+        private void SafeDelete(Entity entity)
+        {
+            if (EntityManager.HasComponent<Game.Simulation.UpdateFrame>(entity))
+            {
+                EntityManager.RemoveComponent<Game.Simulation.UpdateFrame>(entity);
+            }
+            EntityManager.AddComponent<Deleted>(entity);
         }
 
         /// <summary>

@@ -41,7 +41,13 @@ namespace ClearTheWay.FunctionGroup.WayClearance.WayClearing.LanePathFinding
         /// Number of vehicles ahead of the given curve position on a lane within the
         /// density window - a cheap occupancy measure to compare lanes.
         /// </summary>
-        public int LaneVehiclesAhead(Entity lane, float curvePosition, bool inverted)
+        /// <param name="blockingBelowSpeed">When &gt; 0, only vehicles SLOWER than this (m/s) are
+        /// counted. A lane whose traffic is rolling is not an obstruction - it is a lane you can
+        /// join - whereas standing cars are. The "is that lane free?" test needs this: with every
+        /// object counted, our own green light made the queue pull away and the count churned, so
+        /// the free-lane decision flipped from tick to tick (field case 1901774). Default 0 keeps
+        /// the plain head-count for the density callers that want exactly that.</param>
+        public int LaneVehiclesAhead(Entity lane, float curvePosition, bool inverted, float blockingBelowSpeed = 0f, float windowMeters = kDensityWindow)
         {
             if (!EntityManager.HasComponent<Curve>(lane) || !EntityManager.HasBuffer<LaneObject>(lane))
             {
@@ -54,8 +60,17 @@ namespace ClearTheWay.FunctionGroup.WayClearance.WayClearing.LanePathFinding
             {
                 float pos = laneObjects[i].m_CurvePosition.x;
                 float ahead = (inverted ? curvePosition - pos : pos - curvePosition) * length;
-                if (ahead > -3f && ahead < kDensityWindow)
+                if (ahead > -3f && ahead < windowMeters)
                 {
+                    if (blockingBelowSpeed > 0f)
+                    {
+                        Entity obj = laneObjects[i].m_LaneObject;
+                        if (EntityManager.HasComponent<Moving>(obj) &&
+                            math.length(EntityManager.GetComponentData<Moving>(obj).m_Velocity) >= blockingBelowSpeed)
+                        {
+                            continue; // rolling along - joining this lane is fine
+                        }
+                    }
                     count++;
                 }
             }

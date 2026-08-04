@@ -265,6 +265,13 @@ namespace ClearTheWay
                 {
                     m_VanSentHome.Remove(m_PruneScratch[i]);
                 }
+                // The other per-van maps have no natural expiry at all: VanAssigned is written on
+                // every assignment and never removed, PathRetry only clears when a van's path
+                // recovers (so a van that despawns while failing leaves its entry behind), and
+                // LastAction is keyed per wreck. All three grow for the whole session otherwise.
+                EntityMapPrune.PruneDead(EntityManager, m_Ctx.VanAssigned, m_PruneScratch);
+                EntityMapPrune.PruneDead(EntityManager, m_Ctx.PathRetry, m_PruneScratch);
+                EntityMapPrune.PruneDead(EntityManager, m_Ctx.LastAction, m_PruneScratch);
             }
         }
 

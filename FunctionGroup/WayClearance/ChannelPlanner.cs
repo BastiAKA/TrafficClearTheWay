@@ -55,12 +55,153 @@ namespace ClearTheWay.FunctionGroup.WayClearance
         private float m_FreeLaneDir;
         public float FreeLaneDir => m_FreeLaneDir;
 
-        /// <summary>Clears the per-responder channel state at the start of each corridor build, so
-        /// a responder that is no longer on a channelled road falls back to the classic seam.</summary>
-        public void ResetHug()
+        /// <summary>
+        /// Start of one responder's corridor build: clear the per-responder steering outputs, then
+        /// RE-ARM a still-valid free-lane commitment from the latch.
+        ///
+        /// The re-arm is the point. The choice lives in the latch, not in whether this particular
+        /// tick happened to run the scan - and the scan is skipped on plenty of ticks (the
+        /// responder is momentarily too fast for the wide-road shapes, or its current lane sits in
+        /// a junction and has no lane group to scan). Without the re-arm the committed direction
+        /// silently became 0 on exactly those ticks, so the free lane stopped being preferred in
+        /// the very moment the responder started rolling toward it, and the steering fell back to
+        /// the seam it had already decided to abandon.
+        /// </summary>
+        public void BeginBuild(Entity vehicle)
         {
             m_ChannelHugDir = 0f;
             m_FreeLaneDir = 0f;
+            m_Ctx.States.Stuck.TryGetValue(vehicle, out StuckState st);
+            if (st.m_FreeLaneDir != 0f && m_SimulationSystem.frameIndex < st.m_FreeLaneUntilFrame)
+            {
+                m_FreeLaneDir = st.m_FreeLaneDir;
+            }
+        }
+
+        /// <summary>
+        /// THE corridor decision for one responder this tick: classic seam, central channel, or
+        /// heading for a free lane. Call once per corridor build, after <see cref="BeginBuild"/>.
+        ///
+        /// Everything about it is built to make the choice STICK:
+        ///  - a working corridor is never re-planned (the dwell is refreshed while cars are being
+        ///    pushed for it), because swapping the shape under a formed Rettungsgasse tears up the
+        ///    gap the queue just opened and hands the traffic contradictory push directions;
+        ///  - the speed gate has a hysteresis band instead of a bare threshold;
+        ///  - a free-lane choice survives ticks on which it cannot be re-scanned;
+        ///  - and a desperate responder unlocks all of it again, because there the corridor has
+        ///    demonstrably failed and every escape has to stay reachable.
+        /// </summary>
+        public CorridorShape ChooseShape(Entity vehicle, CarCurrentLane currentLane, Setting setting,
+            float emergencySpeed, bool onRing, bool desperate)
+        {
+            uint frame = m_SimulationSystem.frameIndex;
+            m_Ctx.States.Stuck.TryGetValue(vehicle, out StuckState st);
+            CorridorShape held = (CorridorShape)st.m_Shape;
+            // Only the WIDE-ROAD shapes are defended. Classic is the fallback - it is what every
+            // cruising responder and every narrow road ends up with - and locking it would be a
+            // trap: a responder that formed a classic corridor at speed keeps pushing cars while
+            // it slows into the jam, so the lock would be refreshed forever and the carriageway
+            // would never part around the central channel at all. Classic -> Channel is an
+            // ESCALATION and must always stay available; the reverse is held by the speed
+            // hysteresis below, not by this lock.
+            bool locked = (held == CorridorShape.Channel || held == CorridorShape.FreeLane) &&
+                          frame < st.m_ShapeUntilFrame && !desperate;
+
+            // Neither wide-road shape applies on a roundabout ring (the ring sweep has its own,
+            // inverted rule) or when the player has not asked for parallel lanes to be cleared.
+            if (onRing || !setting.ClearParallelLanes)
+            {
+                ReleaseFreeLane(vehicle);
+                return CommitShape(vehicle, CorridorShape.Classic, frame);
+            }
+
+            // SPEED GATE WITH HYSTERESIS: entering a wide-road shape needs kChannelMaxSpeed,
+            // leaving one needs kChannelReleaseSpeed. See kChannelReleaseSpeed for what a bare
+            // threshold did at the boundary.
+            float leaveSpeed = held == CorridorShape.Classic || held == CorridorShape.None
+                ? kChannelMaxSpeed
+                : kChannelReleaseSpeed;
+            if (emergencySpeed >= leaveSpeed)
+            {
+                ReleaseFreeLane(vehicle);
+                return CommitShape(vehicle, CorridorShape.Classic, frame);
+            }
+
+            // A corridor that is actually working keeps its shape, full stop. Only a committed
+            // FREE LANE keeps being scanned while locked - the scan is what refreshes its latch
+            // and what gives the choice up once that lane fills.
+            if (locked && held != CorridorShape.FreeLane)
+            {
+                // Invariant: only a FreeLane plan may steer toward a free lane. Otherwise a stale
+                // latch would have the steering stage overrule a working corridor (EscalationSteering
+                // treats a free lane as the one reason to leave one) while this build was parting
+                // the road for a completely different gap.
+                m_FreeLaneDir = 0f;
+                return held;
+            }
+
+            // A genuinely free lane always wins over prying the middle open: the channel seam is
+            // placed geometrically, so it would steer the responder into the packed middle right
+            // next to open asphalt - and then hold it there, because a pushing channel counts as a
+            // working corridor and that suppresses the very lane change that would have used the
+            // free lane. FindFreeLaneDir sets, keeps or releases m_FreeLaneDir.
+            FindFreeLaneDir(vehicle, currentLane.m_Lane, currentLane.m_CurvePosition.x,
+                currentLane.m_CurvePosition.z < currentLane.m_CurvePosition.x);
+            if (m_FreeLaneDir != 0f)
+            {
+                // Lean toward it while the change is still pending: the hug reuses the channel's
+                // steering path, so pointing it at the free lane has the responder easing over
+                // instead of into the middle of the queue.
+                m_ChannelHugDir = m_FreeLaneDir;
+                return CommitShape(vehicle, CorridorShape.FreeLane, frame);
+            }
+            // Either nothing was committed, or the lane a committed plan was heading for has
+            // filled up. Both mean: plan afresh, and on a wide road that is the channel.
+            return CommitShape(vehicle, CorridorShape.Channel, frame);
+        }
+
+        /// <summary>Records the chosen shape and (re)starts its dwell. Re-reads the state rather
+        /// than taking a copy, because FindFreeLaneDir may have written the free-lane latch in
+        /// between.</summary>
+        private CorridorShape CommitShape(Entity vehicle, CorridorShape shape, uint frame)
+        {
+            m_Ctx.States.Stuck.TryGetValue(vehicle, out StuckState st);
+            st.m_Shape = (byte)shape;
+            st.m_ShapeUntilFrame = frame + kShapeCommitFrames;
+            st.m_LastSeenFrame = frame;
+            m_Ctx.States.Stuck[vehicle] = st;
+            return shape;
+        }
+
+        /// <summary>
+        /// Keeps the current shape decision alive for another dwell. Called every tick the
+        /// corridor is actually moving traffic, which is what turns the dwell from a countdown
+        /// into "held for as long as the Rettungsgasse is being maintained".
+        /// Works on the caller's state copy so the later latch writes of the same tick (hug,
+        /// overtake cooldown) carry the refresh along instead of overwriting it.
+        /// </summary>
+        public void RefreshShapeCommitment(Entity vehicle, ref StuckState st, uint frame)
+        {
+            if (st.m_Shape == 0)
+            {
+                return;
+            }
+            st.m_ShapeUntilFrame = frame + kShapeCommitFrames;
+            m_Ctx.States.Stuck[vehicle] = st;
+        }
+
+        /// <summary>Gives up a free-lane commitment outright: the responder is no longer in a
+        /// state where that plan applies (too fast, on a ring, parallel clearing off).</summary>
+        private void ReleaseFreeLane(Entity vehicle)
+        {
+            m_FreeLaneDir = 0f;
+            if (!m_Ctx.States.Stuck.TryGetValue(vehicle, out StuckState st) || st.m_FreeLaneDir == 0f)
+            {
+                return;
+            }
+            st.m_FreeLaneDir = 0f;
+            st.m_FreeLaneUntilFrame = 0u;
+            m_Ctx.States.Stuck[vehicle] = st;
         }
 
         /// <summary>
@@ -83,64 +224,207 @@ namespace ClearTheWay.FunctionGroup.WayClearance
         /// Only called for slow responders on channel-width roads (the caller's useChannel gate),
         /// so the per-lane occupancy scan stays off the many cruising sirens.
         /// </summary>
+
+        /// <summary>
+        /// Is there a parking strip immediately beside this lane? Such a lane is permanently lined
+        /// with standing cars, so "no moving traffic ahead" badly overstates how usable it is.
+        /// Walks outward from the lane in the SubLane buffer and stops at the first real thing,
+        /// the same shape ChannelShoulderBonus uses.
+        /// </summary>
+        private bool HasParkingBeside(Entity lane, Entity owner)
+        {
+            // Cached per lane: whether a parking strip lies alongside cannot change while the road
+            // stands, but the walk below runs inside FindFreeLaneDir - once per responder per
+            // corridor build, every tick. Same reasoning as the lane-width and vehicle-geometry
+            // caches. Keyed by LANE (not prefab) because it is a property of this stretch of road;
+            // entries for lanes that no longer exist are dropped with the channel plans.
+            if (m_ParkingBeside.TryGetValue(lane, out bool cached))
+            {
+                return cached;
+            }
+            bool result = ComputeParkingBeside(lane, owner);
+            m_ParkingBeside[lane] = result;
+            return result;
+        }
+
+        private readonly Dictionary<Entity, bool> m_ParkingBeside = new Dictionary<Entity, bool>();
+
+        private bool ComputeParkingBeside(Entity lane, Entity owner)
+        {
+            if (!EntityManager.HasBuffer<Game.Net.SubLane>(owner))
+            {
+                return false;
+            }
+            DynamicBuffer<Game.Net.SubLane> subLanes = EntityManager.GetBuffer<Game.Net.SubLane>(owner, isReadOnly: true);
+            int idx = -1;
+            for (int i = 0; i < subLanes.Length; i++)
+            {
+                if (subLanes[i].m_SubLane == lane) { idx = i; break; }
+            }
+            if (idx < 0)
+            {
+                return false;
+            }
+            for (int step = -1; step <= 1; step += 2)
+            {
+                for (int i = idx + step; i >= 0 && i < subLanes.Length; i += step)
+                {
+                    Entity sl = subLanes[i].m_SubLane;
+                    if (sl == Entity.Null || !EntityManager.Exists(sl))
+                    {
+                        continue;
+                    }
+                    if (EntityManager.HasComponent<Game.Net.ParkingLane>(sl))
+                    {
+                        return true;
+                    }
+                    // Another driving lane between us and any parking strip: that strip is no
+                    // longer "beside" this lane and does not affect it.
+                    if (EntityManager.HasComponent<Game.Net.CarLane>(sl) &&
+                        !EntityManager.HasComponent<Game.Net.MasterLane>(sl))
+                    {
+                        break;
+                    }
+                }
+            }
+            return false;
+        }
+
+        /// <remarks>
+        /// Does NOT clear <see cref="FreeLaneDir"/> up front - <see cref="BeginBuild"/> owns the
+        /// reset and the re-arm. But the early exits below are NOT all alike, and treating them as
+        /// one is a trap I fell into once already:
+        ///
+        ///  - "no lane group" / "not a channel road" is a DEFINITIVE answer. A road with fewer than
+        ///    kChannelMinLanes lanes in this direction has no free lane to go to, full stop. Keeping
+        ///    a commitment across such a segment carried a free-lane plan from a wide road onto a
+        ///    SINGLE-LANE one (Sebastian, veh 2350571), where CorridorBuilder inverts the corridor
+        ///    push for it - so the traffic on a single carriageway was parted the wrong way for a
+        ///    lane that cannot exist. These release.
+        ///  - "I cannot locate myself in the plan" (refPos &lt; 0, typically a junction lane) really
+        ///    does mean "cannot judge from here". Releasing there made a responder abandon a lane it
+        ///    had committed to every time its path crossed an intersection. This one keeps.
+        ///
+        /// Otherwise only a scan that actually RAN over the candidates and found nothing usable
+        /// gives the choice up.
+        /// </remarks>
         public float FindFreeLaneDir(Entity vehicle, Entity refLane, float curvePosition, bool inverted)
         {
-            m_FreeLaneDir = 0f;
             if (!EntityManager.HasComponent<Owner>(refLane) ||
                 !EntityManager.HasComponent<Game.Net.CarLane>(refLane))
             {
+                ReleaseFreeLane(vehicle); // not a road lane we can reason about - no free lane here
                 return 0f;
             }
             Entity owner = EntityManager.GetComponentData<Owner>(refLane).m_Owner;
             bool laneInverted = (EntityManager.GetComponentData<Game.Net.CarLane>(refLane).m_Flags & Game.Net.CarLaneFlags.Invert) != 0;
             ChannelPlan plan = GetChannelPlan(owner, laneInverted);
             // m_Lanes is only ordered physical left->right once the plan is a real channel plan.
+            // Definitive, not "cannot judge": this stretch of road has no second lane in our
+            // direction, so there is nothing to commit to - see the remarks above.
             if (plan == null || !plan.m_IsChannel)
             {
+                ReleaseFreeLane(vehicle);
                 return 0f;
             }
+            // ...whereas this one IS "cannot judge": the road HAS a lane group, we just are not in
+            // its cached list (a junction lane, or the plan predates a rebuild). Leave a latched
+            // choice alone rather than dropping it at every intersection.
             int refPos = plan.m_Lanes.IndexOf(refLane);
             if (refPos < 0)
             {
                 return 0f;
             }
+            // Hold a choice already made. Re-deciding from scratch every pass is what made the
+            // responder oscillate; while the latch runs, the same direction is kept as long as the
+            // lane stays merely USABLE (a car or two), not strictly empty.
+            m_Ctx.States.Stuck.TryGetValue(vehicle, out StuckState freeLatch);
+            bool latched = freeLatch.m_FreeLaneDir != 0f &&
+                m_SimulationSystem.frameIndex < freeLatch.m_FreeLaneUntilFrame;
             CarFlags carFlags = EntityManager.HasComponent<Car>(vehicle)
                 ? EntityManager.GetComponentData<Car>(vehicle).m_Flags
                 : default;
-            // Nearest first, and on a tie the kerb side (+1 physical right in right-hand traffic).
+            // SCAN ORDER IS THE COMMITMENT. Relaxing the acceptance threshold for the held
+            // direction (below) does nothing on its own if a lane on the OTHER side is simply
+            // reached first - and under the plain nearest-first order it usually is. Field case
+            // veh 2350532: committed free=-1, then a kerb lane briefly emptied and the very next
+            // pass returned +1; the corridor hug jumped with it and the responder swung from
+            // lanePos -5.8 to +4.9 within seconds while going nowhere. So while a choice is
+            // latched, that DIRECTION gets first refusal across the whole segment, and only if no
+            // lane on it is usable at all is the other side looked at.
+            // Unlatched the old rule stands: nearest first, kerb side (+1 physical right in
+            // right-hand traffic) on a tie - that is where an empty lane usually is, and it keeps
+            // the responder away from oncoming traffic.
             float kerbDir = m_Ctx.CityConfiguration.leftHandTraffic ? -1f : 1f;
-            for (int d = 1; d < plan.m_Lanes.Count; d++)
+            int reach = plan.m_Lanes.Count - 1;
+            for (int c = 0; c < reach * 2; c++)
             {
-                for (int s = 0; s < 2; s++)
+                float dir;
+                int d;
+                if (latched)
                 {
-                    float dir = (s == 0) ? kerbDir : -kerbDir;
-                    int candidatePos = refPos + (int)(dir * d);
-                    if (candidatePos < 0 || candidatePos >= plan.m_Lanes.Count)
-                    {
-                        continue;
-                    }
-                    Entity candidate = plan.m_Lanes[candidatePos];
-                    if (!EntityManager.Exists(candidate) ||
-                        !EntityManager.HasComponent<Game.Net.CarLane>(candidate))
-                    {
-                        continue;
-                    }
-                    Game.Net.CarLaneFlags flags = EntityManager.GetComponentData<Game.Net.CarLane>(candidate).m_Flags;
-                    if ((flags & Game.Net.CarLaneFlags.Forbidden) != 0 ||
-                        ((flags & Game.Net.CarLaneFlags.PublicOnly) != 0 && (carFlags & CarFlags.UsePublicTransportLanes) == 0))
-                    {
-                        continue;
-                    }
-                    if (m_Ctx.Geometry.LaneVehiclesAhead(candidate, curvePosition, inverted) == 0)
-                    {
-                        m_FreeLaneDir = dir;
-                        // Lean toward the free lane while the change is still pending: the hug
-                        // reuses the channel's own steering path, so pointing it at the free lane
-                        // has the responder easing over instead of into the middle of the queue.
-                        m_ChannelHugDir = dir;
-                        return dir;
-                    }
+                    bool heldSide = c < reach;
+                    dir = heldSide ? freeLatch.m_FreeLaneDir : -freeLatch.m_FreeLaneDir;
+                    d = (heldSide ? c : c - reach) + 1;
                 }
+                else
+                {
+                    d = c / 2 + 1;
+                    dir = (c % 2 == 0) ? kerbDir : -kerbDir;
+                }
+                int candidatePos = refPos + (int)(dir * d);
+                if (candidatePos < 0 || candidatePos >= plan.m_Lanes.Count)
+                {
+                    continue;
+                }
+                Entity candidate = plan.m_Lanes[candidatePos];
+                if (!EntityManager.Exists(candidate) ||
+                    !EntityManager.HasComponent<Game.Net.CarLane>(candidate))
+                {
+                    continue;
+                }
+                Game.Net.CarLaneFlags flags = EntityManager.GetComponentData<Game.Net.CarLane>(candidate).m_Flags;
+                if ((flags & Game.Net.CarLaneFlags.Forbidden) != 0 ||
+                    ((flags & Game.Net.CarLaneFlags.PublicOnly) != 0 && (carFlags & CarFlags.UsePublicTransportLanes) == 0))
+                {
+                    continue;
+                }
+                // Committing needs an empty lane; KEEPING the latched one tolerates a little
+                // traffic, so the decision cannot flip with every car that enters it.
+                // A lane with a PARKING strip alongside is not the escape it looks like:
+                // parked cars stand there permanently, and the responder ends up threading
+                // between them and the queue instead of getting past (Sebastian). Vehicles
+                // that are merely ROLLING do not count as blocking - see kFreeLaneFlowSpeed.
+                if (HasParkingBeside(candidate, owner))
+                {
+                    continue;
+                }
+                int ahead = m_Ctx.Geometry.LaneVehiclesAhead(candidate, curvePosition, inverted, kFreeLaneFlowSpeed, kFreeLaneClearMeters);
+                bool usable = latched && dir == freeLatch.m_FreeLaneDir
+                    ? ahead <= kFreeLaneReleaseVehicles
+                    : ahead == 0;
+                if (usable)
+                {
+                    freeLatch.m_FreeLaneDir = dir;
+                    freeLatch.m_FreeLaneUntilFrame = m_SimulationSystem.frameIndex + kFreeLaneLatchFrames;
+                    m_Ctx.States.Stuck[vehicle] = freeLatch;
+                    m_FreeLaneDir = dir;
+                    // Lean toward the free lane while the change is still pending: the hug
+                    // reuses the channel's own steering path, so pointing it at the free lane
+                    // has the responder easing over instead of into the middle of the queue.
+                    m_ChannelHugDir = dir;
+                    return dir;
+                }
+            }
+            // The scan ran over every candidate lane of this segment and none of them is usable -
+            // not even under the relaxed rule a latched choice gets. THAT is what releases the
+            // commitment, and the only thing that does.
+            m_FreeLaneDir = 0f;
+            if (freeLatch.m_FreeLaneDir != 0f)
+            {
+                freeLatch.m_FreeLaneDir = 0f;
+                freeLatch.m_FreeLaneUntilFrame = 0u;
+                m_Ctx.States.Stuck[vehicle] = freeLatch;
             }
             return 0f;
         }
@@ -166,7 +450,12 @@ namespace ClearTheWay.FunctionGroup.WayClearance
                 m_ChannelCache.Remove(m_ChannelCachePrune[i]);
             }
             m_ChannelCachePrune.Clear();
+            // The parking-strip answers are keyed by lane and have no TTL of their own - a lane
+            // that was rebuilt or deleted would otherwise sit here for the rest of the session.
+            EntityMapPrune.PruneDead(EntityManager, m_ParkingBeside, m_ParkingPrune);
         }
+
+        private readonly List<Entity> m_ParkingPrune = new List<Entity>();
         public ChannelPlanner(WayClearanceContext ctx)
         {
             m_Ctx = ctx;
@@ -306,7 +595,7 @@ namespace ClearTheWay.FunctionGroup.WayClearance
         /// lane's own width as the available room (capped). Returns 0 when there is no shoulder
         /// there, so a car is never nudged off a road that has none.
         /// </summary>
-        public float ChannelShoulderBonus(DynamicBuffer<Game.Net.SubLane> subLanes, Entity outerCarLane, bool laneInverted, bool physicalLeftSide)
+        public float ChannelShoulderBonus(DynamicBuffer<Game.Net.SubLane> subLanes, Entity outerCarLane, bool laneInverted, bool travelLeftSide)
         {
             int outerIdx = -1;
             for (int i = 0; i < subLanes.Length; i++)
@@ -317,11 +606,13 @@ namespace ClearTheWay.FunctionGroup.WayClearance
             {
                 return 0f;
             }
-            // Physical-left is the lower sublane index iff the lane is not inverted. So stepping
-            // physically OUTWARD to the left means decreasing index (or increasing when inverted);
-            // outward to the right is the opposite.
+            // travelLeftSide is signed in TRAVEL terms; sublane indices run in the EDGE frame with
+            // physical-left at the lower index. Converting between the two is the !laneInverted
+            // term here, and it must appear exactly ONCE. Do NOT copy these two lines to a caller
+            // that has already converted its side to physical - LateralRoom.Measure did, the two
+            // Invert factors cancelled, and the walk ran to the wrong side of every inverted lane.
             bool leftIsLower = !laneInverted;
-            int step = (physicalLeftSide == leftIsLower) ? -1 : 1;
+            int step = (travelLeftSide == leftIsLower) ? -1 : 1;
             for (int i = outerIdx + step; i >= 0 && i < subLanes.Length; i += step)
             {
                 Entity sl = subLanes[i].m_SubLane;

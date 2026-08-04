@@ -1,94 +1,81 @@
-# Feature-Plan: Feuerwehr zu Unfällen & Abschleppunternehmen
+# Feature-Plan
 
-Recherche im dekompilierten `Game.dll` (v1.6.0) — Stand der Analyse und Plan
-für die zwei größeren Wünsche. Der einfach & sicher umsetzbare Teil (Platz
-machen für Bergungsfahrzeuge) ist bereits umgesetzt (`AssistTowTrucks`).
+Vorausschauender Plan, Stand **0.1.12**. Was ausgeliefert ist, steht hier nur als
+Einzeiler, damit es niemand erneut plant — Details dazu in der Git-Historie und in
+`PublishConfiguration.xml`. Ausführlich sind nur die **offenen** Punkte und die
+**Sackgassen**, damit letztere nicht ein zweites Mal angelaufen werden.
 
-## Wichtigste Erkenntnis: Fahrzeugbergung existiert bereits
+## Erledigt
 
-Das Spiel schleppt verunfallte Fahrzeuge **schon selbst** ab — gezielt, nicht zufällig:
+Der ursprüngliche Plan (Stand 0.1.5) drehte sich um Bergung und Abschleppen. Das ist
+inzwischen weitgehend umgesetzt, jeweils mit eigener Option:
 
-- `DamagedVehicleSystem`: jedes Unfallauto (`Damaged` + `Stopped` + `Car`) erzeugt
-  automatisch `MaintenanceRequest(wrack, priority 100)` mit `RequestGroup(32)`.
-- Straßenwartungsdepots mit `MaintenanceType.Vehicle` (Flag 8) schicken ein
-  Fahrzeug, das das Wrack birgt (`MaintenanceVehicleAISystem`, Zweige bei
-  `MaintenanceType.Vehicle`).
-- Das „zufällige Vorbeifahren", das du beobachtest, ist die **Straßen-/Schnee-
-  wartung im Patrouillenmodus** (`MaintenanceType.Road | Snow`) — ein anderer
-  Mechanismus als die Bergung.
+| Was | Option |
+|---|---|
+| Rettungsgasse für Bergungsfahrzeuge | `AssistTowTrucks` |
+| Festsitzende Bergungsfahrzeuge freibekommen | `UnblockRecoveryVehicles` |
+| Verkehr hinter einem Unfall nicht despawnen lassen | `PreventAccidentDespawn` |
+| Wracks auf die äußere Spur räumen | `ClearWrecksAside` |
+| Abschleppdepot als eigenes Gebäude | `TowDepot` |
+| Wracks wirklich wegschleppen | `TowWrecks` |
+| Dedizierter Abschleppwagen als Prefab-Klon | `TowTruckPrefab` |
 
-→ „Abschleppwagen kontrolliert zum Unfall schicken" ist im Kern also schon da.
-Umgesetzt: solche Bergungsfahrzeuge bekommen jetzt eine sanfte Rettungsgasse.
+Die damalige Kernerkenntnis gilt weiter und erklärt, warum das Depot nötig war:
+das Spiel birgt Unfallwagen **schon selbst** über `DamagedVehicleSystem` →
+`MaintenanceRequest(prio 100)` → Depot mit `MaintenanceType.Vehicle`. Das
+„zufällige Vorbeifahren" ist die Straßen-/Schneewartung im Patrouillenmodus, ein
+anderer Mechanismus. Das eigene Depot kann ausschließlich `MaintenanceType.Vehicle`
+und schickt seine Fahrzeuge deshalb direkt zum Unfall.
 
-## Feature 1 — Feuerwehr zu Unfällen (auch ohne Brand)
+## Offen — Feuerwehr zu Unfällen (auch ohne Brand)
 
-**Dispatch (machbar, mittel):** Request-Muster ist klar — Entity mit Archetype
-`[ServiceRequest, FireRescueRequest, RequestGroup]`, `FireRescueRequest(target,
-priority, FireRescueRequestType.Fire)` + `RequestGroup(4)`. Ein eigenes System
-kann bei neuen `AccidentSite`-Entities mit einstellbarer Wahrscheinlichkeit
-einen solchen Request erzeugen (einmal pro Unfall, Dedupe nötig).
+**Nicht gebaut.** Im Code existiert kein `FireRescueRequest`, kein `RescueTarget`
+und kein eigener Dispatch; Feuerwehrfahrzeuge werden bisher nur als Einsatzfahrzeuge
+*erkannt*, nicht zu Unfällen *geschickt*.
 
-**Risiko/offene Frage:** `FireEngineAISystem` sucht am Ziel nach `OnFire` **oder**
-`RescueTarget` (Game.Buildings, eigentlich für Gebäudeeinsturz/Katastrophe). Ein
-reines Unfallauto hat beides nicht → die Feuerwehr käme an und fände nichts zu
-tun (fährt vermutlich wieder weg). Optionen:
-  a) Nur „Feuerwehr fährt hin" (Präsenz) — einfach, aber sie tut nichts.
-  b) Unfallauto mit `RescueTarget` markieren, damit die Feuerwehr „rettet" —
-     muss in-game getestet werden (Verhalten/Nebenwirkungen unklar).
+Das Request-Muster ist klar: Entity mit Archetype
+`[ServiceRequest, FireRescueRequest, RequestGroup]`, dazu
+`FireRescueRequest(target, priority, FireRescueRequestType.Fire)` + `RequestGroup(4)`.
+Ein eigenes System kann bei neuen `AccidentSite`-Entities mit einstellbarer
+Wahrscheinlichkeit einen solchen Request erzeugen — einmal pro Unfall, Dedupe nötig.
 
-**Verunfallte Fahrzeuge zur Seite auf eine Spur ziehen:** eigenständige Custom-
-Logik, unabhängig davon wer da ist. Unfallautos sind `Stopped` (kein `Moving`,
-keine Spurbewegung) → müssen per `Transform` versetzt werden. Machbar, aber
-fummelig und optisch heikel; sollte gated (default aus) + iterativ getestet
-werden.
+**Der Haken:** `FireEngineAISystem` sucht am Ziel nach `OnFire` **oder**
+`RescueTarget` (Game.Buildings, gedacht für Gebäudeeinsturz). Ein reines Unfallauto
+hat beides nicht, die Feuerwehr käme also an und fände nichts zu tun. Zwei Wege:
 
-→ **Empfehlung:** In einem nächsten Schritt mit laufendem Spiel: (1) Dispatch
-gated default-aus einbauen, (2) `RescueTarget`-Ansatz live testen, (3) das
-„zur Seite ziehen" separat als experimentelle, gated Option.
+- **a)** Nur Präsenz — einfach, aber sie steht nur herum.
+- **b)** Unfallauto mit `RescueTarget` markieren, damit sie „rettet". Nebenwirkungen
+  unklar, nur in-game prüfbar.
 
-## Feature 2 — Abschleppwagen + Abschleppunternehmen (neue Prefabs)
+Wenn das angegangen wird: gated und default aus, wie bei allem anderen auch.
 
-- **Platz machen / leicht erhöhte Priorität:** ✅ umgesetzt (`AssistTowTrucks`).
-- **Dediziertes Abschleppwagen-Modell + Abschleppunternehmen-Gebäude:** das ist
-  Prefab-Erstellung. Realistischer Weg: einen bestehenden `MaintenanceDepot`
-  (Straßenwartung) klonen und als eigenes Gebäude registrieren, das nur
-  `MaintenanceType.Vehicle` kann; Fahrzeugmodell vorerst = Wartungswagen.
-  Das ist ein substanzielles, **nur in-game verifizierbares** Stück (PrefabSystem,
-  Registrierung, UI-Icon, Lokalisierung, Platzierbarkeit) und darf nicht blind
-  ausgeliefert werden — hohes Crash-/Speicherstand-Risiko ohne Test.
+## Sackgasse — Anhänger eines Gespanns richtig bergen
 
-→ **Empfehlung:** Als eigenen, iterativen Arbeitsschritt mit laufendem Spiel
-angehen (Prefab klonen → laden → platzieren → Fahrzeug prüfen), nicht ungetestet
-in den bestehenden Mod mischen.
+**Zweimal versucht, beide Male harter Burst-Crash.** Es bleibt bei der
+Interimslösung aus 0.1.5: der Anhänger eines geschleppten Gespanns **despawnt beim
+Ankoppeln**, dazu räumt ein Orphan-Sweep Alt-Waisen ab.
+
+Warum es scheitert: die Vanilla-Trailer-Maschinerie liest Traktor- und Trailer-Daten
+über `PrefabRef` mit **ungeschützten Lookups**. `CarTrailerMoveSystem` greift auf
+`CarData` + `CarTrailerData` zu, die ein gewöhnliches Auto schlicht nicht hat — ein
+Wrack als echten Trailer einzuhängen ist damit ein Nullpointer im Burst-Job. Ein
+`LayoutElement`-Buffer, der auf ein gelöschtes Mitglied zeigt, ist dieselbe Klasse
+von Absturz.
+
+- Der **Flatbed-Pfad** ist retired, liegt aber intakt in `TowFlatbed.cs`.
+- Der **wreck-as-trailer-Umbau** liegt auf Branch `wreck-as-trailer-B` und stolpert
+  weiterhin über `CarTrailerMoveSystem`.
+- Was stattdessen läuft: ein statischer Teleport-Follow hinter dem Truck
+  („Deichsel"), ohne jede Vanilla-Trailer-Maschinerie — deshalb absturzfrei.
+
+**Vor einem dritten Anlauf** muss der ungeschützte Prefab-Lookup gelöst sein, nicht
+umgangen. Sonst ist es dieselbe Sackgasse mit anderem Anstrich.
 
 ## Nächste sinnvolle Reihenfolge
 
-1. `AssistTowTrucks` testen (jetzt möglich).
-2. Feuerwehr-Dispatch zu Unfällen, gated default-aus, + Wahrscheinlichkeits-
-   Slider. Live testen was die Feuerwehr am Unfall tut.
-3. „Unfallautos zur Seite ziehen" als experimentelle Option.
-4. Abschleppunternehmen-Gebäude + Abschleppwagen als Prefab-Klon (eigener
-   Testzyklus).
+1. Feuerwehr-Dispatch zu Unfällen, gated default-aus, mit Wahrscheinlichkeits-Slider —
+   und live prüfen, was die Feuerwehr am Unfall überhaupt tut.
+2. Anhängerbergung nur dann erneut, wenn es für den Prefab-Lookup eine echte Lösung gibt.
 
-## Feature 3 — Anhänger abschleppen statt despawnen (Ziel 0.1.6)
-
-Stand seit 0.1.5: Hänger eines getowten Gespanns werden beim Ankoppeln
-**despawnt** (Interimslösung; plus OrphanTrailerSweep für Alt-Waisen).
-Für 0.1.6 sollen sie richtig geborgen werden:
-
-- **LKW-Anhänger/Auflieger:** ein **eigenes/neues Zugfahrzeug schicken** —
-  nach dem Hookup des Traktors wird der Hänger selbst ein Bergungsziel
-  (eigener Request/Dispatch), ein zweiter Abschleppwagen holt ihn.
-- **PKW-Anhänger:** über den **regulären Abschleppvorgang** mitnehmen
-  (kein separater Truck).
-
-Offene Punkte für die Umsetzung:
-- Trailer-Entities sind KEINE `Car`s — alle Tow-Queries/Hookup-Gates sind
-  Car-basiert (m_WreckQuery, TowDispatch, TryHookup) → eigene Query/Pfad.
-- Drawbar-Follow eines `CarTrailer`-Wracks prüfen (gleiches Teleport-Muster,
-  aber Archetype anders: CarTrailerLane statt CarCurrentLane).
-- Vanilla `DamagedVehicleSystem` erzeugt MaintenanceRequests nur für
-  `Damaged+Stopped+Car` — für den Hänger müssten WIR den Request anlegen
-  (oder ihn direkt über TowDispatch einem Van zuweisen).
-- Despawn-at-hookup + OrphanTrailerSweep bleiben als Fallback, falls kein
-  Truck kommt (Give-up-Prinzip wie bei Wracks).
+Laufende Robustheits- und Bugthemen (Gegenverkehr-Pass, Crosswalk-Guard) gehören
+nicht hierher — dieser Plan sammelt Features.

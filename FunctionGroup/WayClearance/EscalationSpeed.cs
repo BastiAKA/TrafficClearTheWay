@@ -103,6 +103,23 @@ namespace ClearTheWay
                 {
                     m_Control.SetFloor(vehicle, kClearedSpeed, hasTarget: false, default, default);
                 }
+                // Squeezing, but the gap is not there yet: separation sits in the dead band
+                // between kMinSqueezeSeparation (squeeze allowed) and kClearedSeparation (boost
+                // allowed). That case used to get NOTHING, and it could not get out of it alone.
+                // The game's push-past clamps to 3 m/s for exactly ONE entity - the one in
+                // Blocker.m_Blocker - and CarNavigationSystem.CheckBlocker drops IgnoreBlocker
+                // again the moment the reported blocker changes. With two stopped cars abreast
+                // the blocker alternates every tick, so neither is ever really ignored and the
+                // responder stands at 0; and since a car realises its written m_LanePosition
+                // only by DRIVING, the separation can never grow into the boost band either.
+                // Self-locking (logged: veh at (476,1471) for ~2800 frames at sep 1.02/1.44, the
+                // blocker flipping between two cars, with nothing but the 3-minute light rule
+                // left to free it). So it gets the same nose-out as a responder that has not
+                // started squeezing - the creep budget is what turns the offset into distance.
+                else
+                {
+                    s.m_NoseCreep = TryNoseCreep(in s, currentLane, vehicle);
+                }
             }
             // Free-ahead advance: nothing blocks the responder and its own lane is clear well
             // ahead (typically the last stretch up to the junction it turns at), yet vanilla
@@ -123,12 +140,22 @@ namespace ClearTheWay
             {
                 m_Control.SetFloor(vehicle, kAdvanceClearSpeed, hasTarget: false, default, default);
             }
-            else if (s.m_HardEvade && !s.m_NearArrivalTarget && s.m_EmergencySpeed < 1f &&
-                     currentLane.m_ChangeLane == Entity.Null &&
-                     math.abs(currentLane.m_LanePosition) > 0.3f &&
-                     m_Ctx.LanePosition.TryGetLateralTarget(vehicle, currentLane, 2f, out float3 noseTarget, out quaternion noseRotation))
+            // Committing to the gap. A lane change INTO the corridor is exactly when a responder
+            // needs to keep rolling, and it is the one case every floor above excludes (they all
+            // require m_ChangeLane == null). Stalling halfway is the worst outcome: the vehicle
+            // sits across two lanes, its lateral offset decays back toward centre, and nothing
+            // recovers it until the 15 s defreeze. Gated on real room ahead, so it only ever
+            // completes a move into space that is actually there.
+            else if (!s.m_NearArrivalTarget && !s.m_FullCrossover &&
+                     currentLane.m_ChangeLane != Entity.Null &&
+                     s.m_EmergencySpeed < kMergeCommitSpeed &&
+                     HasRoomToCommit(vehicle, currentLane))
             {
-                m_Control.SetFloor(vehicle, kCreepSpeed, hasTarget: true, noseTarget, noseRotation);
+                m_Control.SetFloor(vehicle, kMergeCommitSpeed, hasTarget: false, default, default);
+            }
+            else
+            {
+                s.m_NoseCreep = TryNoseCreep(in s, currentLane, vehicle);
             }
 
             // #6: while the vehicle is actively passing (forced overtake, squeeze past a
@@ -171,8 +198,40 @@ namespace ClearTheWay
 
             if (setting.VerboseLogging && frame % kLogIntervalFrames == (uint)(vehicle.Index % (int)kLogIntervalFrames))
             {
-                m_Ctx.Escalation.LogVehicleState(vehicle, currentLane, s.m_Pushed, frame, s.m_HardEvade, s.m_OncomingState, s.m_EvadeSideBlocked, s.m_DrainAhead);
+                m_Ctx.Escalation.LogVehicleState(vehicle, currentLane, s.m_Pushed, frame, s.m_Evade, s.m_OncomingState, s.m_EvadeSideBlocked, s.m_DrainAhead, s.m_NoseCreep,
+                    s.m_OncReason, s.m_OncNearestOffset);
             }
         }
+        /// <summary>
+        /// Nose-out for a responder that has come to a stand while evading: a creep budget plus a
+        /// lateral target, so its written m_LanePosition becomes actual distance.
+        ///
+        /// A standing car has no lateral lever at all - the game only realises the offset while
+        /// the vehicle moves - so without this the offset stays a number on a component and every
+        /// separation gate downstream stays shut. Returns true when the floor was granted.
+        /// </summary>
+        private bool TryNoseCreep(in EscalationState s, CarCurrentLane currentLane, Entity vehicle)
+        {
+            if (s.m_Evade < EvadeStage.Hard || s.m_NearArrivalTarget || s.m_EmergencySpeed >= 1f ||
+                currentLane.m_ChangeLane != Entity.Null ||
+                math.abs(currentLane.m_LanePosition) <= 0.3f ||
+                !m_Ctx.LanePosition.TryGetLateralTarget(vehicle, currentLane, 2f, out float3 noseTarget, out quaternion noseRotation))
+            {
+                return false;
+            }
+            m_Control.SetFloor(vehicle, kCreepSpeed, hasTarget: true, noseTarget, noseRotation);
+            return true;
+        }
+
+        /// <summary>
+        /// Is there enough space in front to finish a lane change under power? A negative
+        /// separation means no blocker at all - the road ahead is open.
+        /// </summary>
+        private bool HasRoomToCommit(Entity vehicle, CarCurrentLane currentLane)
+        {
+            float separation = m_Geometry.GetBlockerSeparation(vehicle, currentLane);
+            return separation < 0f || separation >= kMergeCommitSeparation;
+        }
+
     }
 }

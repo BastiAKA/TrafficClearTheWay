@@ -108,19 +108,33 @@ namespace ClearTheWay
             // carriageway (the central channel is for slow clusters, not a free-flowing
             // responder), so compute it before BuildCorridor.
             s.m_EmergencySpeed = math.length(EntityManager.GetComponentData<Moving>(vehicle).m_Velocity);
-            m_Corridor.BuildCorridor(vehicle, ref currentLane, setting, side, s.m_EmergencySpeed);
+            // The corridor build needs to know whether this responder is DESPERATE before it runs:
+            // that is what unlocks a re-plan of a corridor which is currently being maintained
+            // (ChannelPlanner.ChooseShape). The spell it is derived from belongs to the previous
+            // tick either way, so read the state here - and read it AGAIN after the build, which
+            // writes this tick's shape and free-lane commitments into the very same record.
+            m_StuckStates.TryGetValue(vehicle, out StuckState beforeBuild);
+            s.m_Desperate = beforeBuild.m_Blocker != Entity.Null &&
+                             frame - beforeBuild.m_BlockerSinceFrame >= kDesperateFrames;
+            m_Corridor.BuildCorridor(vehicle, ref currentLane, setting, side, s.m_EmergencySpeed, s.m_Desperate);
 
             // While the emergency vehicle has been stuck behind the same blocker for a
             // while (state from the previous tick), cars right in front of it clear out
             // harder - onto the sidewalk/parking strip if needed. All of this only while
             // actually crawling - rolling traffic gets the normal corridor, nothing more.
             m_StuckStates.TryGetValue(vehicle, out s.m_PreviousStuck);
-            s.m_HardEvade = s.m_EmergencySpeed < kMaxEvadeSpeed &&
+            bool hardEvade = s.m_EmergencySpeed < kMaxEvadeSpeed &&
                              (frame < s.m_PreviousStuck.m_SqueezeUntilFrame ||
                               (s.m_PreviousStuck.m_Blocker != Entity.Null &&
                                frame - s.m_PreviousStuck.m_BlockerSinceFrame >= kEvadeAfterFrames));
-            s.m_Desperate = s.m_PreviousStuck.m_Blocker != Entity.Null &&
-                             frame - s.m_PreviousStuck.m_BlockerSinceFrame >= kDesperateFrames;
+            // Third stage. Half a minute behind the SAME blocker means the ordinary corridor has
+            // demonstrably failed - a partial offset still leaves the blocker's body across the
+            // gap, so the responder never gets through and the whole street stands still (field
+            // report on a narrow custom road). Then cars ahead go fully onto the pavement.
+            bool deepEvade = hardEvade &&
+                             s.m_PreviousStuck.m_Blocker != Entity.Null &&
+                             frame - s.m_PreviousStuck.m_BlockerSinceFrame >= kDeepEvadeAfterFrames;
+            s.m_Evade = deepEvade ? EvadeStage.Deep : (hardEvade ? EvadeStage.Hard : EvadeStage.Soft);
 
             // Convoy discipline: when ANOTHER emergency vehicle is right ahead on the same
             // lane, this one queues behind it instead of escalating. Without this, a wave of
@@ -129,8 +143,18 @@ namespace ClearTheWay
             // (logged: ~10 responders with consecutive ids all at lanePos -2.99 in one
             // street). The colleague at the front does the passing; the queue keeps a
             // normal corridor line. Only checked while slow - a rolling convoy needs nothing.
-            s.m_BehindColleague = s.m_EmergencySpeed < kMaxEvadeSpeed &&
+            // ...and LATCHED, for the same reason the hug is: the raw 20 m sighting flips as the
+            // colleague pulls away and closes up again, and every flip swung this responder's
+            // whole behaviour - evade stage between Soft and Hard, hug between the edge line and
+            // the full swing. A convoy is a state that lasts seconds, not a per-tick measurement.
+            bool colleagueAhead = s.m_EmergencySpeed < kMaxEvadeSpeed &&
                 m_Ctx.Obstruction.HasEmergencyAhead(vehicle, currentLane, kConvoyAheadRange);
+            if (colleagueAhead)
+            {
+                s.m_PreviousStuck.m_ColleagueUntilFrame = frame + kConvoyHoldFrames;
+                m_StuckStates[vehicle] = s.m_PreviousStuck;
+            }
+            s.m_BehindColleague = colleagueAhead || frame < s.m_PreviousStuck.m_ColleagueUntilFrame;
             // ...but only while the convoy is actually PROGRESSING. Once a member has been stuck
             // for ~10 s (desperate) the front is not passing anything either - freezing the whole
             // column then deadlocks it (observed: a member stuck 5+ min at sep 0.91, one blocker
@@ -139,7 +163,7 @@ namespace ClearTheWay
             // stays capped below (behindColleague is still true) so it does not fan out.
             if (s.m_BehindColleague && !s.m_Desperate)
             {
-                s.m_HardEvade = false;
+                s.m_Evade = EvadeStage.Soft; // a queueing convoy member must not fan out at all
             }
 
             // Safe defreeze - the same recompute a manual traffic-light toggle triggers. An
@@ -188,14 +212,17 @@ namespace ClearTheWay
             bool committedOncoming = frame < s.m_PreviousStuck.m_OncomingActiveUntil;
             s.m_OncomingState = 0;
             s.m_OncomingClearAhead = 0f;
+            s.m_OncReason = OncomingReason.NotAsked;
+            s.m_OncNearestOffset = -1f;
             // Near the dispatch target no NEW oncoming maneuver is started (the vehicle must
             // brake to a stop there, not swing out); an already-committed one keeps being
             // serviced so its merge-back/hold logic stays alive.
-            if (s.m_CanManeuver && setting.UseOncomingLane && (s.m_HardEvade || committedOncoming) &&
+            if (s.m_CanManeuver && setting.UseOncomingLane && (s.m_Evade >= EvadeStage.Hard || committedOncoming) &&
                 (!s.m_NearArrivalTarget || committedOncoming) &&
                 (committedOncoming || s.m_EmergencySpeed < kMaxOncomingSpeed || math.abs(currentLane.m_LanePosition) > 1f))
             {
-                s.m_OncomingState = m_Ctx.Desperate.TryOncomingDisplacement(vehicle, ref currentLane, side, s.m_Desperate, frame, out s.m_OncomingClearAhead);
+                s.m_OncomingState = m_Ctx.Desperate.TryOncomingDisplacement(vehicle, ref currentLane, side, s.m_Desperate, frame,
+                    out s.m_OncomingClearAhead, out s.m_OncReason, out s.m_OncNearestOffset);
                 if (s.m_OncomingState > 0)
                 {
                     s.m_Changed = true;
@@ -215,24 +242,36 @@ namespace ClearTheWay
             s.m_LightOverride = s.m_PreviousStuck.m_Blocker != Entity.Null && s.m_EmergencySpeed < 0.5f &&
                 frame - s.m_PreviousStuck.m_BlockerSinceFrame >= kLightOverrideFrames;
             // Absolute last resort: the junction stays dead even with the green override AND the
-            // queue push. Force a route RECOMPUTE - flag the lane Obsolete, the game's own
-            // recovery path (CarNavigationSystem.UpdateStopped re-localizes and re-paths it next
-            // tick) - so the responder can find a way AROUND the stuck junction. Only when not
-            // already recovering a lane change (that path owns the Obsolete flag above), and
-            // throttled hard by the shared defreeze cooldown so it never floods the pathfinder.
+            // queue push. Two ways out of it, tried in this order under one shared throttle:
+            //
+            //  1. Clear the PLUG. If a plain civilian car sits directly ahead, flag THAT car
+            //     Obsolete: the game re-localizes and re-paths it, and if its route is genuinely
+            //     dead it despawns - deliberately. One sacrificed car frees the lane and the whole
+            //     queue behind (including us) rolls on with NO repath flood. Preferred, because it
+            //     gets us THROUGH instead of the long way around.
+            //  2. Reroute OURSELVES. If there is nothing civilian to sacrifice ahead (dead junction,
+            //     or the car ahead is another responder / a tow truck / a wreck we must not touch),
+            //     flag our OWN lane Obsolete so CarNavigationSystem re-paths us AROUND the junction.
+            //
+            // Only when not already recovering a lane change (that path owns the Obsolete flag
+            // above), and throttled hard by the shared defreeze cooldown so neither floods the
+            // pathfinder.
             if (s.m_LightOverride && currentLane.m_ChangeLane == Entity.Null && !s.m_NearArrivalTarget &&
                 (s.m_PreviousStuck.m_LastDefreezeFrame == 0u ||
                  frame - s.m_PreviousStuck.m_LastDefreezeFrame >= kDefreezeCooldown))
             {
-                currentLane.m_LaneFlags |= CarLaneFlags.Obsolete;
-                s.m_Changed = true;
+                if (!TryReleaseLeadBlocker(vehicle, frame, setting))
+                {
+                    currentLane.m_LaneFlags |= CarLaneFlags.Obsolete;
+                    s.m_Changed = true;
+                    if (setting.VerboseLogging)
+                    {
+                        Mod.Log.Info($"[lightunstuck] veh={vehicle.Index} stuck {frame - s.m_PreviousStuck.m_BlockerSinceFrame}f " +
+                            "at a dead junction - forcing a route recompute");
+                    }
+                }
                 s.m_PreviousStuck.m_LastDefreezeFrame = frame;
                 m_StuckStates[vehicle] = s.m_PreviousStuck;
-                if (setting.VerboseLogging)
-                {
-                    Mod.Log.Info($"[lightunstuck] veh={vehicle.Index} stuck {frame - s.m_PreviousStuck.m_BlockerSinceFrame}f " +
-                        "at a dead junction - forcing a route recompute");
-                }
             }
             m_Ctx.CorridorRun.Apply(ref s, ref currentLane, setting, vehicle, frame);
 
@@ -243,7 +282,75 @@ namespace ClearTheWay
             m_Ctx.SpeedStage.Apply(ref s, ref currentLane, setting, vehicle, side, frame);
         }
 
-        public void LogVehicleState(Entity vehicle, CarCurrentLane currentLane, int pushed, uint frame, bool hardEvade, int oncomingState, bool evadeSideBlocked, bool drainAhead)
+        /// <summary>
+        /// Last-resort plug removal. Flags the civilian car directly ahead of a hard-stuck
+        /// responder Obsolete so CarNavigationSystem re-localizes and re-paths it next tick; if its
+        /// route is genuinely dead (the blockage leaves no way through) the game despawns it, which
+        /// is accepted - one sacrificed car frees the lane and the queue behind rolls on with no
+        /// repath flood.
+        ///
+        /// Strict target rules - only ever a plain civilian car:
+        ///  - never another emergency vehicle or a tow/maintenance vehicle (those are protected),
+        ///  - never a wreck (RecoveryAssist owns crashed vehicles),
+        ///  - never a car mid lane-change (flagging Obsolete while m_ChangeLane is set is only safe
+        ///    for the vehicle the game is about to re-localize itself; forcing it on a foreign car
+        ///    risks dangling it in the change lane's LaneObject buffer - see the defreeze note),
+        ///  - only a car that is actually STOPPED, i.e. a genuine plug, not one merely crawling.
+        ///
+        /// The sacrificed car is recorded in <see cref="ResponderStates.Sacrifice"/> so
+        /// NearWreckProtection stops keeping it alive for a short window and the despawn can
+        /// complete. Uses the live game Blocker (not the cached stuck-spell blocker) so a flicker
+        /// onto a trailer or crossing vehicle cannot be picked as the target.
+        ///
+        /// Returns true when a lead was flagged, so the caller skips rerouting the responder itself.
+        /// </summary>
+        private bool TryReleaseLeadBlocker(Entity vehicle, uint frame, Setting setting)
+        {
+            if (!EntityManager.HasComponent<Blocker>(vehicle))
+            {
+                return false;
+            }
+            Entity lead = EntityManager.GetComponentData<Blocker>(vehicle).m_Blocker;
+            if (lead == Entity.Null || lead == vehicle || !EntityManager.Exists(lead) ||
+                !EntityManager.HasComponent<Car>(lead) ||
+                !EntityManager.HasComponent<CarCurrentLane>(lead))
+            {
+                return false;
+            }
+            // Civilian only: shield every responder and tow truck, and never touch a wreck.
+            if ((EntityManager.GetComponentData<Car>(lead).m_Flags & CarFlags.Emergency) != 0 ||
+                EntityManager.HasComponent<Game.Vehicles.MaintenanceVehicle>(lead) ||
+                EntityManager.HasComponent<Game.Events.InvolvedInAccident>(lead))
+            {
+                return false;
+            }
+            CarCurrentLane leadLane = EntityManager.GetComponentData<CarCurrentLane>(lead);
+            if (leadLane.m_ChangeLane != Entity.Null)
+            {
+                return false;
+            }
+            // A genuine plug is stopped; a crawling car will clear on its own.
+            if (EntityManager.HasComponent<Moving>(lead) &&
+                math.lengthsq(EntityManager.GetComponentData<Moving>(lead).m_Velocity) > 0.25f)
+            {
+                return false;
+            }
+            leadLane.m_LaneFlags |= CarLaneFlags.Obsolete;
+            EntityManager.SetComponentData(lead, leadLane);
+            m_Ctx.States.Sacrifice[lead] = frame + kSacrificeShieldWindow;
+            if (setting.VerboseLogging)
+            {
+                Mod.Log.Info($"[sacrifice] veh={vehicle.Index} flagged lead civilian car={lead.Index} " +
+                    "Obsolete to clear the plug - it re-paths or despawns, freeing the queue behind");
+            }
+            return true;
+        }
+
+        // The two oncoming diagnostics are APPENDED rather than slotted in beside oncomingState on
+        // purpose: this list is already long and mostly bools, so moving an existing argument is
+        // how a silent transposition gets in (the reason EscalationState is a struct at all).
+        public void LogVehicleState(Entity vehicle, CarCurrentLane currentLane, int pushed, uint frame, EvadeStage evade, int oncomingState, bool evadeSideBlocked, bool drainAhead, bool noseCreep,
+            OncomingReason oncReason, float oncNearestOffset)
         {
             float speed = math.length(EntityManager.GetComponentData<Moving>(vehicle).m_Velocity);
             Blocker blocker = EntityManager.GetComponentData<Blocker>(vehicle);
@@ -265,12 +372,30 @@ namespace ClearTheWay
                 }
             }
             m_StuckStates.TryGetValue(vehicle, out StuckState stuck);
-            Mod.Log.Info($"frame={frame} veh={vehicle.Index} speed={speed:F1} lanePos={currentLane.m_LanePosition:F2} " +
+            // pos= makes a case recognisable ACROSS a reload. Entity ids are reassigned every
+            // time a save is loaded, so "veh=" cannot identify the same vehicle in a second run of
+            // the same diag save - the coordinates can, and they are what makes a before/after
+            // comparison of one fix possible at all.
+            float3 logPos = EntityManager.HasComponent<Transform>(vehicle)
+                ? EntityManager.GetComponentData<Transform>(vehicle).m_Position
+                : default;
+            Mod.Log.Info($"frame={frame} veh={vehicle.Index} pos=({logPos.x:F0},{logPos.z:F0}) speed={speed:F1} lanePos={currentLane.m_LanePosition:F2} " +
                 $"corridorLanes={m_Corridor.CorridorLanes.Count} pushed={pushed} changing={(currentLane.m_ChangeLane != Entity.Null ? 1 : 0)} " +
                 $"ignore={((currentLane.m_LaneFlags & CarLaneFlags.IgnoreBlocker) != 0 ? 1 : 0)} " +
                 $"blocker={blocker.m_Blocker.Index} type={blocker.m_Type} bSpeed={blockerSpeed:F1} bLanePos={blockerLanePos:F2} sep={separation:F2} " +
-                $"stuckFor={(stuck.m_Blocker != Entity.Null ? frame - stuck.m_BlockerSinceFrame : 0)} latch={(frame < stuck.m_SqueezeUntilFrame ? 1 : 0)} evade={(hardEvade ? 1 : 0)} onc={oncomingState} nearFor={stuck.m_NearTargetFrames} evadeBlk={(evadeSideBlocked ? 1 : 0)} drain={(drainAhead ? 1 : 0)} " +
-                $"hug={m_Corridor.ChannelHugDir:F0} free={m_Corridor.FreeLaneDir:F0}");
+                $"stuckFor={(stuck.m_Blocker != Entity.Null ? frame - stuck.m_BlockerSinceFrame : 0)} latch={(frame < stuck.m_SqueezeUntilFrame ? 1 : 0)} evade={evade} onc={oncomingState} nearFor={stuck.m_NearTargetFrames} evadeBlk={(evadeSideBlocked ? 1 : 0)} drain={(drainAhead ? 1 : 0)} " +
+                $"hug={m_Corridor.ChannelHugDir:F0} free={m_Corridor.FreeLaneDir:F0} creep={(noseCreep ? 1 : 0)} " +
+                // shape= is the whole point of the commitment work: a responder whose shape changes
+                // from log line to log line while it is standing in one place has not committed to
+                // anything, and that is exactly what the latches are there to prevent. Read it
+                // together with hug= and free= - those two must agree with it (only a FreeLane
+                // shape may report a free= direction).
+                $"shape={(CorridorShape)stuck.m_Shape} shapeFor={(stuck.m_ShapeUntilFrame > frame ? stuck.m_ShapeUntilFrame - frame : 0)} " +
+                // onc=0 on its own says nothing - see OncomingReason. oncOff= is the nearest
+                // oncoming lane in metres regardless of the offset window (-1 = none at all), so
+                // "NoLane with oncOff=7.2" means kOncomingMaxOffset is the limit, while "NoLane
+                // with oncOff=-1" means this road simply has no oncoming side here.
+                $"oncWhy={oncReason} oncOff={oncNearestOffset:F1}");
         }
     }
 }

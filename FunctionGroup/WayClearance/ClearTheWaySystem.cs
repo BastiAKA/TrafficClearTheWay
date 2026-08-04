@@ -96,6 +96,7 @@ namespace ClearTheWay
             modContext.PushedCars = new PushedCars(modContext);
 
             modContext.Channel = new ChannelPlanner(modContext);
+            modContext.Room = new LateralRoom(modContext);
             modContext.Corridor = new CorridorBuilder(modContext);
             modContext.LaneGroups = new CorridorLaneGroups(modContext);
             modContext.Roundabout = new RoundaboutExtensions(modContext);
@@ -121,6 +122,14 @@ namespace ClearTheWay
 
             modContext.Arrival = new ArrivalAssist(modContext);
             modContext.ArrivalTarget = new ArrivalTarget(modContext);
+
+            // Debug vehicle watch: a broad "every live car" query to resolve a watched index, and
+            // the dump pass itself. Both are inert unless the WatchVehicle setting is set.
+            modContext.WatchScanQuery = GetEntityQuery(
+                ComponentType.ReadOnly<Car>(),
+                ComponentType.Exclude<Game.Common.Deleted>(),
+                ComponentType.Exclude<Game.Tools.Temp>());
+            modContext.Watch = new VehicleWatch(modContext);
 
 
             modRecovery = new RecoveryAssist(EntityManager, modContext.Geometry, modContext.VehicleControl, modContext.Corridor, modContext);
@@ -254,6 +263,9 @@ namespace ClearTheWay
 
             modContext.PushedCars.ReleasePushedCars(frame);
             PruneStuckStates(frame);
+
+            // Debug: dump a single watched vehicle's full state (inert unless the setting is set).
+            modContext.Watch.Dump(setting, frame);
         }
 
         private void PruneStuckStates(uint frame)
@@ -291,6 +303,25 @@ namespace ClearTheWay
                 for (int i = 0; i < m_PruneScratch.Count; i++)
                 {
                     m_ForcedChanges.Remove(m_PruneScratch[i]);
+                }
+                m_PruneScratch.Clear();
+            }
+            // Sacrificed lead blockers: drop them once their exemption window has elapsed (the car
+            // survived and is protected normally again) or the entity is gone (it despawned as
+            // intended). Either way the record has done its job.
+            if (m_States.Sacrifice.Count != 0)
+            {
+                m_PruneScratch.Clear();
+                foreach (KeyValuePair<Entity, uint> entry in m_States.Sacrifice)
+                {
+                    if (frame > entry.Value || !EntityManager.Exists(entry.Key))
+                    {
+                        m_PruneScratch.Add(entry.Key);
+                    }
+                }
+                for (int i = 0; i < m_PruneScratch.Count; i++)
+                {
+                    m_States.Sacrifice.Remove(m_PruneScratch[i]);
                 }
                 m_PruneScratch.Clear();
             }

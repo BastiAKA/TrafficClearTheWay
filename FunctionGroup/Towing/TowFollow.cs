@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using Colossal.Collections;
 using Game.Common;
 using Game.Net;
 using Game.Objects;
@@ -9,6 +10,7 @@ using Game.Tools;
 using Game.Vehicles;
 using Unity.Collections;
 using Unity.Entities;
+using Unity.Jobs;
 using Unity.Mathematics;
 using CarLaneFlags = Game.Vehicles.CarLaneFlags;
 using static ClearTheWay.Tuning;
@@ -122,6 +124,55 @@ namespace ClearTheWay
                 EntityManager.AddComponent<Stopped>(wreck);
             }
             Entity truck = carrier; // already confirmed to be a live recovery truck above
+            // Let go of a tow whose truck has been routeless too long. The path shield keeps the
+            // truck alive, but a vehicle with no route drives dead straight - and it drags the
+            // teleported wreck with it, which is how tow trucks and their loads ended up scattered
+            // across parks and rooftops all over the map. Shielding therefore has to end somewhere:
+            // hand the wreck back to the recovery pipeline (RelicRecovery re-requests it, and the
+            // relic watchdog and orphan sweep both still cover it) and stop asserting ownership of
+            // the truck, so its own AI decides what happens to it.
+            bool pathGaveUp = m_Ctx.PathFailingSince.TryGetValue(truck, out uint failingSince) &&
+                frame - failingSince > kTowPathGiveUpFrames;
+            if (pathGaveUp)
+            {
+                ReleaseTow(wreck, truck, frame, setting);
+                m_Ctx.SafeDelete(truck);
+                return;
+            }
+            // ...and the case a failed PATH cannot describe: a truck that drove itself somewhere
+            // with no way out (a car park interior) may carry no Failed flag at all, so only its
+            // standing still gives it away.
+            //
+            // Standing still is NOT enough to act on, though - a truck queueing in a jam looks
+            // exactly the same. So ask the network: is there a driving lane under its wheels? If
+            // yes it is queueing and nothing here touches it (that case belongs to the deadlock
+            // machinery), and it is simply counted; if no - or if it has been counted through
+            // kTowWedgeStrikes checks without ever moving - the wreck goes back to the recovery
+            // pipeline and the truck is deleted.
+            //
+            // It used to be REPOSITIONED here instead. That wrote the vehicle's lane fields by
+            // hand, which bypasses the game's lane registry and hard-crashes a Burst job (see
+            // TowStuckRecovery). Losing a truck is the cheaper failure by a wide margin.
+            Transform stuckCheck = EntityManager.GetComponentData<Transform>(truck);
+            if (m_Ctx.StuckRecovery.IsWedged(truck, stuckCheck.m_Position, frame))
+            {
+                bool onRoad = false;
+                Game.Net.SearchSystem netSearch = m_Ctx.NetSearch;
+                if (netSearch != null)
+                {
+                    NativeQuadTree<Entity, QuadTreeBoundsXZ> netTree =
+                        netSearch.GetNetSearchTree(readOnly: true, out JobHandle netDeps);
+                    netDeps.Complete();
+                    onRoad = m_Ctx.StuckRecovery.StandsOnRoad(stuckCheck.m_Position, netTree);
+                    netSearch.AddNetSearchTreeReader(default);
+                }
+                if (!onRoad || m_Ctx.StuckRecovery.NoteOnRoadStrike(truck, frame, setting))
+                {
+                    ReleaseTow(wreck, truck, frame, setting);
+                    m_Ctx.SafeDelete(truck);
+                    return;
+                }
+            }
             m_TrucksWithLoad.Add(truck);
             // A loaded truck must ALWAYS deliver first. The game's MaintenanceVehicleAISystem can
             // re-open dispatch and send a still-loaded truck to a fresh accident (Sebastian saw one
@@ -252,6 +303,30 @@ namespace ClearTheWay
                     EntityManager.GetComponentData<MaintenanceVehicleData>(prefab).m_MaintenanceCapacity);
             }
             EntityManager.SetComponentData(truck, m);
+            // Shield its path, every tick, for as long as it carries a load.
+            //
+            // This method pins Returning permanently - which means HALF of vanilla's delete branch
+            // (MaintenanceVehicleAISystem: PathfindFailed && (IsStuck || Returning) => Deleted) is
+            // always satisfied for a towing truck. The coupling forces a fresh repath to the depot,
+            // and Failed was cleared exactly once, at hookup. So a single failed pathfind after
+            // that deleted the truck instantly - and the wreck with it, logged as "delivered" a
+            // heartbeat after "hooked" (truck 302200: hooked 21:16:49.7, wreck gone 21:16:50.4).
+            //
+            // Clearing the flag alone is NOT enough though - it stops the deletion and leaves the
+            // truck with no route, carrying straight on over the kerb. PathShield therefore also
+            // asks for a new path, at once on the first failure and throttled after that.
+            uint nowFrame = m_SimulationSystem.frameIndex;
+            if (PathShield.Shield(EntityManager, m_Ctx.PathRetry, truck, nowFrame))
+            {
+                if (!m_Ctx.PathFailingSince.ContainsKey(truck))
+                {
+                    m_Ctx.PathFailingSince[truck] = nowFrame;
+                }
+            }
+            else
+            {
+                m_Ctx.PathFailingSince.Remove(truck); // has a route again
+            }
             if (EntityManager.HasBuffer<ServiceDispatch>(truck))
             {
                 EntityManager.GetBuffer<ServiceDispatch>(truck).Clear();
@@ -272,5 +347,37 @@ namespace ClearTheWay
                 }
             }
         }
+        /// <summary>
+        /// Give up a tow without losing the wreck: drop our coupling and put it back into the
+        /// recovery pipeline as a relic, so a different truck can come for it.
+        /// </summary>
+        private void ReleaseTow(Entity wreck, Entity truck, uint frame, Setting setting)
+        {
+            if (EntityManager.HasComponent<Controller>(wreck))
+            {
+                EntityManager.RemoveComponent<Controller>(wreck);
+            }
+            if (EntityManager.HasComponent<TowMarker>(wreck))
+            {
+                EntityManager.RemoveComponent<TowMarker>(wreck);
+            }
+            if (!EntityManager.HasComponent<RelicRecovery>(wreck))
+            {
+                EntityManager.AddComponent<RelicRecovery>(wreck);
+            }
+            m_RelicArmedFrame[wreck] = frame;
+            m_OurTows.Remove(wreck);
+            m_TrucksWithLoad.Remove(truck);
+            m_TowTravelDir.Remove(truck);
+            m_LastTruckPos.Remove(truck);
+            m_Ctx.PathFailingSince.Remove(truck);
+            m_Ctx.PathRetry.Remove(truck);
+            if (setting.VerboseLogging)
+            {
+                Mod.Log.Info($"[tow] released wreck={wreck.Index} from truck={truck.Index} - no route " +
+                    $"home for {kTowPathGiveUpFrames}f; re-armed for recovery");
+            }
+        }
+
     }
 }

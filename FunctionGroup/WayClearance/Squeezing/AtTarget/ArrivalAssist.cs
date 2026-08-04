@@ -248,7 +248,7 @@ namespace ClearTheWay.FunctionGroup.WayClearance.Squeezing.AtTarget
             // its written m_LanePosition purely notional - see the nose-out note), so creep it
             // to the kerb first, then hard-stop, then snap the arrival on a later tick (never
             // under a moving car - it swerves and freezes across the lane).
-            float kerbUnits = math.min(kEvadeMeters / m_Ctx.PrefabGeometry.LateralSlack(vehicle, currentLane.m_Lane), kMaxPushUnits);
+            float kerbUnits = math.min(kEvadeMeters, m_Ctx.PrefabGeometry.MaxLateralMeters(vehicle)) / m_Ctx.PrefabGeometry.LateralSlack(vehicle, currentLane.m_Lane);
             currentLane.m_LanePosition = math.lerp(currentLane.m_LanePosition, side * kerbUnits, kPullRate * 1.5f);
             bool atKerb = math.abs(currentLane.m_LanePosition) >= kerbUnits - 0.1f;
             float arriveSpeed = math.length(EntityManager.GetComponentData<Moving>(vehicle).m_Velocity);

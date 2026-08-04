@@ -65,6 +65,15 @@ namespace ClearTheWay.FunctionGroup.Accidents
                 {
                     continue;
                 }
+                // Deliberately sacrificed lead blocker (EmergencyEscalation.TryReleaseLeadBlocker):
+                // a responder is hard-stuck behind this car and flagged it Obsolete to clear the
+                // plug. Do NOT keep it alive or track it - leave it to the game's own re-path /
+                // despawn so the lane frees for the queue behind. Time-boxed; once the window
+                // elapses it falls back to normal protection here.
+                if (m_Ctx.States.Sacrifice.TryGetValue(other, out uint sacUntil) && frame < sacUntil)
+                {
+                    continue;
+                }
                 m_NearWreckCars.Add(other);
                 protectedCount++;
                 bool isEmergency = (EntityManager.GetComponentData<Car>(other).m_Flags & CarFlags.Emergency) != 0;
