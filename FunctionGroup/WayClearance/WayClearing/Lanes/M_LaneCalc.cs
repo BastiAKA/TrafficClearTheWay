@@ -53,14 +53,28 @@ namespace ClearTheWay.FunctionGroup.WayClearance.WayClearing.LanePathFinding
             Curve curve = EntityManager.GetComponentData<Curve>(lane.m_Lane);
             float length = math.max(1f, curve.m_Length);
             bool inverted = lane.m_CurvePosition.z < lane.m_CurvePosition.x;
-            float t = math.saturate(lane.m_CurvePosition.x + math.select(forwardMeters, -forwardMeters, inverted) / length);
-            float3 center = MathUtils.Position(curve.m_Bezier, t);
-            float2 tangent = math.normalizesafe(MathUtils.Tangent(curve.m_Bezier, t).xz);
-            float2 right = MathUtils.Right(tangent);
             // m_LanePosition is stored in the driving frame; flip into curve frame when
             // the lane is traversed backwards (same convention as the game's MoveTarget).
             float curveFrameOffset = math.select(lane.m_LanePosition, 0f - lane.m_LanePosition, inverted) *
                                      m_Geometry.LateralSlack(entity, lane.m_Lane);
+            // THE FORWARD LEAD MUST DOMINATE THE OFFSET. The caller asks for a lead in metres, but
+            // what actually decides whether the vehicle creeps or pivots is the RATIO of that lead
+            // to how far out the offset is: the bearing to the target is atan(offset / lead). The
+            // clamp below bounds that bearing, but a target that only exists because it was
+            // clamped is 3 m in front of the nose at 35 degrees - the vehicle has to rotate a
+            // third of a right angle before it moves anywhere, which from outside is a car turning
+            // on the spot (Sebastian, veh 2350532: standing at lanePos 4.89 - about 4.4 m out of
+            // lane - with a 2 m lead, so the raw bearing was ~66 degrees).
+            // Growing the lead with the offset keeps the bearing shallow BY CONSTRUCTION, so the
+            // clamp goes back to being the safety net it was meant to be. The stage distances have
+            // grown a lot since the fixed leads were picked (1.4 / 2.0 / 2.8 m plus crossable
+            // room, against the ~1 unit targets of the time), which is why a fixed lead stopped
+            // being enough.
+            forwardMeters = math.max(forwardMeters, math.abs(curveFrameOffset) * kLateralLeadFactor);
+            float t = math.saturate(lane.m_CurvePosition.x + math.select(forwardMeters, -forwardMeters, inverted) / length);
+            float3 center = MathUtils.Position(curve.m_Bezier, t);
+            float2 tangent = math.normalizesafe(MathUtils.Tangent(curve.m_Bezier, t).xz);
+            float2 right = MathUtils.Right(tangent);
             target = center;
             target.xz += right * curveFrameOffset;
             float3 current = EntityManager.GetComponentData<Transform>(entity).m_Position;

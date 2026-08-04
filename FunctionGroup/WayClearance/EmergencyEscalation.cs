@@ -108,7 +108,15 @@ namespace ClearTheWay
             // carriageway (the central channel is for slow clusters, not a free-flowing
             // responder), so compute it before BuildCorridor.
             s.m_EmergencySpeed = math.length(EntityManager.GetComponentData<Moving>(vehicle).m_Velocity);
-            m_Corridor.BuildCorridor(vehicle, ref currentLane, setting, side, s.m_EmergencySpeed);
+            // The corridor build needs to know whether this responder is DESPERATE before it runs:
+            // that is what unlocks a re-plan of a corridor which is currently being maintained
+            // (ChannelPlanner.ChooseShape). The spell it is derived from belongs to the previous
+            // tick either way, so read the state here - and read it AGAIN after the build, which
+            // writes this tick's shape and free-lane commitments into the very same record.
+            m_StuckStates.TryGetValue(vehicle, out StuckState beforeBuild);
+            s.m_Desperate = beforeBuild.m_Blocker != Entity.Null &&
+                             frame - beforeBuild.m_BlockerSinceFrame >= kDesperateFrames;
+            m_Corridor.BuildCorridor(vehicle, ref currentLane, setting, side, s.m_EmergencySpeed, s.m_Desperate);
 
             // While the emergency vehicle has been stuck behind the same blocker for a
             // while (state from the previous tick), cars right in front of it clear out
@@ -127,8 +135,6 @@ namespace ClearTheWay
                              s.m_PreviousStuck.m_Blocker != Entity.Null &&
                              frame - s.m_PreviousStuck.m_BlockerSinceFrame >= kDeepEvadeAfterFrames;
             s.m_Evade = deepEvade ? EvadeStage.Deep : (hardEvade ? EvadeStage.Hard : EvadeStage.Soft);
-            s.m_Desperate = s.m_PreviousStuck.m_Blocker != Entity.Null &&
-                             frame - s.m_PreviousStuck.m_BlockerSinceFrame >= kDesperateFrames;
 
             // Convoy discipline: when ANOTHER emergency vehicle is right ahead on the same
             // lane, this one queues behind it instead of escalating. Without this, a wave of
@@ -137,8 +143,18 @@ namespace ClearTheWay
             // (logged: ~10 responders with consecutive ids all at lanePos -2.99 in one
             // street). The colleague at the front does the passing; the queue keeps a
             // normal corridor line. Only checked while slow - a rolling convoy needs nothing.
-            s.m_BehindColleague = s.m_EmergencySpeed < kMaxEvadeSpeed &&
+            // ...and LATCHED, for the same reason the hug is: the raw 20 m sighting flips as the
+            // colleague pulls away and closes up again, and every flip swung this responder's
+            // whole behaviour - evade stage between Soft and Hard, hug between the edge line and
+            // the full swing. A convoy is a state that lasts seconds, not a per-tick measurement.
+            bool colleagueAhead = s.m_EmergencySpeed < kMaxEvadeSpeed &&
                 m_Ctx.Obstruction.HasEmergencyAhead(vehicle, currentLane, kConvoyAheadRange);
+            if (colleagueAhead)
+            {
+                s.m_PreviousStuck.m_ColleagueUntilFrame = frame + kConvoyHoldFrames;
+                m_StuckStates[vehicle] = s.m_PreviousStuck;
+            }
+            s.m_BehindColleague = colleagueAhead || frame < s.m_PreviousStuck.m_ColleagueUntilFrame;
             // ...but only while the convoy is actually PROGRESSING. Once a member has been stuck
             // for ~10 s (desperate) the front is not passing anything either - freezing the whole
             // column then deadlocks it (observed: a member stuck 5+ min at sep 0.91, one blocker
@@ -196,6 +212,8 @@ namespace ClearTheWay
             bool committedOncoming = frame < s.m_PreviousStuck.m_OncomingActiveUntil;
             s.m_OncomingState = 0;
             s.m_OncomingClearAhead = 0f;
+            s.m_OncReason = OncomingReason.NotAsked;
+            s.m_OncNearestOffset = -1f;
             // Near the dispatch target no NEW oncoming maneuver is started (the vehicle must
             // brake to a stop there, not swing out); an already-committed one keeps being
             // serviced so its merge-back/hold logic stays alive.
@@ -203,7 +221,8 @@ namespace ClearTheWay
                 (!s.m_NearArrivalTarget || committedOncoming) &&
                 (committedOncoming || s.m_EmergencySpeed < kMaxOncomingSpeed || math.abs(currentLane.m_LanePosition) > 1f))
             {
-                s.m_OncomingState = m_Ctx.Desperate.TryOncomingDisplacement(vehicle, ref currentLane, side, s.m_Desperate, frame, out s.m_OncomingClearAhead);
+                s.m_OncomingState = m_Ctx.Desperate.TryOncomingDisplacement(vehicle, ref currentLane, side, s.m_Desperate, frame,
+                    out s.m_OncomingClearAhead, out s.m_OncReason, out s.m_OncNearestOffset);
                 if (s.m_OncomingState > 0)
                 {
                     s.m_Changed = true;
@@ -327,7 +346,11 @@ namespace ClearTheWay
             return true;
         }
 
-        public void LogVehicleState(Entity vehicle, CarCurrentLane currentLane, int pushed, uint frame, EvadeStage evade, int oncomingState, bool evadeSideBlocked, bool drainAhead, bool noseCreep)
+        // The two oncoming diagnostics are APPENDED rather than slotted in beside oncomingState on
+        // purpose: this list is already long and mostly bools, so moving an existing argument is
+        // how a silent transposition gets in (the reason EscalationState is a struct at all).
+        public void LogVehicleState(Entity vehicle, CarCurrentLane currentLane, int pushed, uint frame, EvadeStage evade, int oncomingState, bool evadeSideBlocked, bool drainAhead, bool noseCreep,
+            OncomingReason oncReason, float oncNearestOffset)
         {
             float speed = math.length(EntityManager.GetComponentData<Moving>(vehicle).m_Velocity);
             Blocker blocker = EntityManager.GetComponentData<Blocker>(vehicle);
@@ -361,7 +384,18 @@ namespace ClearTheWay
                 $"ignore={((currentLane.m_LaneFlags & CarLaneFlags.IgnoreBlocker) != 0 ? 1 : 0)} " +
                 $"blocker={blocker.m_Blocker.Index} type={blocker.m_Type} bSpeed={blockerSpeed:F1} bLanePos={blockerLanePos:F2} sep={separation:F2} " +
                 $"stuckFor={(stuck.m_Blocker != Entity.Null ? frame - stuck.m_BlockerSinceFrame : 0)} latch={(frame < stuck.m_SqueezeUntilFrame ? 1 : 0)} evade={evade} onc={oncomingState} nearFor={stuck.m_NearTargetFrames} evadeBlk={(evadeSideBlocked ? 1 : 0)} drain={(drainAhead ? 1 : 0)} " +
-                $"hug={m_Corridor.ChannelHugDir:F0} free={m_Corridor.FreeLaneDir:F0} creep={(noseCreep ? 1 : 0)}");
+                $"hug={m_Corridor.ChannelHugDir:F0} free={m_Corridor.FreeLaneDir:F0} creep={(noseCreep ? 1 : 0)} " +
+                // shape= is the whole point of the commitment work: a responder whose shape changes
+                // from log line to log line while it is standing in one place has not committed to
+                // anything, and that is exactly what the latches are there to prevent. Read it
+                // together with hug= and free= - those two must agree with it (only a FreeLane
+                // shape may report a free= direction).
+                $"shape={(CorridorShape)stuck.m_Shape} shapeFor={(stuck.m_ShapeUntilFrame > frame ? stuck.m_ShapeUntilFrame - frame : 0)} " +
+                // onc=0 on its own says nothing - see OncomingReason. oncOff= is the nearest
+                // oncoming lane in metres regardless of the offset window (-1 = none at all), so
+                // "NoLane with oncOff=7.2" means kOncomingMaxOffset is the limit, while "NoLane
+                // with oncOff=-1" means this road simply has no oncoming side here.
+                $"oncWhy={oncReason} oncOff={oncNearestOffset:F1}");
         }
     }
 }

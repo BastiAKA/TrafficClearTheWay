@@ -44,6 +44,8 @@ namespace ClearTheWay
         public float m_OncomingClearAhead; // how far the oncoming lane is clear
         public bool m_FullCrossover;       // == m_OncomingState 2
         public bool m_Merging;             // == m_OncomingState 1
+        public OncomingReason m_OncReason; // why it is (not) out there - see OncomingReason
+        public float m_OncNearestOffset;   // nearest opposite-direction lane found, in metres (-1 = none at all), regardless of the offset window - tells a window problem apart from a road that simply has no oncoming side
 
         // --- Escalations for a responder that is going nowhere ---
         public bool m_DrainAhead;      // let the queue ahead drive off rather than freezing it

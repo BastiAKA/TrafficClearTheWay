@@ -71,39 +71,40 @@ namespace ClearTheWay
         /// (undecided lane groups on multi-lane roads) are expanded to all their sub-lanes
         /// when ClearParallelLanes is enabled.
         /// </summary>
-        public void BuildCorridor(Entity vehicle, ref CarCurrentLane currentLane, Setting setting, float side, float emergencySpeed)
+        public void BuildCorridor(Entity vehicle, ref CarCurrentLane currentLane, Setting setting, float side, float emergencySpeed, bool desperate)
         {
             using (ModProfiler.Sample(kProfile, "CorridorBuilder"))
             {
-                BuildCorridorImpl(vehicle, ref currentLane, setting, side, emergencySpeed);
+                BuildCorridorImpl(vehicle, ref currentLane, setting, side, emergencySpeed, desperate);
             }
         }
 
-        private void BuildCorridorImpl(Entity vehicle, ref CarCurrentLane currentLane, Setting setting, float side, float emergencySpeed)
+        private void BuildCorridorImpl(Entity vehicle, ref CarCurrentLane currentLane, Setting setting, float side, float emergencySpeed, bool desperate)
         {
             m_CorridorLanes.Clear();
             m_CorridorLaneIndex.Clear();
-            m_Ctx.Channel.ResetHug(); // AddCentralChannel sets it again on a wide road; 0 = classic single seam
-            // The whole-carriageway central channel only when the responder is actually slow
-            // (a cluster/jam). A free-flowing responder uses the light classic corridor.
-            bool useChannel = setting.ClearParallelLanes && emergencySpeed < kChannelMaxSpeed;
-            // A genuinely free lane always wins over prying the middle open (Sebastian): the seam
-            // is placed geometrically, so the channel would steer the responder into the packed
-            // middle right next to open asphalt - and then hold it there, because a pushing channel
-            // counts as a working corridor and that suppresses the lane change.
-            //
-            // What went wrong before was not this rule but the price of "free": the test counted
-            // any object within kDensityWindow, so a lane cleared for a few car lengths qualified,
-            // and our own green light made the count churn as the queue pulled away. Responder
-            // 1901774 then oscillated between the corridor and a kerb lane without committing to
-            // either. Free now has to mean free - kFreeLaneClearMeters of it, not counting traffic
-            // that is merely rolling, never a lane lined with parked cars, and latched once chosen.
-            if (useChannel &&
-                m_Ctx.Channel.FindFreeLaneDir(vehicle, currentLane.m_Lane, currentLane.m_CurvePosition.x,
-                    currentLane.m_CurvePosition.z < currentLane.m_CurvePosition.x) != 0f)
-            {
-                useChannel = false;
-            }
+            m_Ctx.Channel.BeginBuild(vehicle); // clears the steering outputs, re-arms a latched free lane
+
+            // In a multi-lane roundabout the rule flips: sweep every ring lane toward the centre
+            // and keep the outermost lane free for the responder, instead of opening a gap in the
+            // middle of the ring. Neither wide-road shape applies there, so the shape decision
+            // needs to know about it.
+            bool currentIsRoundabout = RoundaboutExtensions.IsRing(currentLane.m_LaneFlags);
+            // ONE decision, held: classic seam / central channel / heading for a free lane. See
+            // ChannelPlanner.ChooseShape for why it is a committed choice rather than three
+            // independent per-tick tests (which is what it used to be, and they disagreed).
+            CorridorShape shape = m_Ctx.Channel.ChooseShape(vehicle, currentLane, setting,
+                emergencySpeed, currentIsRoundabout, desperate);
+            bool useChannel = shape == CorridorShape.Channel;
+            // WHICH WAY the traffic on the responder's own lane clears. Normally the corridor rule
+            // (+side, so the gap opens on -side). With a committed FREE LANE it is inverted: the
+            // classic seam would clear the queue TOWARD that lane and fill the very asphalt the
+            // responder is heading for - it was parting the road for a gap it had already decided
+            // to abandon. Parting away from it instead widens the target lane, and the neighbour
+            // on the free-lane side is pushed further out rather than into the way.
+            float shapeSide = shape == CorridorShape.FreeLane && m_Ctx.Channel.FreeLaneDir != 0f
+                ? -m_Ctx.Channel.FreeLaneDir
+                : side;
 
             float maxDistance = setting.CorridorDistance;
             float distance = 0f;
@@ -112,12 +113,8 @@ namespace ClearTheWay
                 EntityManager.HasComponent<Curve>(currentLane.m_Lane))
             {
                 bool inverted = currentLane.m_CurvePosition.z < currentLane.m_CurvePosition.x;
-                // In a multi-lane roundabout the rule flips: sweep every ring lane toward
-                // the centre and keep the outermost lane free for the responder, instead of
-                // opening a gap in the middle of the ring.
-                bool currentIsRoundabout = RoundaboutExtensions.IsRing(currentLane.m_LaneFlags);
                 if (setting.ClearRoundaboutInner && currentIsRoundabout &&
-                    m_Ctx.Roundabout.TryAddRing(currentLane.m_Lane, currentLane.m_CurvePosition.x, side, inverted, startOffset: 0f))
+                    m_Ctx.Roundabout.TryAddRing(currentLane.m_Lane, currentLane.m_CurvePosition.x, shapeSide, inverted, startOffset: 0f))
                 {
                     // handled by the roundabout ring sweep
                 }
@@ -130,13 +127,13 @@ namespace ClearTheWay
                 }
                 else
                 {
-                    m_Ctx.Corridor.AddCorridorLane(currentLane.m_Lane, currentLane.m_CurvePosition.x, side, inverted, startOffset: 0f, onPath: true);
+                    m_Ctx.Corridor.AddCorridorLane(currentLane.m_Lane, currentLane.m_CurvePosition.x, shapeSide, inverted, startOffset: 0f, onPath: true);
                     // German ClearTheWay rule: the corridor-side neighbor (the lane to the
                     // LEFT of the emergency in right-hand traffic) always clears further LEFT,
                     // away from the emergency - even onto the median/oncoming side. The gap
                     // opens between it and the emergency's lane. (Opposite-direction neighbours
                     // are held, not pushed - handled inside AddCounterEvadeNeighbor.)
-                    m_Ctx.Corridor.AddCounterEvadeNeighbor(currentLane.m_Lane, currentLane.m_CurvePosition.x, side, inverted, startOffset: 0f, pushDirection: -side);
+                    m_Ctx.Corridor.AddCounterEvadeNeighbor(currentLane.m_Lane, currentLane.m_CurvePosition.x, shapeSide, inverted, startOffset: 0f, pushDirection: -shapeSide);
                 }
                 Curve curve = EntityManager.GetComponentData<Curve>(currentLane.m_Lane);
                 distance += curve.m_Length * math.abs(currentLane.m_CurvePosition.z - currentLane.m_CurvePosition.x);
@@ -146,7 +143,7 @@ namespace ClearTheWay
                     EntityManager.Exists(currentLane.m_ChangeLane) &&
                     EntityManager.HasComponent<Game.Net.CarLane>(currentLane.m_ChangeLane))
                 {
-                    m_Ctx.Corridor.AddCorridorLane(currentLane.m_ChangeLane, currentLane.m_CurvePosition.x, side, inverted, startOffset: 0f, onPath: true);
+                    m_Ctx.Corridor.AddCorridorLane(currentLane.m_ChangeLane, currentLane.m_CurvePosition.x, shapeSide, inverted, startOffset: 0f, onPath: true);
                 }
             }
 
@@ -175,14 +172,14 @@ namespace ClearTheWay
                 {
                     if (setting.ClearParallelLanes)
                     {
-                        m_Ctx.LaneGroups.AddMasterLaneGroup(navLane.m_Lane, side, inverted, navLane.m_CurvePosition.x, distance);
+                        m_Ctx.LaneGroups.AddMasterLaneGroup(navLane.m_Lane, shapeSide, inverted, navLane.m_CurvePosition.x, distance);
                     }
                 }
                 else if (EntityManager.HasComponent<Game.Net.CarLane>(navLane.m_Lane))
                 {
                     bool navIsRoundabout = RoundaboutExtensions.IsRing(navLane.m_Flags);
                     if (setting.ClearRoundaboutInner && navIsRoundabout &&
-                        m_Ctx.Roundabout.TryAddRing(navLane.m_Lane, navLane.m_CurvePosition.x, side, inverted, startOffset: distance))
+                        m_Ctx.Roundabout.TryAddRing(navLane.m_Lane, navLane.m_CurvePosition.x, shapeSide, inverted, startOffset: distance))
                     {
                         // handled by the roundabout ring sweep
                     }
@@ -197,8 +194,8 @@ namespace ClearTheWay
                     }
                     else
                     {
-                        m_Ctx.Corridor.AddCorridorLane(navLane.m_Lane, navLane.m_CurvePosition.x, side, inverted, startOffset: distance, onPath: true);
-                        m_Ctx.Corridor.AddCounterEvadeNeighbor(navLane.m_Lane, navLane.m_CurvePosition.x, side, inverted, startOffset: distance, pushDirection: -side);
+                        m_Ctx.Corridor.AddCorridorLane(navLane.m_Lane, navLane.m_CurvePosition.x, shapeSide, inverted, startOffset: distance, onPath: true);
+                        m_Ctx.Corridor.AddCounterEvadeNeighbor(navLane.m_Lane, navLane.m_CurvePosition.x, shapeSide, inverted, startOffset: distance, pushDirection: -shapeSide);
                     }
                 }
 
@@ -230,6 +227,18 @@ namespace ClearTheWay
                     updated.m_PushMeters = pushMeters;
                     m_CorridorLanes[existing] = updated;
                 }
+                return;
+            }
+            // Hard bound on how much road one responder parts. Lanes are added roughly
+            // nearest-first (own lane and its channel/neighbour, then the navigation lanes in
+            // path order), so the cap drops the FURTHEST ones - the traffic that has the most
+            // time to move anyway. The ordinary corridor is 2-6 lanes; the cap only ever bites
+            // where the count runs away, and it does: veh 2350532 built 27 and then 62 lanes
+            // while pushing nothing at all (a junction whose master lane groups each expand to
+            // their full set). Every one of those costs a full LaneObject scan per responder per
+            // tick, and shoves cars that are nowhere near the responder's actual path.
+            if (m_CorridorLanes.Count >= kMaxCorridorLanes)
+            {
                 return;
             }
             m_CorridorLaneIndex[lane] = m_CorridorLanes.Count;

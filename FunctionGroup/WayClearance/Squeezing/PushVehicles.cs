@@ -82,6 +82,12 @@ namespace ClearTheWay.FunctionGroup.WayClearance.Squeezing
             // Lane width is constant for this corridor lane - compute it ONCE here instead of
             // re-deriving it for every car below (GetLateralSlack used to do it per car).
             float corridorLaneWidth = m_Ctx.PrefabGeometry.LaneWidth(corridorLane.m_Lane);
+            // Crossable room beside this lane is a property of the LANE and the push direction,
+            // both constant here - so it is asked at most ONCE per corridor lane instead of once
+            // per evading car. Resolved lazily (NaN = not asked yet) rather than up front,
+            // because most corridor lanes have no evading car on them at all and a cache miss
+            // costs two SubLane walks.
+            float crossableMeters = float.NaN;
 
             // Skip cars outside the corridor window BEFORE any component lookup. aheadDistance
             // needs only the buffer's own curve position, so gating on it costs one multiply -
@@ -256,7 +262,11 @@ namespace ClearTheWay.FunctionGroup.WayClearance.Squeezing
                 // nothing crossable there, or when a tram is currently on the bed.
                 if (evade)
                 {
-                    meters += m_Ctx.Room.CrossableMeters(corridorLane.m_Lane, corridorLane.m_PushDirection, frame);
+                    if (float.IsNaN(crossableMeters))
+                    {
+                        crossableMeters = m_Ctx.Room.CrossableMeters(corridorLane.m_Lane, corridorLane.m_PushDirection, frame);
+                    }
+                    meters += crossableMeters;
                 }
                 meters = math.min(meters, m_Ctx.PrefabGeometry.MaxLateralMeters(other));
                 float units = meters / m_Ctx.PrefabGeometry.LateralSlack(other, corridorLaneWidth);

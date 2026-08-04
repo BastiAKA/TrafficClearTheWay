@@ -135,10 +135,16 @@ namespace ClearTheWay
                 m_Ctx.LaneChange.TryOvertakeLaneChange(vehicle, ref currentLane, frame, s.m_TurnHint,
                     relaxDensity: s.m_StuckEscape || freeLaneDir != 0f, preferDir: freeLaneDir))
             {
-                m_StuckStates.TryGetValue(vehicle, out StuckState stuckAfterChange);
-                stuckAfterChange.m_NextOvertakeFrame = frame + kOvertakeCooldown;
-                stuckAfterChange.m_LastSeenFrame = frame;
-                m_StuckStates[vehicle] = stuckAfterChange;
+                // Into the state copy this pass already carries, NOT into a fresh read: the hug
+                // latch a few lines below writes s.m_PreviousStuck back, and with a separate copy
+                // that write restored the OLD m_NextOvertakeFrame. A responder that had just
+                // forced a lane change was therefore free to force another on the next tick
+                // whenever its corridor was pushing - which is most of the time it overtakes at
+                // all, so the cooldown that is supposed to keep the maneuver committed was
+                // effectively absent exactly when it mattered.
+                s.m_PreviousStuck.m_NextOvertakeFrame = frame + kOvertakeCooldown;
+                s.m_PreviousStuck.m_LastSeenFrame = frame;
+                m_StuckStates[vehicle] = s.m_PreviousStuck;
                 s.m_Changed = true;
             }
 

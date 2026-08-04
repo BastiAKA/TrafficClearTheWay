@@ -210,7 +210,12 @@ namespace ClearTheWay
                 return;
             }
 
-            m_Corridor.BuildCorridor(vehicle, ref currentLane, Mod.Setting, side, assistSpeed);
+            // desperate: true - we only get here at all when the truck is genuinely stuck
+            // (stuckLong above), and that is exactly the state in which the corridor shape must
+            // stay re-plannable so every escape keeps being reachable. The speed hysteresis and
+            // the free-lane latch inside ChooseShape still apply; only the "a working corridor
+            // keeps its shape" lock is waived, which for a wedged truck is what we want.
+            m_Corridor.BuildCorridor(vehicle, ref currentLane, Mod.Setting, side, assistSpeed, desperate: true);
             for (int i = 0; i < m_Corridor.CorridorLanes.Count; i++)
             {
                 m_Ctx.Push.PullCarsAside(vehicle, m_Corridor.CorridorLanes[i], frame, hardEvade: true);

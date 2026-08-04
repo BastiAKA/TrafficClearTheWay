@@ -141,30 +141,47 @@ namespace ClearTheWay.FunctionGroup.WayClearance.Squeezing
             Entity blockingEntity = blocker.m_Blocker;
             bool vehicleSlow = math.lengthsq(EntityManager.GetComponentData<Moving>(vehicle).m_Velocity) <= kMaxSqueezeSpeed * kMaxSqueezeSpeed;
 
-            // Track how long we have been slow behind a blocker. The timer measures a
-            // CONTINUOUS slow-and-blocked spell, NOT time behind one exact entity: in a real
-            // jam Blocker.m_Blocker flickers between the cars/trailers/crossing vehicles ahead
-            // every few frames, and keying the timer on entity identity reset it on every
-            // flicker - so kStuckFrames/kDesperateFrames/kEvadeAfterFrames were almost never
-            // reached and the squeeze / desperate / overtake escalations never fired (the
-            // low-speed "just sits there behind a truck" bug). Reset the spell only when the
-            // vehicle is actually rolling again or has nothing ahead; while it stays slow and
-            // blocked the timer keeps running even as the reported blocker changes. m_Blocker
-            // still tracks the CURRENT blocker for the separation/aside checks below.
+            // Track how long we have been stuck behind traffic. The timer measures a CONTINUOUS
+            // blocked spell, NOT time behind one exact entity: in a real jam Blocker.m_Blocker
+            // flickers between the cars/trailers/crossing vehicles ahead every few frames, and
+            // keying the timer on entity identity reset it on every flicker - so
+            // kStuckFrames/kDesperateFrames/kEvadeAfterFrames were almost never reached and the
+            // squeeze / desperate / overtake escalations never fired (the low-speed "just sits
+            // there behind a truck" bug). m_Blocker still tracks the CURRENT blocker for the
+            // separation/aside checks below.
+            //
+            // A spell STARTS when the responder is slow behind something, and it ENDS on GROUND
+            // COVERED - kStuckProgressMeters - not on a moment of speed. The old test ended it
+            // whenever the responder exceeded kMaxSqueezeSpeed, and in stop-and-go that is one
+            // creep every few seconds: every escalation clock restarted, and hard evade, the
+            // desperate stage, the deep push and the 3-minute light rule almost never matured in
+            // the traffic they exist for. Exactly the lesson already recorded at
+            // kAssistProgressMeters for the recovery side ("an instantaneous speed check reset the
+            // timer on every creep, so the escalation never fired once") - it belongs here too.
             m_StuckStates.TryGetValue(vehicle, out StuckState stuck);
-            bool blockedNow = vehicleSlow && blockingEntity != Entity.Null;
-            if (!blockedNow)
+            float3 position = EntityManager.HasComponent<Transform>(vehicle)
+                ? EntityManager.GetComponentData<Transform>(vehicle).m_Position
+                : default;
+            bool spellRunning = stuck.m_Blocker != Entity.Null;
+            if (blockingEntity == Entity.Null || (!spellRunning && !vehicleSlow))
             {
+                // Nothing ahead at all, or rolling freely with no spell running: no spell.
                 stuck.m_Blocker = Entity.Null;
                 stuck.m_BlockerSinceFrame = frame;
+                stuck.m_ProgressPos = position;
+            }
+            else if (!spellRunning ||
+                     math.distancesq(position.xz, stuck.m_ProgressPos.xz) >= kStuckProgressMeters * kStuckProgressMeters)
+            {
+                // Either the spell starts here (slow and blocked), or the responder has genuinely
+                // got somewhere since it started - five car lengths is past whatever was in front
+                // of it - so the spell restarts from where it stands now.
+                stuck.m_BlockerSinceFrame = frame;
+                stuck.m_ProgressPos = position;
+                stuck.m_Blocker = blockingEntity;
             }
             else
             {
-                if (stuck.m_Blocker == Entity.Null)
-                {
-                    // Just became slow-and-blocked - start the spell.
-                    stuck.m_BlockerSinceFrame = frame;
-                }
                 stuck.m_Blocker = blockingEntity;
             }
             stuck.m_LastSeenFrame = frame;
@@ -218,7 +235,9 @@ namespace ClearTheWay.FunctionGroup.WayClearance.Squeezing
             // keep the gate open for a while so the vehicle works through the whole queue
             // instead of waiting again at every single car.
             bool latched = frame < stuck.m_SqueezeUntilFrame;
-            bool stuckLong = frame - stuck.m_BlockerSinceFrame >= kStuckFrames && stuck.m_Blocker == blockingEntity;
+            // (No identity test here: the spell above deliberately survives the blocker flickering
+            // between the vehicles ahead, and by this point m_Blocker IS the current one.)
+            bool stuckLong = frame - stuck.m_BlockerSinceFrame >= kStuckFrames;
             if (!aside && !stuckLong && !latched)
             {
                 return false;

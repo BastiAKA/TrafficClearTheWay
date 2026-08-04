@@ -198,7 +198,8 @@ namespace ClearTheWay
 
             if (setting.VerboseLogging && frame % kLogIntervalFrames == (uint)(vehicle.Index % (int)kLogIntervalFrames))
             {
-                m_Ctx.Escalation.LogVehicleState(vehicle, currentLane, s.m_Pushed, frame, s.m_Evade, s.m_OncomingState, s.m_EvadeSideBlocked, s.m_DrainAhead, s.m_NoseCreep);
+                m_Ctx.Escalation.LogVehicleState(vehicle, currentLane, s.m_Pushed, frame, s.m_Evade, s.m_OncomingState, s.m_EvadeSideBlocked, s.m_DrainAhead, s.m_NoseCreep,
+                    s.m_OncReason, s.m_OncNearestOffset);
             }
         }
         /// <summary>
