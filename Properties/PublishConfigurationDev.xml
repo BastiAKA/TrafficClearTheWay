@@ -37,7 +37,7 @@ Release version: https://mods.paradoxplaza.com/mods/151583/Windows
 	<!--Link to the forum post where the mod can be discussed-->
 	<ForumLink Value="" />
 	<!--Version of the mod-->
-	<ModVersion Value="0.1.12" />
+	<ModVersion Value="0.1.12.1" />
 	<!--Recommended version of the base game to use the mod-->
 	<GameVersion Value="1.6.*" />
 	<!--Dependency for the mod, can be set multiple times-->
@@ -46,7 +46,21 @@ Release version: https://mods.paradoxplaza.com/mods/151583/Windows
 	<RequiredDLC Value="" />
 	<!--Change log for new version. Single line or multi line. Supports minimal markdown subset-->
 	<ChangeLog>
-First dev snapshot. Everything below is newer than the public release - that is the point of this page.
+0.1.12.1 - performance.
+
+The simulation runs measurably faster with this build. Measured against the public release on the same city at the same load: **+14% simulation tick rate**, and the busier it gets the more it helps - at 50+ emergency vehicles running at once it was +19%. Over a 3.5-hour session, with no drift: the tick rate in the last twenty minutes was the same as in the first.
+
+**Where it came from**
+All of it is the pedestrian pass - the one that holds people at the kerb while a responder passes. It turned out to cost about 10% of every simulation tick on its own, and now costs almost nothing.
+
+- It searched a cube of 40 m in every direction around each siren - including 40 m backwards, and 40 m up and down. On a map with tunnels or elevated roads that dragged whole extra layers of footpath into the search, all of it thrown away again a moment later. It now looks only along the stretch the responder is actually driving.
+- The check "has this responder already passed you?" used to run ninth, after eight component lookups. It runs first now.
+- The full search runs every 10 simulation ticks instead of every 4. Pedestrians already held stay held on every tick as before - only the moment a NEW one is noticed shifts, by about 0.2 seconds.
+
+**What that means for behaviour**
+Practically nothing should look different. If anything does, it would be a pedestrian stepping off a kerb that would previously have waited - most likely at a wide junction while a responder is turning. That is the one case where the smaller search box gives up coverage, and it is the thing worth reporting.
+
+**Everything below was already in the previous dev build**
 
 **Worth knowing before you start**
 - Cars are allowed onto flat medians, grass strips and empty tram beds to clear the way. That is deliberate and switchable ("Cross medians"), not a bug.
