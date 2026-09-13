@@ -81,7 +81,7 @@ Log with "Verbose logging" enabled, plus roughly where it happened.
 - Already known, not yet fixed: an ambulance that has picked up its patient gets no arrival help at all on the way back out. One was seen jittering at walking pace beside the scene for around twenty seconds.
 	</ChangeLog>
 	<!--External link, can be set multiple times. supported types are "discord", "github", "youtube", "twitch", "x", "paypal", "patreon", "buymeacoffee", "kofi", "crowdin", "gitlab", "gofundme"-->
-	<ExternalLink Type="" Url="" />
+	<ExternalLink Type="github" Url="https://github.com/BastiAKA/TrafficClearTheWay" />
 	<!--Supported values Public, Private, Unlisted-->
 	<AccessLevel Value="Public" />
 </Publish>
