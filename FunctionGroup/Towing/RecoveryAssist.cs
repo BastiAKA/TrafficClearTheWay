@@ -41,7 +41,7 @@ namespace ClearTheWay
     internal sealed class RecoveryAssist
     {
         // Main-thread profiling switch for this pass - see ModProfiler.
-        private static readonly bool kProfile = false;
+        private static readonly bool kProfile = true;
 
         private readonly EntityManager EntityManager;
         private readonly LaneGeometry m_Geometry;
@@ -203,6 +203,22 @@ namespace ClearTheWay
             // emergency vehicles - our corridor slows it down, the game must not delete it.
             m_Control.ClearStuck(vehicle);
 
+            // ... and the same arrival assist, which it never had. The last few metres are exactly
+            // where a recovery run stalls: the path end is the lane the WRECK is standing on, so
+            // it is occupied by definition, and nothing existed to end the approach. Truck 2851374
+            // covered 86 m in 42 s and then sat at dist=10 for over two minutes, motionless, with
+            // the full emergency escalation running and not one [arrive] line - because
+            // TryArrivalAssist was only ever called from the responder pass.
+            //
+            // Forcing the arrival is what lets MaintenanceVehicleAISystem run its PathEndReached
+            // branch and start the recovery. The returning guard added inside TryArrivalAssist is
+            // what keeps that safe; if recovery vehicles are ever seen vanishing near a wreck,
+            // this call is the first thing to take back out.
+            if (m_Ctx.Arrival.TryArrivalAssist(vehicle, ref currentLane, side, frame, out _))
+            {
+                return;
+            }
+
             // Release the FixedLane pin of a finished or abandoned overtake (below), the same
             // way the emergency pass does. Nothing else would ever clear it for a recovery
             // vehicle, and a permanently pinned lane is worse than never changing lane at all.
@@ -266,9 +282,84 @@ namespace ClearTheWay
             // at all covers kAssistMotionlessMeters within kAssistMotionlessFrames and never
             // reaches this branch; only one that has genuinely stood still for half a minute does.
             stuckLong |= motionless;
-            m_AssistProgress[vehicle] = progress;
 
             float assistSpeed = math.length(EntityManager.GetComponentData<Moving>(vehicle).m_Velocity);
+
+            // Rolling watch: how long has it been DRIVING without a stall. Any drop below
+            // kAssistRollingSpeed re-arms it, so a car length of stop-and-go creep never counts.
+            if (assistSpeed >= kAssistRollingSpeed)
+            {
+                if (progress.m_RollingSinceFrame == 0u)
+                {
+                    progress.m_RollingSinceFrame = frame;
+                }
+            }
+            else
+            {
+                progress.m_RollingSinceFrame = 0u;
+            }
+            bool rollingFreely = progress.m_RollingSinceFrame != 0u &&
+                frame - progress.m_RollingSinceFrame >= kAssistRightsHoldFrames;
+
+            // How long it has ACTUALLY been stuck. m_SinceFrame is the DISTANCE timer and keeps
+            // running while the vehicle drives perfectly well along a road that bends away from
+            // the wreck, so on its own it can hand a truck a half-spent - or already expired -
+            // clock the moment it finally does get stuck. The shorter of the two is the honest one.
+            uint stuckFor = motionless
+                ? math.min(frame - progress.m_SinceFrame, frame - progress.m_MovedSinceFrame)
+                : frame - progress.m_SinceFrame;
+
+            // Escalation latch. Every stage below used to hang straight off timers that reset on
+            // the first metre of progress, so in a stop-and-go queue the vehicle earned its
+            // rights, rolled one car length, lost them and stopped again - and the corridor it had
+            // just built was torn up on each flip. Once earned, the escalation is therefore HELD
+            // until the vehicle has driven freely for kAssistRightsHoldFrames. The tier is latched
+            // with it, so the emergency rights do not silently drop back to the polite ones either.
+            if (stuckLong)
+            {
+                progress.m_Latched = true;
+                if (stuckFor >= kAssistFullRightsFrames)
+                {
+                    progress.m_LatchedFull = true;
+                }
+            }
+            else if (progress.m_Latched)
+            {
+                if (rollingFreely)
+                {
+                    progress.m_Latched = false;
+                    progress.m_LatchedFull = false;
+                }
+                else
+                {
+                    stuckLong = true;   // held: it is moving, but not yet convincingly
+                }
+            }
+            bool fullRights = progress.m_LatchedFull;
+
+            // Convoy discipline, the recovery-vehicle twin of the responder rule in
+            // EmergencyEscalation - which the assist path never had. Every recovery vehicle is a
+            // corridor owner in its own right, so a column of them all escalating at once hugs
+            // the same free lane and shoves the standing colleague in front aside. PullCarsAside
+            // allows exactly that: its maintenance-vehicle protection only covers a ROLLING one,
+            // and in the jam this pass exists for, none of them is rolling. The result is the
+            // responder fan-out with tow trucks - consecutive ids, all crowding the same offset.
+            //
+            // Latched for the same reason the responder one is: the raw sighting flips as the
+            // column closes up and pulls apart, and every flip would swing the whole behaviour.
+            //
+            // The exception mirrors the responder rule too (there: !s.m_Desperate): once a member
+            // has earned the emergency tier, the front is demonstrably not passing anything
+            // either, and freezing the column then deadlocks it. So fullRights overrides.
+            bool colleagueAhead = assistSpeed < kMaxEvadeSpeed &&
+                m_Ctx.Obstruction.HasMaintenanceAhead(vehicle, currentLane, kConvoyAheadRange);
+            if (colleagueAhead)
+            {
+                progress.m_ColleagueUntilFrame = frame + kConvoyHoldFrames;
+            }
+            bool behindColleague = !fullRights &&
+                (colleagueAhead || frame < progress.m_ColleagueUntilFrame);
+            m_AssistProgress[vehicle] = progress;
 
             // Give-up cap: past ~90 s of zero progress within escalate range the recovery is
             // wedged in an unwinnable deadlock. What is pointless there is CHURNING TRAFFIC for
@@ -277,15 +368,6 @@ namespace ClearTheWay
             // version returned outright here and thereby switched off the one escape that could
             // have freed it (field log: four trucks, all "GAVE UP", not a single lane change
             // attempted afterwards). Diagnostic once, then every 10 s.
-            // Measured against whichever clock actually describes how long it has been stuck.
-            // m_SinceFrame is the DISTANCE timer and it keeps running while the vehicle drives
-            // perfectly well along a road that bends away from the wreck - so on its own it can
-            // hand a truck a half-spent give-up clock the moment it finally does get stuck, or
-            // even an already-expired one. Taking the shorter elapsed of the two means a vehicle
-            // that has just come to a stand always gets the full kAssistGiveUpFrames of help.
-            uint stuckFor = motionless
-                ? math.min(frame - progress.m_SinceFrame, frame - progress.m_MovedSinceFrame)
-                : frame - progress.m_SinceFrame;
             if (stuckLong && stuckFor >= kAssistGiveUpFrames)
             {
                 if (Mod.Setting.VerboseLogging && (!progress.m_NoProgressLogged || frame % 600u == 0u))
@@ -321,36 +403,37 @@ namespace ClearTheWay
             // stay re-plannable so every escape keeps being reachable. The speed hysteresis and
             // the free-lane latch inside ChooseShape still apply; only the "a working corridor
             // keeps its shape" lock is waived, which for a wedged truck is what we want.
-            // Promotion to emergency-grade handling, decided once and used by every stage below.
-            // Everything it unlocks is bounded by the near-wreck gate above, so none of it can
-            // reach a truck still out on the route.
-            bool fullRights = frame - progress.m_SinceFrame >= kAssistFullRightsFrames;
-
-            m_Corridor.BuildCorridor(vehicle, ref currentLane, Mod.Setting, side, assistSpeed, desperate: true);
-            for (int i = 0; i < m_Corridor.CorridorLanes.Count; i++)
+            // Queued behind a colleague: no corridor of its own. The one at the front does the
+            // passing, this one keeps a normal line - and the tick costs nothing either, which
+            // matters when a whole column is stuck at once.
+            if (!behindColleague)
             {
-                CorridorLane corridorLane = m_Corridor.CorridorLanes[i];
-                // Deep evade once promoted: cars ahead clear FULLY onto the kerb
-                // (kDeepEvadeMeters) instead of the ordinary offset. On a narrow street
-                // kEvadeMeters leaves a car's body across the gap, which is precisely the
-                // state a wedged truck cannot get out of - the same reason the responder
-                // path has a Deep stage at all.
-                m_Ctx.Push.PullCarsAside(vehicle, corridorLane, frame, hardEvade: true,
-                    evadeMeters: fullRights ? kDeepEvadeMeters : kEvadeMeters);
-
-                if (Mod.Setting.ForceGreenLights && corridorLane.m_OnPath)
+                m_Corridor.BuildCorridor(vehicle, ref currentLane, Mod.Setting, side, assistSpeed, desperate: true);
+                for (int i = 0; i < m_Corridor.CorridorLanes.Count; i++)
                 {
-                    // Petition either way; preempt the phase outright only once promoted.
-                    m_Ctx.Lights.ClearCorridorLane(vehicle, corridorLane.m_Lane, preempt: fullRights);
-                }
+                    CorridorLane corridorLane = m_Corridor.CorridorLanes[i];
+                    // Deep evade once promoted: cars ahead clear FULLY onto the kerb
+                    // (kDeepEvadeMeters) instead of the ordinary offset. On a narrow street
+                    // kEvadeMeters leaves a car's body across the gap, which is precisely the
+                    // state a wedged truck cannot get out of - the same reason the responder
+                    // path has a Deep stage at all.
+                    m_Ctx.Push.PullCarsAside(vehicle, corridorLane, frame, hardEvade: true,
+                        evadeMeters: fullRights ? kDeepEvadeMeters : kEvadeMeters);
 
-                // ... and physically roll the queue in front through the now-green junction.
-                // Without this the cars ahead sit at a light the game still believes is red,
-                // so the green buys the truck behind them nothing at all.
-                if (fullRights && corridorLane.m_OnPath)
-                {
-                    m_Ctx.Hold.PushQueueForward(vehicle, corridorLane);
-                }
+                    if (Mod.Setting.ForceGreenLights && corridorLane.m_OnPath)
+                    {
+                        // Petition either way; preempt the phase outright only once promoted.
+                        m_Ctx.Lights.ClearCorridorLane(vehicle, corridorLane.m_Lane, preempt: fullRights);
+                    }
+
+                    // ... and physically roll the queue in front through the now-green junction.
+                    // Without this the cars ahead sit at a light the game still believes is red,
+                    // so the green buys the truck behind them nothing at all.
+                    if (fullRights && corridorLane.m_OnPath)
+                    {
+                        m_Ctx.Hold.PushQueueForward(vehicle, corridorLane);
+                    }
+            }
             }
 
             // Last lever, and the one with a real cost to oncoming traffic: cross onto the
@@ -381,7 +464,9 @@ namespace ClearTheWay
             float hugMeters = kEdgeMeters + m_Ctx.Room.CrossableMeters(currentLane.m_Lane, hugDir, frame);
             float hugUnits = math.min(hugMeters, m_Ctx.PrefabGeometry.MaxLateralMeters(vehicle)) / m_Ctx.PrefabGeometry.LateralSlack(vehicle, currentLane.m_Lane);
             float hugPos = math.lerp(currentLane.m_LanePosition, hugDir * hugUnits, kPullRate);
-            if (math.abs(hugPos - currentLane.m_LanePosition) > 0.001f)
+            // ... but not while queued behind a colleague: the hug toward the free lane IS the
+            // fan-out. The column keeps its line and only the front vehicle swings out.
+            if (!behindColleague && math.abs(hugPos - currentLane.m_LanePosition) > 0.001f)
             {
                 currentLane.m_LanePosition = hugPos;
                 EntityManager.SetComponentData(vehicle, currentLane);

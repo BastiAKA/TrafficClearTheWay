@@ -295,9 +295,15 @@ namespace ClearTheWay
                         where += $" wreck={job.Index}";
                     }
                 }
+                // NOT "giving up on it" past the limit any more: standing on a road no longer
+                // ends a run, for either a loaded or an empty vehicle, so saying so was simply
+                // false - field log showed "strike 33/20 - giving up on it" repeating while
+                // nothing happened. Only the off-road removal acts, and it logs itself. The
+                // count is kept past the limit on purpose: it is the severity signal for a spot
+                // that keeps swallowing recovery vehicles.
                 Mod.Log.Info($"[towstuck] truck={truck.Index} motionless on a road (strike " +
                     $"{rest.m_Strikes}/{kTowWedgeStrikes}){where} - " +
-                    (giveUp ? "giving up on it" : "left alone, it is queueing"));
+                    (giveUp ? "past the limit but ON a road - still left alone" : "left alone, it is queueing"));
             }
             return giveUp;
         }
