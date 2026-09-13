@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using Colossal.Collections;
 using Colossal.Mathematics;
 using Game.Common;
@@ -162,14 +162,17 @@ namespace ClearTheWay
         /// never coming.
         ///
         /// Two deliberate differences from the loaded case:
-        ///  - the "not on a road" shortcut does NOT delete on its own here. Off the network is
-        ///    conclusive for a LOADED truck (it drove itself into a building), but an empty one is
-        ///    routinely off the road for innocent reasons - a depot yard reads as off-road, since
-        ///    StandsOnRoad deliberately ignores parking aisles. So an empty truck must earn the
-        ///    full kTowWedgeStrikes either way: ~5 minutes without moving 3 m, which no waiting
-        ///    truck does.
+        ///  - BOTH conditions must hold before an empty truck is removed: off the network AND the
+        ///    full kTowWedgeStrikes. Neither is conclusive alone. Off the road is innocent for an
+        ///    empty vehicle - a depot yard reads as off-road, since StandsOnRoad deliberately
+        ///    ignores parking aisles - and standing ON a road is not being wedged either, it is
+        ///    queueing, which is why the loaded case stopped deleting for it in this same release.
+        ///    Removing a queueing truck unassigns its wreck, the dispatcher sends the next one
+        ///    into the identical jam, and the round repeats; when the jam is the wreck's own
+        ///    tailback each round makes the next worse.
         ///  - there is no wreck to release, so nothing is handed back; the wreck simply loses its
-        ///    claim when the truck goes and the dispatcher sends someone else.
+        ///    claim when the truck goes and the dispatcher sends someone else - which is exactly
+        ///    why that must stay rare.
         /// </summary>
         public void SweepEmptyTrucks(EntityQuery truckQuery, uint frame, Setting setting)
         {
@@ -218,14 +221,32 @@ namespace ClearTheWay
                         Mod.Log.Info($"[towstuck] empty truck={truck.Index} motionless OFF the road at " +
                             $"({pos.x:F0},{pos.z:F0}) heading for wreck={target.Index} - counting strikes");
                     }
-                    // Strikes either way - see the summary for why "off road" is not conclusive
-                    // for an empty vehicle.
-                    if (NoteOnRoadStrike(truck, frame, setting))
+                    // Strikes are counted either way - they are a useful signal that something
+                    // is wrong at this spot - but ONLY an off-network truck is ever removed.
+                    //
+                    // Standing on a road does not end an empty truck's run any more, for exactly
+                    // the reason it stopped ending a loaded one in this same release: it is not
+                    // wedged in the geometry, it is queueing. Deleting it unassigns the wreck,
+                    // the dispatcher sends the next truck into the identical jam, and that one is
+                    // removed in turn - "it did not resolve a single blockage; it fed trucks into
+                    // one", now with the extra twist that the jam is often the WRECK'S OWN
+                    // tailback, so each round makes the next one worse.
+                    //
+                    // Measured 2026-09-13 on a blocked main roundabout: six deletions inside
+                    // twelve minutes and forty-six recovery vehicles standing in one contiguous
+                    // id block, six of them already at the full 20 strikes.
+                    //
+                    // The wedged-in-geometry case that this pass exists for is unaffected: a
+                    // truck genuinely off the network still earns the full kTowWedgeStrikes and
+                    // is then removed. That combination - off the road AND motionless for ~5
+                    // minutes - is not something a truck waiting in a depot yard reaches.
+                    bool earnedGiveUp = NoteOnRoadStrike(truck, frame, setting, target);
+                    if (earnedGiveUp && !onRoad)
                     {
                         if (setting.VerboseLogging)
                         {
                             Mod.Log.Info($"[towstuck] empty truck={truck.Index} never reached wreck={target.Index} " +
-                                "- deleting it so the wreck can be dispatched again");
+                                "and is OFF the network - deleting it so the wreck can be dispatched again");
                         }
                         m_Ctx.SafeDelete(truck);
                     }
@@ -241,7 +262,15 @@ namespace ClearTheWay
             }
         }
 
-        public bool NoteOnRoadStrike(Entity truck, uint frame, Setting setting)
+        /// <summary>
+        /// Count one strike against a motionless truck and say whether it has earned the give-up.
+        ///
+        /// <paramref name="job"/> is diagnostic only and may be Entity.Null: without it the line
+        /// names a truck and nothing else, and a stuck truck cannot be tied back to the wreck it
+        /// was sent to - which is exactly where the 316664 case ran out of evidence. With it, one
+        /// grep answers "whose job was it, how far short did it stop, and where".
+        /// </summary>
+        public bool NoteOnRoadStrike(Entity truck, uint frame, Setting setting, Entity job = default)
         {
             m_Rest.TryGetValue(truck, out TruckRest rest);
             rest.m_Since = frame;
@@ -250,8 +279,25 @@ namespace ClearTheWay
             bool giveUp = rest.m_Strikes >= kTowWedgeStrikes;
             if (setting.VerboseLogging)
             {
+                string where = string.Empty;
+                if (EntityManager.HasComponent<Transform>(truck))
+                {
+                    float3 p = EntityManager.GetComponentData<Transform>(truck).m_Position;
+                    where = $" pos=({p.x:F0},{p.z:F0})";
+                    if (job != Entity.Null && EntityManager.Exists(job) &&
+                        EntityManager.HasComponent<Transform>(job))
+                    {
+                        float3 t = EntityManager.GetComponentData<Transform>(job).m_Position;
+                        where += $" wreck={job.Index}@({t.x:F0},{t.z:F0}) dist={math.distance(p.xz, t.xz):F0}";
+                    }
+                    else if (job != Entity.Null)
+                    {
+                        where += $" wreck={job.Index}";
+                    }
+                }
                 Mod.Log.Info($"[towstuck] truck={truck.Index} motionless on a road (strike " +
-                    $"{rest.m_Strikes}/{kTowWedgeStrikes}) - " + (giveUp ? "giving up on it" : "left alone, it is queueing"));
+                    $"{rest.m_Strikes}/{kTowWedgeStrikes}){where} - " +
+                    (giveUp ? "giving up on it" : "left alone, it is queueing"));
             }
             return giveUp;
         }
