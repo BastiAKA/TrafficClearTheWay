@@ -236,18 +236,7 @@ namespace ClearTheWay.FunctionGroup.GeneralImprovements
         /// despawn timer so it is never deleted out from under an approaching tow truck.</summary>
         public bool IsRecoveryClaimed(Entity wreck)
         {
-            if (!EntityManager.HasComponent<Game.Simulation.MaintenanceConsumer>(wreck))
-            {
-                return false;
-            }
-            Entity request = EntityManager.GetComponentData<Game.Simulation.MaintenanceConsumer>(wreck).m_Request;
-            if (request == Entity.Null || !EntityManager.Exists(request) ||
-                !EntityManager.HasComponent<Game.Simulation.Dispatched>(request))
-            {
-                return false;
-            }
-            Entity handler = EntityManager.GetComponentData<Game.Simulation.Dispatched>(request).m_Handler;
-            return handler != Entity.Null && EntityManager.Exists(handler);
+            return RecoveryClaim.IsClaimed(EntityManager, wreck);
         }
     }
 }

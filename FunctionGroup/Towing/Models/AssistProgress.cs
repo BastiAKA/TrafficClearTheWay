@@ -1,4 +1,4 @@
-using Unity.Entities;
+﻿using Unity.Entities;
 
 namespace ClearTheWay
 {
@@ -14,9 +14,17 @@ namespace ClearTheWay
     {
         public uint m_SinceFrame;
         public float m_BestDistance;
-        public bool m_GaveUpLogged; // detailed give-up diagnostic already emitted for this stall (reset when progress resumes)
+        public Unity.Mathematics.float3 m_LastPos;  // last position at which it had physically MOVED - the metric that still works out on the route, where straight-line distance to the wreck says nothing
+        public uint m_MovedSinceFrame;              // ... and the frame that happened. 0 = never seen yet.
+        public uint m_RollingSinceFrame;            // frame from which it has been driving WITHOUT a stall; 0 while it is stalled. The release condition for the latch below.
+        public bool m_Latched;                      // escalation held across momentary progress - see kAssistRightsHoldFrames
+        public bool m_LatchedFull;                  // ... and whether it had reached the emergency-rights tier when it latched
+        public uint m_ColleagueUntilFrame;          // convoy discipline is held until this frame after the last sighting of a colleague ahead - the raw sighting flips as the column closes up and pulls apart
+        public bool m_NoProgressLogged; // detailed "stopped escalating" diagnostic already emitted for this stall (reset when progress resumes). NOT a give-up: the vehicle goes on driving and often couples afterwards - only the traffic-churning escalation stops.
         public uint m_LastUnblockFrame; // last time the blocker in front of it was removed (rate limit for the last resort)
         public Entity m_SoftFlaggedHead; // the rig we flagged Obsolete (soft, gentle) but have not yet hard-deleted; Entity.Null when none is pending
         public uint m_SoftFlagFrame;    // frame that soft flag was set (0 = none) - after kSacrificeShieldWindow with the SAME rig still blocking, escalate to the hard removal
+        public Entity m_BlockerCandidate; // the rig currently being timed for identity stability before it may be flagged
+        public uint m_BlockerSince;       // ... and since when it has held that position. See TowStuckRecovery's sibling problem: with two cars standing abreast the game's Blocker flips between them every few seconds (IgnoreBlocker is cleared on every change), so without this the unblock flags whichever one happened to be current.
     }
 }
