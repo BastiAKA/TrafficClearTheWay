@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using Colossal.Mathematics;
 using Game.Common;
 using Game.Net;
@@ -103,6 +103,17 @@ namespace ClearTheWay.FunctionGroup.WayClearance.Squeezing.AtTarget
             }
             if (EntityManager.HasComponent<Game.Vehicles.FireEngine>(vehicle) &&
                 (EntityManager.GetComponentData<Game.Vehicles.FireEngine>(vehicle).m_State & FireEngineFlags.Returning) != 0)
+            {
+                return false;
+            }
+            // Recovery vehicles reach this too now (RecoveryAssist calls it), and the returning
+            // rule above applies to them WORD FOR WORD: a maintenance vehicle on its way home with
+            // EndOfPath forced mid-road runs its returning branch, and that branch does not park
+            // it where it stands. Its "target" while returning is the depot, so there is nothing
+            // to assist there anyway.
+            if (EntityManager.HasComponent<Game.Vehicles.MaintenanceVehicle>(vehicle) &&
+                (EntityManager.GetComponentData<Game.Vehicles.MaintenanceVehicle>(vehicle).m_State
+                    & MaintenanceVehicleFlags.Returning) != 0)
             {
                 return false;
             }

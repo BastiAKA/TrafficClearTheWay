@@ -154,7 +154,7 @@ namespace ClearTheWay
         // Main-thread profiling switch for this pass - see ModProfiler for how to use it.
         // Everything here runs on the sim thread, so a slow tick shows up as a frame-rate
         // drop with CPU and GPU both idle. Flip to true, rebuild, read the [perf] lines.
-        private static readonly bool kProfile = false;
+        private static readonly bool kProfile = true;
 
         protected override void OnUpdate()
         {

@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using Colossal.Mathematics;
 using Game.Common;
 using Game.Net;
@@ -52,6 +52,27 @@ namespace ClearTheWay.FunctionGroup.WayClearance.WayClearing.LanePathFinding
         /// </summary>
         public bool HasEmergencyAhead(Entity vehicle, CarCurrentLane currentLane, float range)
         {
+            return HasColleagueAhead(vehicle, currentLane, range, maintenance: false);
+        }
+
+        /// <summary>
+        /// The recovery-vehicle twin of <see cref="HasEmergencyAhead"/>: another maintenance
+        /// vehicle within <paramref name="range"/> metres ahead on the same lane.
+        ///
+        /// Recovery vehicles need exactly the same discipline and never had it. Each one is a
+        /// corridor owner in its own right, so a column of them all escalating at once hugs the
+        /// same free lane and pushes the standing colleague in front aside - which PullCarsAside
+        /// permits, because its protection only covers a ROLLING maintenance vehicle and in a jam
+        /// none of them is rolling. That is the responder fan-out ("~10 responders with
+        /// consecutive ids all at lanePos -2.99") with tow trucks instead.
+        /// </summary>
+        public bool HasMaintenanceAhead(Entity vehicle, CarCurrentLane currentLane, float range)
+        {
+            return HasColleagueAhead(vehicle, currentLane, range, maintenance: true);
+        }
+
+        private bool HasColleagueAhead(Entity vehicle, CarCurrentLane currentLane, float range, bool maintenance)
+        {
             if (!EntityManager.HasBuffer<LaneObject>(currentLane.m_Lane) ||
                 !EntityManager.HasComponent<Curve>(currentLane.m_Lane))
             {
@@ -86,7 +107,9 @@ namespace ClearTheWay.FunctionGroup.WayClearance.WayClearing.LanePathFinding
                 {
                     continue;
                 }
-                if ((EntityManager.GetComponentData<Car>(other).m_Flags & CarFlags.Emergency) != 0)
+                if (maintenance
+                        ? EntityManager.HasComponent<Game.Vehicles.MaintenanceVehicle>(other)
+                        : (EntityManager.GetComponentData<Car>(other).m_Flags & CarFlags.Emergency) != 0)
                 {
                     return true;
                 }
