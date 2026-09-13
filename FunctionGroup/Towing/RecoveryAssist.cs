@@ -73,10 +73,24 @@ namespace ClearTheWay
             m_PruneScratch.Clear();
             foreach (KeyValuePair<Entity, AssistProgress> entry in m_AssistProgress)
             {
-                // 8192 frames - deliberately far longer than the other prunes. Dropping a
-                // progress watch resets the stuck timer, so pruning early would keep a wedged
-                // truck from ever reaching its give-up.
-                if (frame - entry.Value.m_SinceFrame > 8192u || !EntityManager.Exists(entry.Key))
+                // NO age-based prune any more, and that is the whole point of this method.
+                //
+                // It used to drop records older than 8192 frames, with a comment saying the
+                // threshold was chosen generously so a wedged truck could still reach its give-up.
+                // The numbers said otherwise: the give-up is kAssistGiveUpFrames = 5400, so the
+                // record died 2792 frames LATER - and dropping it resets m_SinceFrame, which
+                // restarts the whole clock from zero. A permanently wedged recovery vehicle
+                // therefore escalated (evade + squeeze + forced greens) for 5400 frames, went
+                // quiet for 2792, and then started over, forever. Measured 2026-08-09 on truck
+                // 53038: "STOPPED ESCALATING - no progress for 133s" and 50 seconds later
+                // "no progress for 32s - escalating" on the same standstill, cycling for minutes
+                // while churning the traffic around it.
+                //
+                // So the record now lives exactly as long as the run it belongs to. It is dropped
+                // when the vehicle is gone, or when it is no longer on a wreck run at all - which
+                // is the natural end and cannot reset anything, because there is nothing left to
+                // reset.
+                if (!EntityManager.Exists(entry.Key) || !IsOnWreckRun(entry.Key))
                 {
                     m_PruneScratch.Add(entry.Key);
                 }
@@ -87,6 +101,55 @@ namespace ClearTheWay
             }
             m_PruneScratch.Clear();
         }
+
+        /// <summary>
+        /// Is this recovery vehicle still on a run to a wreck it could actually recover?
+        ///
+        /// Shared by the prune above and by <see cref="ProcessAssistVehicleImpl"/>, deliberately:
+        /// the two used to disagree, and the disagreement is what produced the 53038 case. The
+        /// assist pass accepted "Damaged OR InvolvedInAccident" as a target, but a wreck keeps
+        /// Damaged after a tow truck has hooked it - it only loses InvolvedInAccident. So a SECOND
+        /// truck sent to the same wreck never noticed the job was gone: TowCoupling refused it
+        /// ("skipped: not a valid target - invAcc=0", which is correct), while this pass went on
+        /// escorting it, parked it 20 m short and escalated there for minutes.
+        ///
+        /// The decisive test is therefore the hook, not the damage: a wreck whose Controller is a
+        /// live recovery vehicle other than this one is somebody else's job and this vehicle has
+        /// nothing left to do.
+        /// </summary>
+        private bool IsOnWreckRun(Entity vehicle)
+        {
+            if (!EntityManager.HasComponent<Target>(vehicle) ||
+                !EntityManager.HasComponent<Game.Vehicles.MaintenanceVehicle>(vehicle))
+            {
+                return false;
+            }
+            if ((EntityManager.GetComponentData<Game.Vehicles.MaintenanceVehicle>(vehicle).m_State &
+                 MaintenanceVehicleFlags.Returning) != 0)
+            {
+                return false;
+            }
+            Entity target = EntityManager.GetComponentData<Target>(vehicle).m_Target;
+            if (target == Entity.Null || !EntityManager.Exists(target) ||
+                (!EntityManager.HasComponent<Damaged>(target) &&
+                 !EntityManager.HasComponent<Game.Events.InvolvedInAccident>(target)))
+            {
+                return false;
+            }
+            // Already on somebody's hook? Then this vehicle is the redundant second truck.
+            if (EntityManager.HasComponent<Controller>(target))
+            {
+                Entity carrier = EntityManager.GetComponentData<Controller>(target).m_Controller;
+                if (carrier != Entity.Null && carrier != target && carrier != vehicle &&
+                    EntityManager.Exists(carrier) && !EntityManager.HasComponent<Deleted>(carrier) &&
+                    EntityManager.HasComponent<Game.Vehicles.MaintenanceVehicle>(carrier))
+                {
+                    return false;
+                }
+            }
+            return true;
+        }
+
         /// <summary>
         /// Gentle corridor for a recovery/tow vehicle heading to a crash: cars ahead pull
         /// aside (no squeezing, oncoming use, overtaking or forced greens - that stays
@@ -109,17 +172,16 @@ namespace ClearTheWay
             {
                 return;
             }
-            Game.Vehicles.MaintenanceVehicle maintenance = EntityManager.GetComponentData<Game.Vehicles.MaintenanceVehicle>(vehicle);
-            if ((maintenance.m_State & MaintenanceVehicleFlags.Returning) != 0)
+            // One predicate for "is this vehicle on a wreck run", shared with the prune - including
+            // the test that was missing here: a wreck already on ANOTHER recovery vehicle's hook is
+            // no longer this one's job. Without it the redundant second truck kept being escorted
+            // to a wreck that TowCoupling had long since refused, and escalated where it stood.
+            if (!IsOnWreckRun(vehicle))
             {
-                return; // going home, not to a crash
-            }
-            Entity target = EntityManager.GetComponentData<Target>(vehicle).m_Target;
-            if (target == Entity.Null || !EntityManager.Exists(target) ||
-                (!EntityManager.HasComponent<Damaged>(target) && !EntityManager.HasComponent<Game.Events.InvolvedInAccident>(target)))
-            {
+                m_AssistProgress.Remove(vehicle);
                 return;
             }
+            Entity target = EntityManager.GetComponentData<Target>(vehicle).m_Target;
 
             CarCurrentLane currentLane = EntityManager.GetComponentData<CarCurrentLane>(vehicle);
             if (!EntityManager.Exists(currentLane.m_Lane))
@@ -157,7 +219,7 @@ namespace ClearTheWay
             {
                 progress.m_SinceFrame = frame;                 // real progress - start over
                 progress.m_BestDistance = targetDistance;
-                progress.m_GaveUpLogged = false;               // no longer wedged - re-arm the diagnostic
+                progress.m_NoProgressLogged = false;               // no longer wedged - re-arm the diagnostic
             }
             else
             {
@@ -182,10 +244,10 @@ namespace ClearTheWay
             // attempted afterwards). Diagnostic once, then every 10 s.
             if (stuckLong && frame - progress.m_SinceFrame >= kAssistGiveUpFrames)
             {
-                if (Mod.Setting.VerboseLogging && (!progress.m_GaveUpLogged || frame % 600u == 0u))
+                if (Mod.Setting.VerboseLogging && (!progress.m_NoProgressLogged || frame % 600u == 0u))
                 {
-                    LogAssistGiveUp(vehicle, target, currentLane, targetDistance, progress, frame);
-                    progress.m_GaveUpLogged = true;
+                    LogAssistNoProgress(vehicle, target, currentLane, targetDistance, progress, frame);
+                    progress.m_NoProgressLogged = true;
                     m_AssistProgress[vehicle] = progress;
                 }
                 TryGetAround(vehicle, ref currentLane, assistSpeed, targetDistance, frame);
@@ -363,6 +425,26 @@ namespace ClearTheWay
                 return;
             }
 
+            // The blocker must have held its position for a while before we act on it. Two cars
+            // standing abreast make the game's Blocker flip between them every few seconds -
+            // IgnoreBlocker is cleared automatically whenever the blocker changes, so neither is
+            // ever pushed past and the pair deadlocks. Field case 2026-08-09, truck 53038: within
+            // four minutes the blocker read 691036, 681259, 171302, 171232, 1718616, 676882, and
+            // the soft flag landed on 681259 purely because it happened to be current that tick.
+            // Flagging one member of a rotating cast achieves nothing and costs a stranger's car,
+            // so require the SAME entity for kUnblockStableFrames first.
+            if (head != progress.m_BlockerCandidate)
+            {
+                progress.m_BlockerCandidate = head;
+                progress.m_BlockerSince = frame;
+                m_AssistProgress[vehicle] = progress;
+                return;
+            }
+            if (frame - progress.m_BlockerSince < kUnblockStableFrames)
+            {
+                return;
+            }
+
             // Stage 1 (soft) unless THIS exact rig was already flagged and is still in the way.
             bool alreadySoftFlagged = head == progress.m_SoftFlaggedHead && progress.m_SoftFlagFrame != 0u;
             if (!alreadySoftFlagged)
@@ -451,7 +533,7 @@ namespace ClearTheWay
         /// truck? and is IT moving?). This is the data needed to later actually diagnose and break
         /// these gridlocks instead of abandoning the recovery to the wreck's give-up despawn.
         /// </summary>
-        private void LogAssistGiveUp(Entity vehicle, Entity wreck, CarCurrentLane lane,
+        private void LogAssistNoProgress(Entity vehicle, Entity wreck, CarCurrentLane lane,
             float targetDistance, AssistProgress progress, uint frame)
         {
             float speed = EntityManager.HasComponent<Moving>(vehicle)
@@ -483,7 +565,17 @@ namespace ClearTheWay
                 }
             }
 
-            Mod.Log.Info($"[assist] veh={vehicle.Index} GAVE UP - deadlocked {(frame - progress.m_SinceFrame) / 60u}s, " +
+            // NOT "GAVE UP", which is what this line said until 0.1.13 and which cost real
+            // debugging time: it reads as "this truck is finished", but the vehicle keeps driving,
+            // keeps trying to get around and routinely couples afterwards (field log 2026-08-04,
+            // truck 73363: two of these lines, then a successful hookup). What has actually
+            // stopped is the ESCALATION - the corridor, the hard evade, the forced greens, i.e.
+            // everything that churns surrounding traffic. And the trigger is straight-line
+            // distance to the wreck, which a truck taking a curving route legitimately fails to
+            // reduce while moving perfectly well, so a moving truck can land here without being
+            // stuck at all. spd= is the field that tells the two apart.
+            Mod.Log.Info($"[assist] veh={vehicle.Index} STOPPED ESCALATING - no progress for " +
+                $"{(frame - progress.m_SinceFrame) / 60u}s (it may still be driving; check spd), " +
                 $"dist={targetDistance:F0} best={progress.m_BestDistance:F0} spd={speed:F1} " +
                 $"pos=({vpos.x:F0},{vpos.z:F0}) wreck={wreck.Index}@({wpos.x:F0},{wpos.z:F0}) " +
                 $"lane={lane.m_Lane.Index} lanePos={lane.m_LanePosition:F1} ignoreBlocker={(ignore ? 1 : 0)} " +

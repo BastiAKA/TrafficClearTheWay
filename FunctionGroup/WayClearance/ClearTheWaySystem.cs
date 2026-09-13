@@ -1,4 +1,4 @@
-using ClearTheWay.FunctionGroup.Accidents;
+﻿using ClearTheWay.FunctionGroup.Accidents;
 using ClearTheWay.FunctionGroup.GeneralImprovements;
 using ClearTheWay.FunctionGroup.WayClearance;
 using ClearTheWay.FunctionGroup.WayClearance.Squeezing;
@@ -67,6 +67,21 @@ namespace ClearTheWay
         internal GreenLightChain Lights => modContext?.Lights;
         public IReadOnlyDictionary<Entity, SpeedOverride> SpeedOverrides => modContext.VehicleControl.SpeedOverrides;
 
+        /// <summary>How long this responder has been held by the same blocker, in frames; 0 when it
+        /// is not blocked or has never been seen. Exposed so the pedestrian pass can ask the ONE
+        /// stuck clock we keep instead of running a second one of its own - and it has to be that
+        /// clock, because it counts distance covered rather than speed (kStuckProgressMeters); a
+        /// clock driven by instantaneous speed resets on every creep in stop-and-go and would never
+        /// reach a threshold like this. At most one tick stale, which is nothing at this scale.</summary>
+        internal uint StuckFrames(Entity vehicle, uint frame)
+        {
+            if (!m_StuckStates.TryGetValue(vehicle, out StuckState stuck) || stuck.m_Blocker == Entity.Null)
+            {
+                return 0u;
+            }
+            return frame - stuck.m_BlockerSinceFrame;
+        }
+
         protected override void OnCreate()
         {
             base.OnCreate();
@@ -113,6 +128,7 @@ namespace ClearTheWay
             modContext.CorridorRun = new EscalationCorridor(modContext);
             modContext.Steering = new EscalationSteering(modContext);
             modContext.SpeedStage = new EscalationSpeed(modContext);
+            modContext.PedPlug = new PedestrianPlug(modContext);
             modContext.Escalation = new EmergencyEscalation(modContext);
             modContext.NearWreck = new NearWreckProtection(modContext);
             modContext.Reporting = new AccidentReporting(modContext);
@@ -206,8 +222,8 @@ namespace ClearTheWay
             // routable (just jammed), so with no wrecks this shield has nothing to do. Skipping
             // it then avoids iterating every responder in the city (+ a query sync) each tick
             // in the common, no-accident case (it was the one pass that always ran).
-            if (setting.PreventAccidentDespawn && !m_WreckQuery.IsEmptyIgnoreFilter &&
-                !m_EmergencyPathQuery.IsEmptyIgnoreFilter)
+            if (setting.PreventAccidentDespawn && frame % Tuning.kResponderShieldInterval == 0u &&
+                !m_WreckQuery.IsEmptyIgnoreFilter && !m_EmergencyPathQuery.IsEmptyIgnoreFilter)
             {
                 NativeArray<Entity> responders = m_EmergencyPathQuery.ToEntityArray(Allocator.Temp);
                 try
@@ -327,6 +343,7 @@ namespace ClearTheWay
             }
             // Each collaborator prunes the state it owns.
             modContext.PushedCars.Prune(frame);
+            modContext.PedPlug.Prune(frame);
             m_Corridor.Prune(frame);
             modRecovery.Prune(frame);
         }

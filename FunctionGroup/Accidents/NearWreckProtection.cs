@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using Colossal.Mathematics;
 using Game.Common;
 using Game.Net;
@@ -83,11 +83,19 @@ namespace ClearTheWay.FunctionGroup.Accidents
                 if ((state & PathFlags.Pending) != 0) nPending++;
                 if ((state & PathFlags.Failed) != 0) nFailed++;
                 if ((state & PathFlags.Stuck) != 0) nStuck++;
-                if (EntityManager.HasComponent<Game.Vehicles.PersonalCar>(other) &&
-                    (EntityManager.GetComponentData<Game.Vehicles.PersonalCar>(other).m_State
-                        & PersonalCarFlags.DummyTraffic) != 0) nDummy++;
-                if (EntityManager.HasComponent<Moving>(other) &&
-                    math.lengthsq(EntityManager.GetComponentData<Moving>(other).m_Velocity) < 0.25f) nStopped++;
+                // Diagnostic-only counters. nDummy and nStopped cost two component lookups
+                // EACH per car per tick and are only ever read back out in the [accident] line,
+                // which is itself behind VerboseLogging - so in ordinary play this was pure
+                // repetition on the hottest per-car loop in the mod. The three PathFlags counts
+                // above stay ungated: they read a state word that has already been fetched.
+                if (setting.VerboseLogging)
+                {
+                    if (EntityManager.HasComponent<Game.Vehicles.PersonalCar>(other) &&
+                        (EntityManager.GetComponentData<Game.Vehicles.PersonalCar>(other).m_State
+                            & PersonalCarFlags.DummyTraffic) != 0) nDummy++;
+                    if (EntityManager.HasComponent<Moving>(other) &&
+                        math.lengthsq(EntityManager.GetComponentData<Moving>(other).m_Velocity) < 0.25f) nStopped++;
+                }
                 if ((state & (PathFlags.Stuck | PathFlags.Failed)) != 0)
                 {
                     stuckCleared++;
