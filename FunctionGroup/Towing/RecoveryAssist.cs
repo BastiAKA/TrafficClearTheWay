@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using Game.Common;
 using Game.Net;
 using Game.Objects;
@@ -178,6 +178,17 @@ namespace ClearTheWay
             // to a wreck that TowCoupling had long since refused, and escalated where it stood.
             if (!IsOnWreckRun(vehicle))
             {
+                // This exit was completely silent, and that is why a truck excluded here looked
+                // identical in the log to one the assist simply never helped: no [assist] line
+                // either way. Throttled per tick-block rather than per vehicle - the interesting
+                // signal is "a convoy of trucks is being skipped at this wreck", not each one.
+                if (Mod.Setting.VerboseLogging && frame % 300u == 0u &&
+                    EntityManager.HasComponent<Target>(vehicle))
+                {
+                    Entity skipped = EntityManager.GetComponentData<Target>(vehicle).m_Target;
+                    Mod.Log.Info($"[assist] veh={vehicle.Index} skipped: not on a wreck run " +
+                        $"(target={skipped.Index}) - redundant second truck, returning, or target no longer a wreck");
+                }
                 m_AssistProgress.Remove(vehicle);
                 return;
             }
@@ -211,8 +222,9 @@ namespace ClearTheWay
             // stop-and-go jam it inches forward constantly, so a speed-based timer reset
             // on every creep and the escalation never fired.
             bool stuckLong = false;
+            float3 assistPos = EntityManager.GetComponentData<Transform>(vehicle).m_Position;
             float targetDistance = math.distance(
-                EntityManager.GetComponentData<Transform>(vehicle).m_Position.xz,
+                assistPos.xz,
                 EntityManager.GetComponentData<Transform>(target).m_Position.xz);
             if (!m_AssistProgress.TryGetValue(vehicle, out AssistProgress progress) ||
                 targetDistance < progress.m_BestDistance - kAssistProgressMeters)
@@ -231,6 +243,29 @@ namespace ClearTheWay
                 stuckLong = frame - progress.m_SinceFrame >= kAssistStuckFrames &&
                     targetDistance <= kAssistEscalateRange;
             }
+            // Physical movement watchdog, deliberately independent of the wreck's position and
+            // therefore valid at any distance from it. This is what catches the truck wedged out
+            // on the route, which the distance-gated watch above structurally cannot see.
+            if (progress.m_MovedSinceFrame == 0u ||
+                math.distance(assistPos.xz, progress.m_LastPos.xz) >= kAssistMotionlessMeters)
+            {
+                progress.m_LastPos = assistPos;
+                progress.m_MovedSinceFrame = frame;
+            }
+            bool motionless = frame - progress.m_MovedSinceFrame >= kAssistMotionlessFrames;
+            // ... and a vehicle that has physically not moved is stuck WHEREVER it stands, so it
+            // gets the full toolbox, not a reduced one. The assumption behind kAssistEscalateRange
+            // - "out on the route the jam is not the wreck's jam" - does not hold when the wreck
+            // lands on a main junction: a blocked roundabout backs traffic up for the better part
+            // of a kilometre, and every metre of that tailback IS the wreck's doing. Sebastian
+            // watched exactly that (2026-09-13, one of the city's main roundabouts).
+            //
+            // This does NOT bring back the failure kAssistEscalateRange was added for. That one
+            // was driven by the DISTANCE metric and fired for trucks that were driving perfectly
+            // well 1.7 km out, merely along a road that bent away from the target. A truck moving
+            // at all covers kAssistMotionlessMeters within kAssistMotionlessFrames and never
+            // reaches this branch; only one that has genuinely stood still for half a minute does.
+            stuckLong |= motionless;
             m_AssistProgress[vehicle] = progress;
 
             float assistSpeed = math.length(EntityManager.GetComponentData<Moving>(vehicle).m_Velocity);
@@ -242,7 +277,16 @@ namespace ClearTheWay
             // version returned outright here and thereby switched off the one escape that could
             // have freed it (field log: four trucks, all "GAVE UP", not a single lane change
             // attempted afterwards). Diagnostic once, then every 10 s.
-            if (stuckLong && frame - progress.m_SinceFrame >= kAssistGiveUpFrames)
+            // Measured against whichever clock actually describes how long it has been stuck.
+            // m_SinceFrame is the DISTANCE timer and it keeps running while the vehicle drives
+            // perfectly well along a road that bends away from the wreck - so on its own it can
+            // hand a truck a half-spent give-up clock the moment it finally does get stuck, or
+            // even an already-expired one. Taking the shorter elapsed of the two means a vehicle
+            // that has just come to a stand always gets the full kAssistGiveUpFrames of help.
+            uint stuckFor = motionless
+                ? math.min(frame - progress.m_SinceFrame, frame - progress.m_MovedSinceFrame)
+                : frame - progress.m_SinceFrame;
+            if (stuckLong && stuckFor >= kAssistGiveUpFrames)
             {
                 if (Mod.Setting.VerboseLogging && (!progress.m_NoProgressLogged || frame % 600u == 0u))
                 {
@@ -277,10 +321,49 @@ namespace ClearTheWay
             // stay re-plannable so every escape keeps being reachable. The speed hysteresis and
             // the free-lane latch inside ChooseShape still apply; only the "a working corridor
             // keeps its shape" lock is waived, which for a wedged truck is what we want.
+            // Promotion to emergency-grade handling, decided once and used by every stage below.
+            // Everything it unlocks is bounded by the near-wreck gate above, so none of it can
+            // reach a truck still out on the route.
+            bool fullRights = frame - progress.m_SinceFrame >= kAssistFullRightsFrames;
+
             m_Corridor.BuildCorridor(vehicle, ref currentLane, Mod.Setting, side, assistSpeed, desperate: true);
             for (int i = 0; i < m_Corridor.CorridorLanes.Count; i++)
             {
-                m_Ctx.Push.PullCarsAside(vehicle, m_Corridor.CorridorLanes[i], frame, hardEvade: true);
+                CorridorLane corridorLane = m_Corridor.CorridorLanes[i];
+                // Deep evade once promoted: cars ahead clear FULLY onto the kerb
+                // (kDeepEvadeMeters) instead of the ordinary offset. On a narrow street
+                // kEvadeMeters leaves a car's body across the gap, which is precisely the
+                // state a wedged truck cannot get out of - the same reason the responder
+                // path has a Deep stage at all.
+                m_Ctx.Push.PullCarsAside(vehicle, corridorLane, frame, hardEvade: true,
+                    evadeMeters: fullRights ? kDeepEvadeMeters : kEvadeMeters);
+
+                if (Mod.Setting.ForceGreenLights && corridorLane.m_OnPath)
+                {
+                    // Petition either way; preempt the phase outright only once promoted.
+                    m_Ctx.Lights.ClearCorridorLane(vehicle, corridorLane.m_Lane, preempt: fullRights);
+                }
+
+                // ... and physically roll the queue in front through the now-green junction.
+                // Without this the cars ahead sit at a light the game still believes is red,
+                // so the green buys the truck behind them nothing at all.
+                if (fullRights && corridorLane.m_OnPath)
+                {
+                    m_Ctx.Hold.PushQueueForward(vehicle, corridorLane);
+                }
+            }
+
+            // Last lever, and the one with a real cost to oncoming traffic: cross onto the
+            // opposing carriageway to get round the block. Only once promoted, and
+            // TryOncomingDisplacement applies its own sight-distance rules on top
+            // (kOncomingDesperateCommitSight), so it commits only when the gap is genuinely
+            // there. desperate: true - a truck that has stood three minutes beside a wreck is
+            // in exactly the state the flag describes.
+            if (fullRights && Mod.Setting.UseOncomingLane)
+            {
+                m_Ctx.Desperate.TryOncomingDisplacement(vehicle, ref currentLane, side, desperate: true, frame,
+                    out _, out _, out _);
+                EntityManager.SetComponentData(vehicle, currentLane);
             }
 
             // Move ITSELF over. This was missing entirely, and it is why nothing else worked: a
@@ -315,14 +398,35 @@ namespace ClearTheWay
             // ... and, when the way past is physically impossible, go AROUND.
             TryGetAround(vehicle, ref currentLane, assistSpeed, targetDistance, frame);
 
-            // ... and petition the lights green at recovery priority (106): civilian petitions
-            // (100) lose, emergency petitions (108) still win. No preemption - a tow truck is
-            // not worth cutting a running green phase short for.
-            m_Ctx.Lights.PetitionRouteAhead(vehicle, currentLane.m_Lane, kAssistSignalPriority, upcomingLanes: 2);
+            // ... and petition the lights green. Two tiers, because what they cost everyone
+            // else at that junction differs by an order of magnitude.
+            //
+            // Tier 1 (up to kAssistFullRightsFrames): recovery priority (106). Civilian petitions
+            // (100) lose, emergency petitions (108) still win, and there is no preemption - it
+            // takes effect at the junction's next phase switch. A tow truck is not normally worth
+            // cutting a running green short for.
+            //
+            // Tier 2 (past it): the same rights an ambulance has - priority 108 AND preemption, so
+            // the lane it sits on is hard-set to Go rather than waiting for the phase. A recovery
+            // vehicle that has made no progress for three minutes next to a wreck is not in a
+            // queue that is about to clear; it is in the jam the wreck itself created, and the
+            // starved junction ahead is usually what is holding it.
+            if (fullRights)
+            {
+                m_Ctx.Lights.ClearCorridorLane(vehicle, currentLane.m_Lane, preempt: true);
+                m_Ctx.Lights.PetitionRouteAhead(vehicle, currentLane.m_Lane, kSignalPriority, upcomingLanes: 2);
+            }
+            else
+            {
+                m_Ctx.Lights.PetitionRouteAhead(vehicle, currentLane.m_Lane, kAssistSignalPriority, upcomingLanes: 2);
+            }
             if (Mod.Setting.VerboseLogging && frame % 180u == 0u)
             {
                 Mod.Log.Info($"[assist] veh={vehicle.Index} no progress for {(frame - progress.m_SinceFrame) / 60u}s " +
-                    $"(dist={targetDistance:F0} best={progress.m_BestDistance:F0}) - escalating (evade+squeeze+green)");
+                    $"(dist={targetDistance:F0} best={progress.m_BestDistance:F0}" +
+                    (motionless ? $" motionless={(frame - progress.m_MovedSinceFrame) / 60u}s" : string.Empty) +
+                    ") - escalating " +
+                    (fullRights ? "(evade+squeeze+GREEN-PREEMPT, emergency rights)" : "(evade+squeeze+green)"));
             }
         }
 

@@ -1,4 +1,4 @@
-using Unity.Entities;
+﻿using Unity.Entities;
 
 namespace ClearTheWay
 {
@@ -14,6 +14,8 @@ namespace ClearTheWay
     {
         public uint m_SinceFrame;
         public float m_BestDistance;
+        public Unity.Mathematics.float3 m_LastPos;  // last position at which it had physically MOVED - the metric that still works out on the route, where straight-line distance to the wreck says nothing
+        public uint m_MovedSinceFrame;              // ... and the frame that happened. 0 = never seen yet.
         public bool m_NoProgressLogged; // detailed "stopped escalating" diagnostic already emitted for this stall (reset when progress resumes). NOT a give-up: the vehicle goes on driving and often couples afterwards - only the traffic-churning escalation stops.
         public uint m_LastUnblockFrame; // last time the blocker in front of it was removed (rate limit for the last resort)
         public Entity m_SoftFlaggedHead; // the rig we flagged Obsolete (soft, gentle) but have not yet hard-deleted; Entity.Null when none is pending
