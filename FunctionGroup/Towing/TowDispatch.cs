@@ -272,6 +272,10 @@ namespace ClearTheWay
                 EntityMapPrune.PruneDead(EntityManager, m_Ctx.VanAssigned, m_PruneScratch);
                 EntityMapPrune.PruneDead(EntityManager, m_Ctx.PathRetry, m_PruneScratch);
                 EntityMapPrune.PruneDead(EntityManager, m_Ctx.LastAction, m_PruneScratch);
+                // Keyed by the WRECK, so it goes when the wreck does - which is the normal end of a
+                // recovery. OwnVanStillComing drops entries whose VAN died; this covers the rest.
+                EntityMapPrune.PruneDead(EntityManager, m_Ctx.LastAssignedVan, m_PruneScratch);
+                EntityMapPrune.PruneDead(EntityManager, m_Ctx.LastDepotDispatch, m_PruneScratch);
             }
         }
 

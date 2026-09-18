@@ -3,8 +3,11 @@ using Colossal.Collections;
 using Colossal.Mathematics;
 using Game.Common;
 using Game.Net;
+using Game.Objects;
+using Game.Vehicles;
 using Unity.Collections;
 using Unity.Entities;
+using Unity.Jobs;
 using Unity.Mathematics;
 using static ClearTheWay.Tuning;
 
@@ -148,6 +151,96 @@ namespace ClearTheWay
         /// caller should let it go, rather than leave a loaded truck as a permanent monument that
         /// also blocks every cleanup net behind it.
         /// </summary>
+        /// <summary>
+        /// The same wedge check for recovery vehicles that are running EMPTY - on their way to a
+        /// wreck rather than hauling one.
+        ///
+        /// Until 0.1.13 nothing covered them: <see cref="IsWedged"/> is called from the follow
+        /// pass, and the follow pass only ever iterates TOWED wrecks. A truck that wedged itself
+        /// before reaching its wreck therefore stood forever - and it took the wreck with it,
+        /// because a claimed wreck waits on kWreckClaimedGiveUpAge (~30 min) for a truck that is
+        /// never coming.
+        ///
+        /// Two deliberate differences from the loaded case:
+        ///  - the "not on a road" shortcut does NOT delete on its own here. Off the network is
+        ///    conclusive for a LOADED truck (it drove itself into a building), but an empty one is
+        ///    routinely off the road for innocent reasons - a depot yard reads as off-road, since
+        ///    StandsOnRoad deliberately ignores parking aisles. So an empty truck must earn the
+        ///    full kTowWedgeStrikes either way: ~5 minutes without moving 3 m, which no waiting
+        ///    truck does.
+        ///  - there is no wreck to release, so nothing is handed back; the wreck simply loses its
+        ///    claim when the truck goes and the dispatcher sends someone else.
+        /// </summary>
+        public void SweepEmptyTrucks(EntityQuery truckQuery, uint frame, Setting setting)
+        {
+            NativeArray<Entity> trucks = truckQuery.ToEntityArray(Allocator.Temp);
+            NativeQuadTree<Entity, QuadTreeBoundsXZ> netTree = default;
+            bool treeFetched = false;
+            try
+            {
+                for (int i = 0; i < trucks.Length; i++)
+                {
+                    Entity truck = trucks[i];
+                    if (m_Ctx.TrucksWithLoad.Contains(truck))
+                    {
+                        continue; // hauling - the follow pass owns this one
+                    }
+                    // Only a truck actually EN ROUTE to a wreck. One going home or parked is
+                    // allowed to stand still for as long as it likes.
+                    Game.Vehicles.MaintenanceVehicle maintenance =
+                        EntityManager.GetComponentData<Game.Vehicles.MaintenanceVehicle>(truck);
+                    if ((maintenance.m_State & MaintenanceVehicleFlags.Returning) != 0 ||
+                        EntityManager.HasComponent<Game.Vehicles.ParkedCar>(truck))
+                    {
+                        continue;
+                    }
+                    Entity target = EntityManager.GetComponentData<Target>(truck).m_Target;
+                    if (target == Entity.Null || !EntityManager.Exists(target) ||
+                        (!EntityManager.HasComponent<Damaged>(target) &&
+                         !EntityManager.HasComponent<Game.Events.InvolvedInAccident>(target)))
+                    {
+                        continue;
+                    }
+                    float3 pos = EntityManager.GetComponentData<Transform>(truck).m_Position;
+                    if (!IsWedged(truck, pos, frame))
+                    {
+                        continue;
+                    }
+                    if (!treeFetched && m_Ctx.NetSearch != null)
+                    {
+                        netTree = m_Ctx.NetSearch.GetNetSearchTree(readOnly: true, out JobHandle netDeps);
+                        netDeps.Complete();
+                        treeFetched = true;
+                    }
+                    bool onRoad = treeFetched && StandsOnRoad(pos, netTree);
+                    if (setting.VerboseLogging && !onRoad)
+                    {
+                        Mod.Log.Info($"[towstuck] empty truck={truck.Index} motionless OFF the road at " +
+                            $"({pos.x:F0},{pos.z:F0}) heading for wreck={target.Index} - counting strikes");
+                    }
+                    // Strikes either way - see the summary for why "off road" is not conclusive
+                    // for an empty vehicle.
+                    if (NoteOnRoadStrike(truck, frame, setting))
+                    {
+                        if (setting.VerboseLogging)
+                        {
+                            Mod.Log.Info($"[towstuck] empty truck={truck.Index} never reached wreck={target.Index} " +
+                                "- deleting it so the wreck can be dispatched again");
+                        }
+                        m_Ctx.SafeDelete(truck);
+                    }
+                }
+            }
+            finally
+            {
+                trucks.Dispose();
+                if (treeFetched)
+                {
+                    m_Ctx.NetSearch.AddNetSearchTreeReader(default(JobHandle));
+                }
+            }
+        }
+
         public bool NoteOnRoadStrike(Entity truck, uint frame, Setting setting)
         {
             m_Rest.TryGetValue(truck, out TruckRest rest);

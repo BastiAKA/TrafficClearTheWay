@@ -260,7 +260,20 @@ namespace ClearTheWay
                 (s.m_PreviousStuck.m_LastDefreezeFrame == 0u ||
                  frame - s.m_PreviousStuck.m_LastDefreezeFrame >= kDefreezeCooldown))
             {
-                if (!TryReleaseLeadBlocker(vehicle, frame, setting))
+                // Crosswalk guard, ahead of BOTH ways out. Ask first why the COLUMN is standing:
+                // at an unsignalised zebra with heavy foot traffic the head of the queue is
+                // yielding to a pedestrian, and then neither way out is right. Removing cars is
+                // futile (every replacement stops in the same place, so the whole column would be
+                // despawned one car per throttle window) and rerouting OURSELVES sends a responder
+                // the long way round a jam that clears itself in seconds. The "civilian only" rules
+                // in TryReleaseLeadBlocker cannot catch this: only the front-most car has the
+                // pedestrian as its blocker, every car behind has a CAR. If the pedestrian itself
+                // has stopped making progress, PedestrianPlug frees the PEDESTRIAN - a re-path, no
+                // despawn - and hands the sacrifice back only once that has failed too.
+                // The throttle below is stamped either way, so the chain walk costs one pass per
+                // cooldown rather than one per tick.
+                bool pedestrianPlug = m_Ctx.PedPlug.BlocksSacrifice(vehicle, frame, setting);
+                if (!pedestrianPlug && !TryReleaseLeadBlocker(vehicle, frame, setting))
                 {
                     currentLane.m_LaneFlags |= CarLaneFlags.Obsolete;
                     s.m_Changed = true;

@@ -1,4 +1,4 @@
-<Publish>
+﻿<Publish>
 	<!--DEV CHANNEL, page 153224 - created 2026-07-30 with PublishDev.pubxml. Separate
 	    from the release page (151583); keep it that way, never paste the release id here.
 	    The page now EXISTS, so from here on use NewVersionDev.pubxml (build + upload) or
@@ -37,7 +37,7 @@ Release version: https://mods.paradoxplaza.com/mods/151583/Windows
 	<!--Link to the forum post where the mod can be discussed-->
 	<ForumLink Value="" />
 	<!--Version of the mod-->
-	<ModVersion Value="0.1.12.1" />
+	<ModVersion Value="0.1.13.1" />
 	<!--Recommended version of the base game to use the mod-->
 	<GameVersion Value="1.6.*" />
 	<!--Dependency for the mod, can be set multiple times-->
@@ -46,40 +46,23 @@ Release version: https://mods.paradoxplaza.com/mods/151583/Windows
 	<RequiredDLC Value="" />
 	<!--Change log for new version. Single line or multi line. Supports minimal markdown subset-->
 	<ChangeLog>
-0.1.12.1 - performance.
+0.1.13.1 - compatibility build for game 1.6.2f1.
 
-The simulation runs measurably faster with this build. Measured against the public release on the same city at the same load: **+14% simulation tick rate**, and the busier it gets the more it helps - at 50+ emergency vehicles running at once it was +19%. Over a 3.5-hour session, with no drift: the tick rate in the last twenty minutes was the same as in the first.
+No behaviour changes. This is 0.1.13.0 rebuilt against "Autumn Breeze" (1.6.2f1, released 2026-09-15) and re-checked against it.
 
-**Where it came from**
-All of it is the pedestrian pass - the one that holds people at the kerb while a responder passes. It turned out to cost about 10% of every simulation tick on its own, and now costs almost nothing.
+**What was checked**
+- The mod compiles clean against the 1.6.2 assemblies: none of the game API it binds to was removed or changed.
+- The three places a clean build says nothing about were verified by hand - the private field `PrefabSystem.m_Prefabs` (still a list of PrefabBase), `EntityManager.CreateEntity(EntityArchetype)` which is called through reflection, and the `RoadMaintenanceDepot01` / `RoadMaintenanceVehicle01` prefabs the tow depot and the tow truck are cloned from. All three are unchanged in 1.6.2.
+- Nothing in the 1.6.2 patch notes touches emergency vehicles, accidents, lanes, pathfinding or crossings. The vehicle fixes it does carry are about parking and transit stations, not the despawn paths this mod shields.
 
-- It searched a cube of 40 m in every direction around each siren - including 40 m backwards, and 40 m up and down. On a map with tunnels or elevated roads that dragged whole extra layers of footpath into the search, all of it thrown away again a moment later. It now looks only along the stretch the responder is actually driving.
-- The check "has this responder already passed you?" used to run ninth, after eight component lookups. It runs first now.
-- The full search runs every 10 simulation ticks instead of every 4. Pedestrians already held stay held on every tick as before - only the moment a NEW one is noticed shifts, by about 0.2 seconds.
-
-**What that means for behaviour**
-Practically nothing should look different. If anything does, it would be a pedestrian stepping off a kerb that would previously have waited - most likely at a wide junction while a responder is turning. That is the one case where the smaller search box gives up coverage, and it is the thing worth reporting.
-
-**Everything below was already in the previous dev build**
-
-**Worth knowing before you start**
-- Cars are allowed onto flat medians, grass strips and empty tram beds to clear the way. That is deliberate and switchable ("Cross medians"), not a bug.
-- Never run this alongside the public release.
-
-**Towing**
-- Wrecks get hauled away and delivered instead of the truck giving up halfway.
-- A recovery truck that is merely queueing in traffic is no longer "rescued" every 15 seconds. It used to be teleported back onto the lane it was already standing on, forever - 904 no-op recoveries in one 100-minute session - and doing so rewrote lane fields behind the game's back, which can take the whole simulation down.
-- A truck that is genuinely off the network, or has not moved for ~5 minutes, is removed and its wreck goes back into the queue. Losing one truck beats an unstable save.
-
-**Emergency corridor**
-- A responder squeezing past two cars abreast could stall completely: the game only ever ignores ONE blocker, and with two stopped cars the blocker flipped every tick so neither was ignored. It now noses out of that state on its own.
-- Cars are pulled aside by an amount that matches the room actually beside THEIR side of the road. On carriageways running against the road direction the mod measured the far side and handed out up to 4 m of space that was not there, which is what threw cars across parking bays and onto kerbs.
+**Not in this build**
+The extended towing escalation - full rights for a recovery vehicle that has been wedged for a minute, convoy discipline behind a standing colleague, and arrival assist for ordinary maintenance vans - is not finished and is deliberately left out. It sits on its own branch and lands in a later build.
 
 **What to report**
-Log with "Verbose logging" enabled, plus roughly where it happened. Responders that stand still, cars ending up somewhere they physically should not be, and anything that stutters are all interesting.
-</ChangeLog>
+Anything that behaves differently under 1.6.2 than it did under 1.6.0, particularly traffic around an accident: 1.6.2 changed when the game cleans vehicles up, and that is the area this mod shields.
+	</ChangeLog>
 	<!--External link, can be set multiple times. supported types are "discord", "github", "youtube", "twitch", "x", "paypal", "patreon", "buymeacoffee", "kofi", "crowdin", "gitlab", "gofundme"-->
-	<ExternalLink Type="" Url="" />
+	<ExternalLink Type="github" Url="https://github.com/BastiAKA/TrafficClearTheWay" />
 	<!--Supported values Public, Private, Unlisted-->
 	<AccessLevel Value="Public" />
 </Publish>

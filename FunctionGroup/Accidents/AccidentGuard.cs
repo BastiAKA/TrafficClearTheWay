@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using Colossal.Collections;
 using Colossal.Mathematics;
 using Game.Common;
@@ -100,6 +100,39 @@ namespace ClearTheWay.FunctionGroup.Accidents
         /// the game does not despawn them - they wait for the wreck to be recovered. Covers
         /// the wreck's own lane within a generous range around it.
         /// </summary>
+        // Cached near-wreck MEMBERSHIP, one list per accident cluster (see
+        // kNearWreckSweepInterval). Only WHO is near a scene is cached; WHAT is done to each of
+        // them still runs every tick, so the despawn shield, the repath shield and the approach
+        // brake keep their old cadence and behaviour.
+        //
+        // The cached bounds are kept alongside and compared on every tick: cluster INDICES are
+        // rebuilt from the wreck query each pass, so a changed wreck set can renumber them while
+        // leaving the count alone - and a stale list would then be handed to the wrong cluster,
+        // braking cars against wrecks that are somewhere else entirely. Wrecks do not move, so
+        // while the scene is unchanged the bounds match exactly and the cache holds.
+        private readonly List<List<Entity>> m_ClusterCarsCache = new List<List<Entity>>();
+        private readonly List<Bounds3> m_CachedClusterBounds = new List<Bounds3>();
+        private uint m_ClusterCarsFrame;
+
+        private bool NearWreckCacheStale(uint frame)
+        {
+            if (m_ClusterCarsCache.Count != m_ClusterBounds.Count ||
+                m_CachedClusterBounds.Count != m_ClusterBounds.Count ||
+                frame - m_ClusterCarsFrame >= kNearWreckSweepInterval)
+            {
+                return true;
+            }
+            for (int c = 0; c < m_ClusterBounds.Count; c++)
+            {
+                if (!m_CachedClusterBounds[c].min.Equals(m_ClusterBounds[c].min) ||
+                    !m_CachedClusterBounds[c].max.Equals(m_ClusterBounds[c].max))
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+
         public void ProtectAccidentQueues(Setting setting, uint frame)
         {
             using (ModProfiler.Sample(kProfile, "AccidentGuard"))
@@ -203,24 +236,55 @@ namespace ClearTheWay.FunctionGroup.Accidents
                 // through the whole protection block up to wreck-count times per tick) ---
                 if (m_ClusterBounds.Count != 0)
                 {
-                    NativeQuadTree<Entity, QuadTreeBoundsXZ> tree =
-                        m_ObjectSearchSystem.GetMovingSearchTree(readOnly: true, out JobHandle deps);
-                    deps.Complete();
+                    // Rebuild tick: the quadtree traversal and its main-thread job sync happen
+                    // here and ONLY here. This is the pass that used to run at 58 Hz.
+                    if (NearWreckCacheStale(frame))
+                    {
+                        while (m_ClusterCarsCache.Count < m_ClusterBounds.Count)
+                        {
+                            m_ClusterCarsCache.Add(new List<Entity>());
+                        }
+                        m_CachedClusterBounds.Clear();
+                        NativeQuadTree<Entity, QuadTreeBoundsXZ> tree =
+                            m_ObjectSearchSystem.GetMovingSearchTree(readOnly: true, out JobHandle deps);
+                        deps.Complete();
+                        for (int c = 0; c < m_ClusterBounds.Count; c++)
+                        {
+                            found.Clear();
+                            AreaIterator iterator = new AreaIterator
+                            {
+                                m_Bounds = new Bounds3(m_ClusterBounds[c].min - kAccidentQueueRange,
+                                                       m_ClusterBounds[c].max + kAccidentQueueRange),
+                                m_Results = found
+                            };
+                            tree.Iterate(ref iterator);
+                            List<Entity> slot = m_ClusterCarsCache[c];
+                            slot.Clear();
+                            for (int k = 0; k < found.Length; k++)
+                            {
+                                slot.Add(found[k]);
+                            }
+                            m_CachedClusterBounds.Add(m_ClusterBounds[c]);
+                        }
+                        m_ObjectSearchSystem.AddMovingSearchTreeReader(default);
+                        m_ClusterCarsFrame = frame;
+                    }
+
+                    // Every tick, rebuild or not: the protection work itself. Entities that died
+                    // since the sweep are filtered by the Exists/HasComponent guards at the top of
+                    // ProtectNearWreckCars, so a stale id in the list is harmless.
                     for (int c = 0; c < m_ClusterBounds.Count; c++)
                     {
                         found.Clear();
-                        AreaIterator iterator = new AreaIterator
+                        List<Entity> slot = m_ClusterCarsCache[c];
+                        for (int k = 0; k < slot.Count; k++)
                         {
-                            m_Bounds = new Bounds3(m_ClusterBounds[c].min - kAccidentQueueRange,
-                                                   m_ClusterBounds[c].max + kAccidentQueueRange),
-                            m_Results = found
-                        };
-                        tree.Iterate(ref iterator);
+                            found.Add(slot[k]);
+                        }
                         modContext.NearWreck.ProtectNearWreckCars(found, c, setting, frame,
                             ref protectedCount, ref stuckCleared, ref nPending, ref nFailed, ref nStuck,
                             ref nDummy, ref nStopped, ref nObsCleared, ref nBrakeCand, ref nBraked);
                     }
-                    m_ObjectSearchSystem.AddMovingSearchTreeReader(default);
                 }
             }
             finally

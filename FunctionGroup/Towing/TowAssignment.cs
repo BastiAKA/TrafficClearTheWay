@@ -45,6 +45,8 @@ namespace ClearTheWay
         private Dictionary<Entity, uint> m_VanSentHome => m_Ctx.VanSentHome;
         private Dictionary<Entity, uint> m_VanAssigned => m_Ctx.VanAssigned;
         private Dictionary<Entity, Entity> m_VanJob => m_Ctx.VanJob;
+        private Dictionary<Entity, Entity> m_LastAssignedVan => m_Ctx.LastAssignedVan;
+        private Dictionary<Entity, uint> m_LastDepotDispatch => m_Ctx.LastDepotDispatch;
         private List<Entity> m_PruneScratch => m_Ctx.PruneScratch;
 
         public TowAssignment(DispatchContext ctx)
@@ -108,7 +110,7 @@ namespace ClearTheWay
                 {
                     AssignToVan(nearest, wreck, request, frame);
                 }
-                else
+                else if (!OwnVanStillComing(wreck, wreckPos, frame))
                 {
                     AssignToTowDepot(wreck, request, wreckPos, frame);
                 }
@@ -137,17 +139,104 @@ namespace ClearTheWay
                     m_Ctx.Beeline.SendHome(responder, frame);
                     AssignToVan(nearest, wreck, request, frame);
                 }
-                else if (!responderIsTowTruck && responderDist > kNearVanRange &&
+                else if (!responderIsTowTruck && responderDist > kFarVanRange &&
                     (nearest == Entity.Null || nearestDist > kNearVanRange))
                 {
                     // No suitable van anywhere near: a distant road-maintenance van is NOT
                     // what should come - send it home and call a proper tow truck instead.
+                    //
+                    // The threshold to LEAVE a van is kFarVanRange, not the kNearVanRange used to
+                    // pick one. This is the branch that carries none of the 0.1.12 takeover brakes
+                    // (no grace, no minimum gain, no distance comparison), so with one shared
+                    // threshold a van hovering around 400 m was sent home and re-hired on
+                    // alternating passes - Sebastian's "the trucks keep having the job taken away
+                    // too early". See kFarVanRange.
                     if (AssignToTowDepot(wreck, request, wreckPos, frame))
                     {
                         m_Ctx.Beeline.SendHome(responder, frame);
                     }
                 }
             }
+        }
+
+        /// <summary>
+        /// True when a van THIS dispatcher put on the wreck is still alive, still pointed at it and
+        /// still capable - in which case the depot must not be called for the same wreck.
+        ///
+        /// Needed because <see cref="DispatchContext.VanJob"/> is rebuilt every pass out of the
+        /// vans' real game state, so there is a window in which a van we just dispatched does not
+        /// show up as the wreck's responder: the depot branch fires for the same request, the depot
+        /// consumes it, the van's order is gone, and next pass the wreck looks unassigned again. The
+        /// two dispatch paths were competing for one request, which is what the strict van/depot
+        /// alternation in the log was.
+        ///
+        /// Deliberately checks the van's LIVE state rather than only remembering a decision: a
+        /// remembered claim that outlives the van would block the depot forever. The time bound is
+        /// the backstop for the case that survives all three live checks - a van that stands
+        /// pointing at the wreck and never arrives.
+        /// </summary>
+        /// <summary>True when the wreck is physically on a recovery vehicle's hook. Releases the
+        /// depot claim early in the one case where it is provably finished - everything else is
+        /// left to the claim's own timeout, because "no truck visible" is exactly the state this
+        /// guard exists to tolerate.</summary>
+        private bool IsOnAHook(Entity wreck)
+        {
+            if (!EntityManager.HasComponent<Controller>(wreck))
+            {
+                return false;
+            }
+            Entity carrier = EntityManager.GetComponentData<Controller>(wreck).m_Controller;
+            return carrier != Entity.Null && carrier != wreck && EntityManager.Exists(carrier) &&
+                !EntityManager.HasComponent<Deleted>(carrier) &&
+                EntityManager.HasComponent<Game.Vehicles.MaintenanceVehicle>(carrier);
+        }
+
+        private bool OwnVanStillComing(Entity wreck, float3 wreckPos, uint frame)
+        {
+            if (!m_LastAssignedVan.TryGetValue(wreck, out Entity van))
+            {
+                return false;
+            }
+            if (van == Entity.Null || !EntityManager.Exists(van) ||
+                EntityManager.HasComponent<Deleted>(van))
+            {
+                m_LastAssignedVan.Remove(wreck);
+                return false;
+            }
+            // We released it ourselves, or it took on another wreck.
+            if (m_VanSentHome.ContainsKey(van) ||
+                (m_VanJob.TryGetValue(van, out Entity job) && job != wreck))
+            {
+                m_LastAssignedVan.Remove(wreck);
+                return false;
+            }
+            // Still actually heading here? A van whose Target has moved on is not ours any more,
+            // whatever we once decided.
+            if (!EntityManager.HasComponent<Target>(van) ||
+                EntityManager.GetComponentData<Target>(van).m_Target != wreck)
+            {
+                m_LastAssignedVan.Remove(wreck);
+                return false;
+            }
+            if (!IsSuitable(van, wreck))
+            {
+                m_LastAssignedVan.Remove(wreck);
+                return false;
+            }
+            // Backstop: a van that has had the job this long and still has not reached the wreck is
+            // not going to. Let the depot compete again rather than leave the wreck to it forever.
+            if (m_VanAssigned.TryGetValue(van, out uint assignedFrame) &&
+                frame - assignedFrame > kVanClaimFrames)
+            {
+                m_LastAssignedVan.Remove(wreck);
+                return false;
+            }
+            if (Mod.Setting.VerboseLogging)
+            {
+                float dist = math.distance(EntityManager.GetComponentData<Transform>(van).m_Position.xz, wreckPos.xz);
+                Mod.Log.Info($"[dispatch] wreck={wreck.Index} keeps van={van.Index} ({dist:F0} m out) - no depot dispatch");
+            }
+            return true;
         }
 
         /// <summary>Does this van hold the wreck's recovery order - accepted OR still
@@ -190,6 +279,9 @@ namespace ClearTheWay
         {
             m_VanSentHome.Remove(van); // a real assignment clears any stale sent-home cooldown
             m_VanAssigned[van] = frame;  // starts its takeover grace - let it drive there before re-deciding
+            // Remember OUR decision, so the depot branch does not compete for the same request
+            // while this van is on its way (see OwnVanStillComing).
+            m_LastAssignedVan[wreck] = van;
             DynamicBuffer<ServiceDispatch> dispatches = EntityManager.HasBuffer<ServiceDispatch>(van)
                 ? EntityManager.GetBuffer<ServiceDispatch>(van)
                 : EntityManager.AddBuffer<ServiceDispatch>(van);
@@ -234,6 +326,21 @@ namespace ClearTheWay
         /// points at the previous provider).</summary>
         public bool AssignToTowDepot(Entity wreck, Entity request, float3 wreckPos, uint frame)
         {
+            // Have we already called a depot for this wreck, and could that truck still be coming?
+            // The checks further down cannot answer this: the depot consumes the request as it
+            // accepts it, so it is no longer in any ServiceDispatch buffer, and the truck it
+            // spawned is not in VanQuery either until it has left the depot and taken the wreck as
+            // its Target. Between those two blind spots the wreck reads as completely unserved,
+            // and we asked again every kActionCooldown - 37 times for one wreck in the 2026-08-09
+            // session. Released early below once the wreck is actually on a hook.
+            if (m_LastDepotDispatch.TryGetValue(wreck, out uint depotFrame))
+            {
+                if (frame - depotFrame < kDepotClaimFrames && !IsOnAHook(wreck))
+                {
+                    return true; // someone is already on the way - treat it as served
+                }
+                m_LastDepotDispatch.Remove(wreck);
+            }
             Entity depot = Entity.Null;
             float depotDist = float.MaxValue;
             NativeArray<Entity> depots = m_DepotQuery.ToEntityArray(Allocator.Temp);
@@ -283,6 +390,10 @@ namespace ClearTheWay
             }
             dispatches.Add(new ServiceDispatch(request));
             m_LastAction[wreck] = frame;
+            // The depot owns this request now, so our own van claim is void - keeping it would
+            // block the NEXT depot dispatch for a van that no longer has an order.
+            m_LastAssignedVan.Remove(wreck);
+            m_LastDepotDispatch[wreck] = frame;
             if (Mod.Setting.VerboseLogging)
             {
                 Mod.Log.Info($"[dispatch] wreck={wreck.Index} -> tow depot={depot.Index} (no van within {kNearVanRange:F0} m)");
