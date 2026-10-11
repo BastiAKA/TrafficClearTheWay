@@ -65,6 +65,23 @@ namespace ClearTheWay
         private readonly Dictionary<Entity, PlugRecord> m_Plugs = new Dictionary<Entity, PlugRecord>();
         private readonly List<Entity> m_PruneScratch = new List<Entity>();
 
+        /// <summary>The second clock, keyed by the RESPONDER: since when has this responder been
+        /// turned away by the guard, whoever the pedestrian was.
+        ///
+        /// The per-pedestrian clock above cannot bound that on its own. The guard is only asked
+        /// once per kDefreezeCooldown (~15 s), and at a crossing with a steady stream of people a
+        /// DIFFERENT pedestrian is at the head of the column each time. Each one is brand new, so
+        /// its clock reads zero, the guard blocks, and neither the car sacrifice nor the responder's
+        /// own re-route is ever allowed again - the absolute guard this class set out not to be.
+        /// With this, the guard gives way after kPedPlugGiveUpFrames in total.</summary>
+        private struct GuardRecord
+        {
+            public uint m_SinceFrame;     // first refusal of the current episode
+            public uint m_LastSeenFrame;  // last refusal; a long gap starts a new episode
+        }
+
+        private readonly Dictionary<Entity, GuardRecord> m_Guarded = new Dictionary<Entity, GuardRecord>();
+
         public PedestrianPlug(WayClearanceContext ctx)
         {
             m_Ctx = ctx;
@@ -81,6 +98,28 @@ namespace ClearTheWay
             Entity creature = FindPlugCreature(vehicle);
             if (creature == Entity.Null)
             {
+                m_Guarded.Remove(vehicle); // no pedestrian in the column any more - episode over
+                return false;
+            }
+
+            // Bound the refusal per responder first (see GuardRecord). A gap longer than
+            // kPedPlugKeepFrames between two refusals means the responder got moving in between,
+            // so that is a new episode with a fresh clock.
+            if (!m_Guarded.TryGetValue(vehicle, out GuardRecord guard) ||
+                frame - guard.m_LastSeenFrame > kPedPlugKeepFrames)
+            {
+                guard = new GuardRecord { m_SinceFrame = frame };
+            }
+            guard.m_LastSeenFrame = frame;
+            m_Guarded[vehicle] = guard;
+            uint guardedFor = frame - guard.m_SinceFrame;
+            if (guardedFor >= kPedPlugGiveUpFrames)
+            {
+                if (setting.VerboseLogging)
+                {
+                    Mod.Log.Info($"[pedplug] veh={vehicle.Index} has been held at this crossing for {guardedFor}f " +
+                        $"(pedestrian now ped={creature.Index}) - releasing the guard, the car sacrifice may run");
+                }
                 return false;
             }
 
@@ -116,10 +155,14 @@ namespace ClearTheWay
                         $"{plugFor}f - forced it to re-path instead of sacrificing a car");
                 }
             }
-            else if (setting.VerboseLogging && plugFor < kPedPlugFrames && (frame & 0x7Fu) == 0u)
+            else if (setting.VerboseLogging)
             {
+                // Logged on every refusal. This is reached at most once per kDefreezeCooldown per
+                // responder, so it cannot flood - and the frame-mask throttle that used to sit
+                // here let only 1 call in 128 through, which made the guard all but invisible in
+                // the log: "[pedplug] never fired" could not be told from "fired silently".
                 Mod.Log.Info($"[pedplug] veh={vehicle.Index} is yielding to ped={creature.Index} " +
-                    $"({plugFor}f) - no sacrifice at a crossing");
+                    $"(this pedestrian {plugFor}f, held here {guardedFor}f) - no sacrifice at a crossing");
             }
 
             m_Plugs[creature] = record;
@@ -215,23 +258,41 @@ namespace ClearTheWay
         /// re-path.</summary>
         public void Prune(uint frame)
         {
-            if (m_Plugs.Count == 0)
+            if (m_Plugs.Count != 0)
             {
-                return;
-            }
-            m_PruneScratch.Clear();
-            foreach (KeyValuePair<Entity, PlugRecord> entry in m_Plugs)
-            {
-                if (frame - entry.Value.m_LastSeenFrame > 1024u || !EntityManager.Exists(entry.Key))
+                m_PruneScratch.Clear();
+                foreach (KeyValuePair<Entity, PlugRecord> entry in m_Plugs)
                 {
-                    m_PruneScratch.Add(entry.Key);
+                    // kPedPlugKeepFrames, not the 1024 the other latches use: this record is only
+                    // refreshed once per kDefreezeCooldown (900), so 1024 left 124 frames of slack
+                    // and a single skipped check dropped it - restarting the three-stage clock.
+                    if (frame - entry.Value.m_LastSeenFrame > kPedPlugKeepFrames || !EntityManager.Exists(entry.Key))
+                    {
+                        m_PruneScratch.Add(entry.Key);
+                    }
                 }
+                for (int i = 0; i < m_PruneScratch.Count; i++)
+                {
+                    m_Plugs.Remove(m_PruneScratch[i]);
+                }
+                m_PruneScratch.Clear();
             }
-            for (int i = 0; i < m_PruneScratch.Count; i++)
+            if (m_Guarded.Count != 0)
             {
-                m_Plugs.Remove(m_PruneScratch[i]);
+                m_PruneScratch.Clear();
+                foreach (KeyValuePair<Entity, GuardRecord> entry in m_Guarded)
+                {
+                    if (frame - entry.Value.m_LastSeenFrame > kPedPlugKeepFrames || !EntityManager.Exists(entry.Key))
+                    {
+                        m_PruneScratch.Add(entry.Key);
+                    }
+                }
+                for (int i = 0; i < m_PruneScratch.Count; i++)
+                {
+                    m_Guarded.Remove(m_PruneScratch[i]);
+                }
+                m_PruneScratch.Clear();
             }
-            m_PruneScratch.Clear();
         }
     }
 }
