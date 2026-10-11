@@ -37,7 +37,7 @@ Release version: https://mods.paradoxplaza.com/mods/151583/Windows
 	<!--Link to the forum post where the mod can be discussed-->
 	<ForumLink Value="" />
 	<!--Version of the mod-->
-	<ModVersion Value="0.1.13.1" />
+	<ModVersion Value="0.1.13.2" />
 	<!--Recommended version of the base game to use the mod-->
 	<GameVersion Value="1.6.*" />
 	<!--Dependency for the mod, can be set multiple times-->
@@ -46,20 +46,36 @@ Release version: https://mods.paradoxplaza.com/mods/151583/Windows
 	<RequiredDLC Value="" />
 	<!--Change log for new version. Single line or multi line. Supports minimal markdown subset-->
 	<ChangeLog>
-0.1.13.1 - compatibility build for game 1.6.2f1.
+0.1.13.2 - recovery vehicles get rights of their own, and the accident pass gets cheap.
 
-No behaviour changes. This is 0.1.13.0 rebuilt against "Autumn Breeze" (1.6.2f1, released 2026-09-15) and re-checked against it.
+**Recovery vehicles: a staged escalation**
+A tow truck or maintenance van on its way to a wreck drives like ordinary traffic until it is genuinely stuck. Then it escalates in steps:
+- After about 30 seconds without progress: a corridor, cars ahead pull aside, a traffic-light request, squeezing past, and changing lane around the jam.
+- After about a minute: the rights an ambulance has. Cars ahead clear fully onto the kerb, the light is switched to green outright, the queue ahead is pushed through the junction, and the oncoming lane may be used.
+- After about ten minutes without progress it stops disturbing traffic. What remains is the lane change and, as a last resort, clearing the single vehicle directly in front.
 
-**What was checked**
-- The mod compiles clean against the 1.6.2 assemblies: none of the game API it binds to was removed or changed.
-- The three places a clean build says nothing about were verified by hand - the private field `PrefabSystem.m_Prefabs` (still a list of PrefabBase), `EntityManager.CreateEntity(EntityArchetype)` which is called through reflection, and the `RoadMaintenanceDepot01` / `RoadMaintenanceVehicle01` prefabs the tow depot and the tow truck are cloned from. All three are unchanged in 1.6.2.
-- Nothing in the 1.6.2 patch notes touches emergency vehicles, accidents, lanes, pathfinding or crossings. The vehicle fixes it does carry are about parking and transit stations, not the despawn paths this mod shields.
+Once earned, the rights are held until the vehicle has driven freely for 45 seconds, so stop-and-go traffic does not switch them on and off. A column of recovery vehicles queues behind its leader instead of fanning out across the road. Recovery vehicles also get the arrival help responders have: the last metres to a wreck are where a run used to stall.
 
-**Not in this build**
-The extended towing escalation - full rights for a recovery vehicle that has been wedged for a minute, convoy discipline behind a standing colleague, and arrival assist for ordinary maintenance vans - is not finished and is deliberately left out. It sits on its own branch and lands in a later build.
+**Fixes found by playing this build**
+- "No progress" was measured against the previous tick, so the clock never reset: every recovery vehicle near its wreck counted as stuck after 30 seconds, moving or not. It is now measured from where the vehicle was when the clock started, and starts over when the vehicle is given a different wreck.
+- A truck that had just hooked a wreck could stand across the road for minutes with nothing in front of it. It kept the lane pin and the sideways offset from its approach, and the game discarded every route it was handed. Both are cleared at the hookup. Seen working once so far - please report any loaded truck that stands still with a clear road ahead.
+- The game files a new recovery request for a damaged vehicle every few seconds - including one that is already being towed. Vans were called to wrecks that were leaving on a hook, 96 times in ten minutes in one session. The request is now removed again while the wreck is in tow, and a vehicle still heading for a towed wreck is sent home.
+- A truck with no route home is released after about ten seconds. The timer for that restarted on every retry, so it never ran out and the truck stood forever.
+- The kerb-side lane change at a wreck was decided on every tick and never carried out for recovery vehicles. It is now.
+
+**Performance**
+- The accident pass went from roughly 1 ms per simulation tick to roughly 0.2 ms, measured with 6 to 20 wrecks on the map. Almost all of it was one check: a wreck that could not be moved aside was re-examined every tick, with a main-thread wait each time. It is now re-examined about once a second.
+- Cars near an accident are classified when the area is searched, not again on every tick.
+- The recovery assist looked at every maintenance vehicle in the city on every tick. It now looks only at the ones on a recovery run.
+- Measured on a city of 567,000: the main pass costs about 1.3 ms per simulation tick in ordinary play and about 1.7 ms with 20 wrecks on the map.
 
 **What to report**
-Anything that behaves differently under 1.6.2 than it did under 1.6.0, particularly traffic around an accident: 1.6.2 changed when the game cleans vehicles up, and that is the area this mod shields.
+Log with "Verbose logging" enabled, plus roughly where it happened.
+- A recovery vehicle forcing its way through where it clearly should not, or one that stays stuck for minutes in spite of it.
+- A wreck that is handed to one vehicle after another and never collected.
+- A loaded tow truck standing still with a free road ahead.
+- Frame rate in a big city, particularly compared with 0.1.13.1.
+- Still unconfirmed in play: the crossing guard from 0.1.13.0. A responder waiting behind a busy zebra is exactly the case to send.
 	</ChangeLog>
 	<!--External link, can be set multiple times. supported types are "discord", "github", "youtube", "twitch", "x", "paypal", "patreon", "buymeacoffee", "kofi", "crowdin", "gitlab", "gofundme"-->
 	<ExternalLink Type="github" Url="https://github.com/BastiAKA/TrafficClearTheWay" />
