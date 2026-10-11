@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using Colossal.Collections;
 using Colossal.Mathematics;
 using Game.Common;
@@ -92,6 +92,11 @@ namespace ClearTheWay.FunctionGroup.Accidents
         public uint m_NearWreckCarsFrame = uint.MaxValue;
         public List<Entity> NearWreckCars => m_NearWreckCars;
         public uint NearWreckCarsFrame => m_NearWreckCarsFrame;
+        // The subset of m_NearWreckCars the path-end guard may act on: everything except
+        // emergency and maintenance vehicles. The protection loop has already made that
+        // distinction for each car this tick, so the guard does not repeat the lookups.
+        public readonly List<Entity> m_NearWreckGuardCars = new List<Entity>(256);
+        public List<Entity> NearWreckGuardCars => m_NearWreckGuardCars;
         public readonly List<Entity> m_WreckPruneScratch = new List<Entity>();
 
 
@@ -100,6 +105,44 @@ namespace ClearTheWay.FunctionGroup.Accidents
         /// the game does not despawn them - they wait for the wreck to be recovered. Covers
         /// the wreck's own lane within a generous range around it.
         /// </summary>
+        // Cached near-wreck MEMBERSHIP, one list per accident cluster (see
+        // kNearWreckSweepInterval). Only WHO is near a scene is cached; WHAT is done to each of
+        // them still runs every tick, so the despawn shield, the repath shield and the approach
+        // brake keep their old cadence and behaviour.
+        //
+        // The cached bounds are kept alongside and compared on every tick: cluster INDICES are
+        // rebuilt from the wreck query each pass, so a changed wreck set can renumber them while
+        // leaving the count alone - and a stale list would then be handed to the wrong cluster,
+        // braking cars against wrecks that are somewhere else entirely. Wrecks do not move, so
+        // while the scene is unchanged the bounds match exactly and the cache holds.
+        //
+        // The sweep also does everything that cannot change before the next one: the dedupe
+        // across clusters, the Car/PathOwner filter and the maintenance test. The per-tick loop
+        // is left with the reads that are genuinely live.
+        private readonly List<List<NearWreckCar>> m_ClusterCarsCache = new List<List<NearWreckCar>>();
+        private readonly List<Bounds3> m_CachedClusterBounds = new List<Bounds3>();
+        private uint m_ClusterCarsFrame;
+
+        private bool NearWreckCacheStale(uint frame)
+        {
+            if (m_ClusterCarsCache.Count != m_ClusterBounds.Count ||
+                m_CachedClusterBounds.Count != m_ClusterBounds.Count ||
+                frame - m_ClusterCarsFrame >= kNearWreckSweepInterval)
+            {
+                return true;
+            }
+            for (int c = 0; c < m_ClusterBounds.Count; c++)
+            {
+                // Within a tolerance, not exactly - see kClusterBoundsTolerance.
+                if (math.any(math.abs(m_CachedClusterBounds[c].min - m_ClusterBounds[c].min) > kClusterBoundsTolerance) ||
+                    math.any(math.abs(m_CachedClusterBounds[c].max - m_ClusterBounds[c].max) > kClusterBoundsTolerance))
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+
         public void ProtectAccidentQueues(Setting setting, uint frame)
         {
             using (ModProfiler.Sample(kProfile, "AccidentGuard"))
@@ -119,12 +162,11 @@ namespace ClearTheWay.FunctionGroup.Accidents
             // sweep below.
             NativeQuadTree<Entity, QuadTreeBoundsXZ> netTree = default;
             bool netTreeFetched = false;
-            NativeList<Entity> found = new NativeList<Entity>(128, Allocator.Temp);
             m_WreckPosScratch.Clear();
             m_WreckClusterOf.Clear();
             m_ClusterBounds.Clear();
-            m_NearSeenScratch.Clear();
             m_NearWreckCars.Clear();
+            m_NearWreckGuardCars.Clear();
             m_NearWreckCarsFrame = frame;
             int protectedCount = 0;
             int stuckCleared = 0;
@@ -146,28 +188,39 @@ namespace ClearTheWay.FunctionGroup.Accidents
                     }
                     withPos++;
 
-                    uint trueAge = modContext.WreckLifetime.Apply(wreck, setting, frame, ref stats);
+                    uint trueAge;
+                    using (ModProfiler.Sample(kProfile, "AccidentGuard.Lifetime"))
+                    {
+                        trueAge = modContext.WreckLifetime.Apply(wreck, setting, frame, ref stats);
+                    }
 
                     float3 pos = EntityManager.GetComponentData<Transform>(wreck).m_Position;
 
                     // Consolidate settled wrecks onto the outermost lane of their side so at
                     // least one lane stays pathfind-passable (see kWreckClearDelay comment).
-                    if (setting.ClearWrecksAside && !m_ClearedWrecks.Contains(wreck) &&
+                    // Retried on a slow, per-wreck staggered cadence (kWreckClearRetryMask): the
+                    // attempt fails for as long as one lane is still free, and repeating it every
+                    // tick cost a net-tree job sync per tick for nothing.
+                    if (setting.ClearWrecksAside &&
+                        ((frame + (uint)wreck.Index) & kWreckClearRetryMask) == 0u &&
+                        trueAge >= kWreckClearDelay && !m_ClearedWrecks.Contains(wreck) &&
                         EntityManager.HasComponent<Stopped>(wreck) &&
                         !EntityManager.HasComponent<Moving>(wreck) &&
-                        !EntityManager.HasComponent<Game.Events.OnFire>(wreck) &&
-                        trueAge >= kWreckClearDelay)
+                        !EntityManager.HasComponent<Game.Events.OnFire>(wreck))
                     {
-                        if (!netTreeFetched)
+                        using (ModProfiler.Sample(kProfile, "AccidentGuard.ClearAside"))
                         {
-                            netTree = m_NetSearchSystem.GetNetSearchTree(readOnly: true, out JobHandle netDeps);
-                            netDeps.Complete();
-                            netTreeFetched = true;
-                        }
-                        if (modContext.WreckClearing.TryClearWreckAside(wreck, pos, netTree))
-                        {
-                            m_ClearedWrecks.Add(wreck);
-                            nClearedAside++;
+                            if (!netTreeFetched)
+                            {
+                                netTree = m_NetSearchSystem.GetNetSearchTree(readOnly: true, out JobHandle netDeps);
+                                netDeps.Complete();
+                                netTreeFetched = true;
+                            }
+                            if (modContext.WreckClearing.TryClearWreckAside(wreck, pos, netTree))
+                            {
+                                m_ClearedWrecks.Add(wreck);
+                                nClearedAside++;
+                            }
                         }
                     }
 
@@ -203,29 +256,87 @@ namespace ClearTheWay.FunctionGroup.Accidents
                 // through the whole protection block up to wreck-count times per tick) ---
                 if (m_ClusterBounds.Count != 0)
                 {
-                    NativeQuadTree<Entity, QuadTreeBoundsXZ> tree =
-                        m_ObjectSearchSystem.GetMovingSearchTree(readOnly: true, out JobHandle deps);
-                    deps.Complete();
+                    // Rebuild tick: the quadtree traversal and its main-thread job sync happen
+                    // here and ONLY here. This is the pass that used to run at 58 Hz.
+                    if (NearWreckCacheStale(frame))
+                    using (ModProfiler.Sample(kProfile, "AccidentGuard.Sweep"))
+                    {
+                        while (m_ClusterCarsCache.Count < m_ClusterBounds.Count)
+                        {
+                            m_ClusterCarsCache.Add(new List<NearWreckCar>());
+                        }
+                        // ... and SHRINK it again. The staleness test compares the two counts, so
+                        // a cache that only ever grew read as stale on every tick from the moment
+                        // the city had fewer accident scenes than its session maximum - which
+                        // silently put the sweep back on every tick.
+                        if (m_ClusterCarsCache.Count > m_ClusterBounds.Count)
+                        {
+                            m_ClusterCarsCache.RemoveRange(m_ClusterBounds.Count,
+                                m_ClusterCarsCache.Count - m_ClusterBounds.Count);
+                        }
+                        m_CachedClusterBounds.Clear();
+                        m_NearSeenScratch.Clear();
+                        NativeQuadTree<Entity, QuadTreeBoundsXZ> tree =
+                            m_ObjectSearchSystem.GetMovingSearchTree(readOnly: true, out JobHandle deps);
+                        deps.Complete();
+                        NativeList<Entity> found = new NativeList<Entity>(128, Allocator.Temp);
+                        try
+                        {
+                            for (int c = 0; c < m_ClusterBounds.Count; c++)
+                            {
+                                found.Clear();
+                                AreaIterator iterator = new AreaIterator
+                                {
+                                    m_Bounds = new Bounds3(m_ClusterBounds[c].min - kAccidentQueueRange,
+                                                           m_ClusterBounds[c].max + kAccidentQueueRange),
+                                    m_Results = found
+                                };
+                                tree.Iterate(ref iterator);
+                                List<NearWreckCar> slot = m_ClusterCarsCache[c];
+                                slot.Clear();
+                                for (int k = 0; k < found.Length; k++)
+                                {
+                                    Entity other = found[k];
+                                    // Each car belongs to the FIRST cluster that reaches it, as
+                                    // before - the dedupe just happens once per sweep now instead
+                                    // of once per tick.
+                                    if (!m_NearSeenScratch.Add(other) ||
+                                        !EntityManager.HasComponent<Car>(other) ||
+                                        !EntityManager.HasComponent<PathOwner>(other))
+                                    {
+                                        continue;
+                                    }
+                                    slot.Add(new NearWreckCar
+                                    {
+                                        m_Entity = other,
+                                        m_Maintenance = EntityManager.HasComponent<Game.Vehicles.MaintenanceVehicle>(other)
+                                    });
+                                }
+                                m_CachedClusterBounds.Add(m_ClusterBounds[c]);
+                            }
+                        }
+                        finally
+                        {
+                            found.Dispose();
+                        }
+                        m_ObjectSearchSystem.AddMovingSearchTreeReader(default);
+                        m_ClusterCarsFrame = frame;
+                    }
+
+                    // Every tick, rebuild or not: the protection work itself. Entities that died
+                    // since the sweep are filtered by the PathOwner test at the top of
+                    // ProtectNearWreckCars, so a stale id in the list is harmless.
+                    using (ModProfiler.Sample(kProfile, "AccidentGuard.Protect"))
                     for (int c = 0; c < m_ClusterBounds.Count; c++)
                     {
-                        found.Clear();
-                        AreaIterator iterator = new AreaIterator
-                        {
-                            m_Bounds = new Bounds3(m_ClusterBounds[c].min - kAccidentQueueRange,
-                                                   m_ClusterBounds[c].max + kAccidentQueueRange),
-                            m_Results = found
-                        };
-                        tree.Iterate(ref iterator);
-                        modContext.NearWreck.ProtectNearWreckCars(found, c, setting, frame,
+                        modContext.NearWreck.ProtectNearWreckCars(m_ClusterCarsCache[c], c, setting, frame,
                             ref protectedCount, ref stuckCleared, ref nPending, ref nFailed, ref nStuck,
                             ref nDummy, ref nStopped, ref nObsCleared, ref nBrakeCand, ref nBraked);
                     }
-                    m_ObjectSearchSystem.AddMovingSearchTreeReader(default);
                 }
             }
             finally
             {
-                found.Dispose();
                 wrecks.Dispose();
             }
             if (netTreeFetched)

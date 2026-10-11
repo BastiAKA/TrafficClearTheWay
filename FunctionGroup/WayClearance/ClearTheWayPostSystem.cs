@@ -35,6 +35,12 @@ namespace ClearTheWay
         /// is the expensive part and runs only every kBeaconScanInterval ticks - the same
         /// scan-rarely / re-apply-always split the pedestrian hold uses.</summary>
         private readonly HashSet<Entity> m_OnRecoveryDuty = new HashSet<Entity>();
+
+        /// <summary>The same set, for the assist pass in ClearTheWaySystem: it is exactly the
+        /// short list of maintenance vehicles that could be on a wreck run, so that pass no longer
+        /// has to test every maintenance vehicle in the city each tick to find them. Empty while
+        /// AssistTowTrucks is off, which is also when the assist pass does not run.</summary>
+        internal HashSet<Entity> OnRecoveryDuty => m_OnRecoveryDuty;
         private readonly List<Entity> m_DutyScratch = new List<Entity>();
         private const uint kBeaconScanInterval = 4u;
 
@@ -188,7 +194,7 @@ namespace ClearTheWay
             {
                 ApplyRecoveryBeacons();
             }
-            IReadOnlyDictionary<Entity, SpeedOverride> overrides = m_MainSystem.SpeedOverrides;
+            Dictionary<Entity, SpeedOverride> overrides = m_MainSystem.SpeedOverrides;
             if (overrides.Count == 0)
             {
                 return;
@@ -196,7 +202,8 @@ namespace ClearTheWay
             foreach (KeyValuePair<Entity, SpeedOverride> entry in overrides)
             {
                 Entity entity = entry.Key;
-                if (!EntityManager.Exists(entity) || !EntityManager.HasComponent<CarNavigation>(entity))
+                // (HasComponent is false for a dead entity, so no separate Exists.)
+                if (!EntityManager.HasComponent<CarNavigation>(entity))
                 {
                     continue;
                 }

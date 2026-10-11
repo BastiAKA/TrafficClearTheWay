@@ -97,7 +97,28 @@ namespace ClearTheWay
                 }
                 return;
             }
-            m_OurTows.Add(wreck);
+            // First time this tow is seen - right after the hookup, or right after a load, which
+            // empties m_OurTows: hand the truck back a clean lane state for the drive home.
+            if (m_OurTows.Add(wreck))
+            {
+                ReleaseLanePins(carrier, setting);
+            }
+            // Vanilla files a NEW maintenance request for the wreck every 512 frames for as long
+            // as it is Damaged and Stopped (DamagedVehicleSystem: no MaintenanceConsumer => add
+            // one and create a request). The hookup removes consumer and request exactly once,
+            // so a towed wreck went straight back on the dispatch list and kept calling recovery
+            // vehicles to a job that no longer exists - 96 redundant dispatches to 17 towed wrecks
+            // in ten minutes (2026-10-11). Take it off again whenever it reappears; the same two
+            // operations the hookup performs.
+            if (EntityManager.HasComponent<Game.Simulation.MaintenanceConsumer>(wreck))
+            {
+                Entity staleRequest = EntityManager.GetComponentData<Game.Simulation.MaintenanceConsumer>(wreck).m_Request;
+                if (staleRequest != Entity.Null && EntityManager.Exists(staleRequest))
+                {
+                    EntityManager.AddComponent<Deleted>(staleRequest);
+                }
+                EntityManager.RemoveComponent<Game.Simulation.MaintenanceConsumer>(wreck);
+            }
             // Re-tag if missing: covers tows that were coupled before the tag existed and re-asserts
             // ownership after a load, so the persistent tag always tracks what we are hauling.
             if (!EntityManager.HasComponent<TowMarker>(wreck))
@@ -135,7 +156,7 @@ namespace ClearTheWay
                 frame - failingSince > kTowPathGiveUpFrames;
             if (pathGaveUp)
             {
-                ReleaseTow(wreck, truck, frame, setting);
+                ReleaseTow(wreck, truck, frame, setting, $"no route home for {kTowPathGiveUpFrames}f");
                 m_Ctx.SafeDelete(truck);
                 return;
             }
@@ -166,14 +187,30 @@ namespace ClearTheWay
                     onRoad = m_Ctx.StuckRecovery.StandsOnRoad(stuckCheck.m_Position, netTree);
                     netSearch.AddNetSearchTreeReader(default);
                 }
-                if (!onRoad || m_Ctx.StuckRecovery.NoteOnRoadStrike(truck, frame, setting))
+                // OFF the network is the only thing that ends a tow here now. It is the case this
+                // machinery was built for: a truck that drove itself into a car park interior,
+                // where no route exists and nothing can reach it.
+                //
+                // Standing ON a road used to end it too, after kTowWedgeStrikes - and that was
+                // wrong, measurably. A loaded truck on a road is not wedged in the geometry, it is
+                // queueing in traffic, and in a busy city it reaches 20 strikes just by waiting.
+                // Session 2026-08-09: five trucks deleted that way in twenty minutes, each time
+                // the wreck was re-armed, a fresh truck was sent, hooked, stood in the same jam and
+                // was deleted in turn - wreck 2416869 went through 101555 and then 502287, wreck
+                // 2120200 through 73589 and then 967945. The mechanism did not resolve a single
+                // blockage; it just fed trucks into one. So the strikes are still counted and
+                // logged (they are a useful signal that something is wrong there), but they no
+                // longer cost the player a vehicle.
+                if (!onRoad)
                 {
-                    ReleaseTow(wreck, truck, frame, setting);
+                    ReleaseTow(wreck, truck, frame, setting, "it is off the road network");
                     m_Ctx.SafeDelete(truck);
                     return;
                 }
+                m_Ctx.StuckRecovery.NoteOnRoadStrike(truck, frame, setting);
             }
             m_TrucksWithLoad.Add(truck);
+            LogHaulState(truck, wreck, frame, setting);
             // A loaded truck must ALWAYS deliver first. The game's MaintenanceVehicleAISystem can
             // re-open dispatch and send a still-loaded truck to a fresh accident (Sebastian saw one
             // "drop its car and drive to the next accident"). Setting Returning+Full once at hookup
@@ -272,6 +309,42 @@ namespace ClearTheWay
         }
 
         /// <summary>
+        /// Gives a truck that has just taken a wreck on its hook a clean lane state.
+        ///
+        /// On the way IN, the assist pins and shifts it: a lane change to get around a jam or
+        /// onto the kerb sets CarLaneFlags.FixedLane, and the hug moves m_LanePosition far out of
+        /// the lane. Both are undone by the assist itself - but only for a vehicle that is still
+        /// on a wreck run, and a loaded truck is not. So it started the drive home with its lane
+        /// pinned and its body logically metres beside it, and nothing ever released either.
+        ///
+        /// Field case 2026-10-11, trucks 1273432 / 1273428 / 1273429: hooked, then eight minutes
+        /// motionless across the carriageway with no blocker and no cap of ours. The watch showed
+        /// lanePos=1.71, FixedLane set, and the path arriving and being marked obsolete again on
+        /// every AI tick - a fresh pathfind every 16 frames, per truck, for nothing.
+        /// </summary>
+        private void ReleaseLanePins(Entity truck, Setting setting)
+        {
+            if (!EntityManager.HasComponent<CarCurrentLane>(truck))
+            {
+                return;
+            }
+            CarCurrentLane lane = EntityManager.GetComponentData<CarCurrentLane>(truck);
+            float oldPos = lane.m_LanePosition;
+            bool wasPinned = (lane.m_LaneFlags & Game.Vehicles.CarLaneFlags.FixedLane) != 0;
+            lane.m_LaneFlags &= ~Game.Vehicles.CarLaneFlags.FixedLane;
+            // Back inside the lane, not to dead centre: +-0.5 is the lane edge, anything beyond
+            // is kerb or the neighbouring lane.
+            lane.m_LanePosition = math.clamp(lane.m_LanePosition, -0.5f, 0.5f);
+            EntityManager.SetComponentData(truck, lane);
+            m_Ctx.WayClearance?.ForgetForcedChange(truck);
+            if (setting.VerboseLogging && (wasPinned || oldPos != lane.m_LanePosition))
+            {
+                Mod.Log.Info($"[tow] truck={truck.Index} lane state reset for the haul " +
+                    $"(fixedLane={(wasPinned ? 1 : 0)} lanePos {oldPos:F2} -> {lane.m_LanePosition:F2})");
+            }
+        }
+
+        /// <summary>
         /// Re-assert every frame that a LOADED tow truck is going home and cannot be re-dispatched.
         /// MaintenanceVehicleAISystem otherwise re-opens dispatch and hands a still-loaded truck a
         /// fresh wreck target; it then abandons its load mid-route. We clear any new request, force
@@ -323,9 +396,18 @@ namespace ClearTheWay
                     m_Ctx.PathFailingSince[truck] = nowFrame;
                 }
             }
-            else
+            else if (m_Ctx.PathFailingSince.ContainsKey(truck) &&
+                EntityManager.HasComponent<PathOwner>(truck) &&
+                (EntityManager.GetComponentData<PathOwner>(truck).m_State &
+                 (PathFlags.Pending | PathFlags.Obsolete)) == 0)
             {
-                m_Ctx.PathFailingSince.Remove(truck); // has a route again
+                // Has a route again - and only then. "No Failed flag this tick" is not that: the
+                // shield has just cleared the flag and asked for a new path, so on the very next
+                // tick the state reads Obsolete or Pending, not Failed. Dropping the clock there
+                // restarted it on every retry, and the retry comes every kTowPathRetryFrames -
+                // far short of kTowPathGiveUpFrames, so the give-up above could never be reached
+                // and a truck with no route home stood forever.
+                m_Ctx.PathFailingSince.Remove(truck);
             }
             if (EntityManager.HasBuffer<ServiceDispatch>(truck))
             {
@@ -351,7 +433,71 @@ namespace ClearTheWay
         /// Give up a tow without losing the wreck: drop our coupling and put it back into the
         /// recovery pipeline as a relic, so a different truck can come for it.
         /// </summary>
-        private void ReleaseTow(Entity wreck, Entity truck, uint frame, Setting setting)
+        /// <summary>
+        /// One line per hauling truck that is not making progress: why is it standing?
+        ///
+        /// This was the blind spot behind the whole "they hook up and then never drive" hunt. The
+        /// [assist] diagnostics stop the moment a truck goes Returning, so for the entire HAUL
+        /// phase the log could say only "motionless" and "strandedFor is climbing" - never who was
+        /// in the way, and never whether the mod itself was capping the truck's speed. Both
+        /// answers are one component read away, and without them every such case cost an hour of
+        /// guessing.
+        ///
+        /// ourCap is the important one: an emergency corridor holds every car around a responder,
+        /// and a loaded tow truck used to be one of those cars - so the vehicle carrying the
+        /// obstruction away could be pinned at zero by the very pass trying to clear the road.
+        /// A non-empty ourCap here means look at HoldVehicles, not at traffic.
+        /// </summary>
+        private void LogHaulState(Entity truck, Entity wreck, uint frame, Setting setting)
+        {
+            if (!setting.VerboseLogging || frame % 120u != 0u)
+            {
+                return;
+            }
+            float speed = EntityManager.HasComponent<Moving>(truck)
+                ? math.length(EntityManager.GetComponentData<Moving>(truck).m_Velocity) : 0f;
+            if (speed > 0.5f)
+            {
+                return; // rolling along - nothing to explain
+            }
+            string blockerInfo = "none";
+            if (EntityManager.HasComponent<Blocker>(truck))
+            {
+                Blocker b = EntityManager.GetComponentData<Blocker>(truck);
+                if (b.m_Blocker != Entity.Null && EntityManager.Exists(b.m_Blocker))
+                {
+                    float bspeed = EntityManager.HasComponent<Moving>(b.m_Blocker)
+                        ? math.length(EntityManager.GetComponentData<Moving>(b.m_Blocker).m_Velocity) : 0f;
+                    bool bMaint = EntityManager.HasComponent<Game.Vehicles.MaintenanceVehicle>(b.m_Blocker);
+                    bool bEmerg = EntityManager.HasComponent<Car>(b.m_Blocker) &&
+                        (EntityManager.GetComponentData<Car>(b.m_Blocker).m_Flags & CarFlags.Emergency) != 0;
+                    blockerInfo = $"{b.m_Blocker.Index} type={b.m_Type} spd={bspeed:F1} " +
+                        $"emerg={(bEmerg ? 1 : 0)} maint={(bMaint ? 1 : 0)}";
+                }
+                else
+                {
+                    blockerInfo = $"{b.m_Blocker.Index}(gone) type={b.m_Type}";
+                }
+            }
+            string ourCap = "none";
+            if (m_Ctx.WayClearance != null &&
+                m_Ctx.WayClearance.SpeedOverrides.TryGetValue(truck, out SpeedOverride cap))
+            {
+                ourCap = cap.ToString();
+            }
+            string pathState = EntityManager.HasComponent<Game.Pathfind.PathOwner>(truck)
+                ? EntityManager.GetComponentData<Game.Pathfind.PathOwner>(truck).m_State.ToString()
+                : "n/a";
+            Entity target = EntityManager.HasComponent<Target>(truck)
+                ? EntityManager.GetComponentData<Target>(truck).m_Target : Entity.Null;
+            Entity depot = EntityManager.HasComponent<Owner>(truck)
+                ? EntityManager.GetComponentData<Owner>(truck).m_Owner : Entity.Null;
+            Mod.Log.Info($"[towhaul] truck={truck.Index} wreck={wreck.Index} standing spd={speed:F1} " +
+                $"target={target.Index} depot={depot.Index} targetIsDepot={(target == depot && depot != Entity.Null ? 1 : 0)} " +
+                $"path={pathState} ourCap={ourCap} blockedBy=[{blockerInfo}]");
+        }
+
+        private void ReleaseTow(Entity wreck, Entity truck, uint frame, Setting setting, string reason)
         {
             if (EntityManager.HasComponent<Controller>(wreck))
             {
@@ -374,8 +520,12 @@ namespace ClearTheWay
             m_Ctx.PathRetry.Remove(truck);
             if (setting.VerboseLogging)
             {
-                Mod.Log.Info($"[tow] released wreck={wreck.Index} from truck={truck.Index} - no route " +
-                    $"home for {kTowPathGiveUpFrames}f; re-armed for recovery");
+                // The reason is passed in, because this method has TWO callers and used to print
+                // the path-timeout text for both. Every release in the 2026-08-09 session said
+                // "no route home for 600f" while the actual trigger was the wedge-strike counter -
+                // and that sent the next investigation straight at the pathfinder, which was fine.
+                Mod.Log.Info($"[tow] released wreck={wreck.Index} from truck={truck.Index} - " +
+                    $"{reason}; re-armed for recovery");
             }
         }
 

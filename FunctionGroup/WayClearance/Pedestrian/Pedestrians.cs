@@ -64,9 +64,18 @@ namespace ClearTheWay
         // anyway, and no downside was visible in play.
         private const float kSideRange = 20f;
         private const float kHeightRange = 8f;
+        // A responder blocked by the same thing for this long (~60 s) is not about to pass this
+        // crossing, so it stops holding anyone. The hold never blocks a car - held pedestrians wait
+        // at the kerb, out of the road - so the cost of getting this wrong falls entirely on the
+        // citizens: a wedged siren 30 m away would otherwise freeze everyone on the pavement
+        // indefinitely, and nothing in the pass had an upper bound on that. Deliberately longer
+        // than an ordinary red-light wait and shorter than the escalation stages, which are the two
+        // things it must sit between.
+        private const uint kHoldGiveUpFrames = 3600u;
 
         private SimulationSystem m_SimulationSystem;
         private Game.Net.SearchSystem m_NetSearchSystem;
+        private ClearTheWaySystem m_ClearTheWaySystem;
         private EntityQuery m_EmergencyQuery;
 
         // The full lane search (a quadtree box per siren + iterating every foot lane's
@@ -85,6 +94,7 @@ namespace ClearTheWay
             base.OnCreate();
             m_SimulationSystem = World.GetOrCreateSystemManaged<SimulationSystem>();
             m_NetSearchSystem = World.GetOrCreateSystemManaged<Game.Net.SearchSystem>();
+            m_ClearTheWaySystem = World.GetOrCreateSystemManaged<ClearTheWaySystem>();
 
             // The Any filter is what keeps this affordable. Without it the query matches EVERY
             // moving car in the city: IsEmptyIgnoreFilter below then never trips, and each
@@ -184,6 +194,16 @@ namespace ClearTheWay
                     }
                     // Trailers follow their controller.
                     if (VehicleTrailerExt.IsTrailer(EntityManager, vehicle))
+                    {
+                        continue;
+                    }
+                    // A responder that has been wedged behind the same blocker for a minute is not
+                    // going to reach this crossing any time soon, and holding people at the kerb
+                    // for it has no upside left - only citizens standing still for as long as it
+                    // stays stuck. Let them cross; the pass picks the responder up again the moment
+                    // it starts moving (the stuck clock counts distance, so it resets on real
+                    // progress and not on a creep).
+                    if (m_ClearTheWaySystem.StuckFrames(vehicle, m_SimulationSystem.frameIndex) >= kHoldGiveUpFrames)
                     {
                         continue;
                     }

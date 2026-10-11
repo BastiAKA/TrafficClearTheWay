@@ -95,6 +95,9 @@ namespace ClearTheWay
         {
             uint frame = m_SimulationSystem.frameIndex;
             GuardStats stats = default;
+            // stats is local to this tick and only ever printed by the heartbeat below, so the
+            // lookups that feed nothing but that line are skipped on every other tick.
+            bool diagnostics = setting.VerboseLogging && frame % 120u == 0u;
             if (m_MainSystem.Accidents.NearWreckCarsFrame == frame)
             {
                 // Reuse the main pass's deduped near-wreck sweep from THIS tick (it runs
@@ -103,10 +106,12 @@ namespace ClearTheWay
                 // PER WRECK plus a main-thread job sync every tick - together with the main
                 // pass's per-wreck sweeps that was the post-accident frame-rate drop
                 // (main thread bound, CPU/GPU idle).
-                List<Entity> near = m_MainSystem.Accidents.NearWreckCars;
+                // The GUARD list, not the full one: the main pass has already dropped emergency
+                // and maintenance vehicles from it this tick, so those tests are not repeated.
+                List<Entity> near = m_MainSystem.Accidents.NearWreckGuardCars;
                 for (int i = 0; i < near.Count; i++)
                 {
-                    GuardCar(near[i], ref stats);
+                    GuardCar(near[i], ref stats, prefiltered: true, diagnostics);
                 }
             }
             else
@@ -136,7 +141,7 @@ namespace ClearTheWay
                         tree.Iterate(ref iterator);
                         for (int i = 0; i < found.Length; i++)
                         {
-                            GuardCar(found[i], ref stats);
+                            GuardCar(found[i], ref stats, prefiltered: false, diagnostics);
                         }
                     }
                 }
@@ -150,7 +155,7 @@ namespace ClearTheWay
 
             // Heartbeat: log every 120 frames whenever wrecks exist, even at zero, so we can
             // tell the system runs AND see what state the near-wreck cars are actually in.
-            if (setting.VerboseLogging && frame % 120u == 0u)
+            if (diagnostics)
             {
                 Mod.Log.Info($"[endguard] wrecks={m_WreckQuery.CalculateEntityCount()} near={stats.nNear} " +
                     $"endReached={stats.nEndReached} failedStuck={stats.nFailedStuck} guarded={stats.guarded} " +
@@ -160,20 +165,26 @@ namespace ClearTheWay
 
         /// <summary>Per-car path-end guard, shared by the cached and the fallback sweep.
         /// A car may appear more than once in the fallback path (overlapping wreck boxes) -
-        /// every operation here is idempotent, so that is merely counted twice.</summary>
-        private void GuardCar(Entity other, ref GuardStats stats)
+        /// every operation here is idempotent, so that is merely counted twice.
+        ///
+        /// <paramref name="prefiltered"/>: the car comes from the main pass's guard list, which
+        /// this tick already established that it is a live Car and neither an emergency nor a
+        /// maintenance vehicle. <paramref name="diagnostics"/>: this is a heartbeat tick, so the
+        /// counters that only the [endguard] line reads are worth their lookups.</summary>
+        private void GuardCar(Entity other, ref GuardStats stats, bool prefiltered, bool diagnostics)
         {
-            if (!EntityManager.Exists(other) ||
-                !EntityManager.HasComponent<Car>(other) ||
-                !EntityManager.HasComponent<CarCurrentLane>(other))
+            // False for an entity that no longer exists, too.
+            if (!EntityManager.HasComponent<CarCurrentLane>(other))
             {
                 return;
             }
             // Never hold vehicles that are SUPPOSED to reach this spot: emergency
             // vehicles and recovery/maintenance vehicles have the accident itself
             // as their destination - clearing their path end would strand them.
-            if ((EntityManager.GetComponentData<Car>(other).m_Flags & CarFlags.Emergency) != 0 ||
-                EntityManager.HasComponent<Game.Vehicles.MaintenanceVehicle>(other))
+            if (!prefiltered &&
+                (!EntityManager.HasComponent<Car>(other) ||
+                 (EntityManager.GetComponentData<Car>(other).m_Flags & CarFlags.Emergency) != 0 ||
+                 EntityManager.HasComponent<Game.Vehicles.MaintenanceVehicle>(other)))
             {
                 return;
             }
@@ -194,9 +205,12 @@ namespace ClearTheWay
 
             // Diagnostics to find the ACTUAL delete trigger (near cars carry neither
             // EndReached nor Failed/Stuck when we scan, yet they despawn).
-            if (EntityManager.HasComponent<Game.Events.InvolvedInAccident>(other)) stats.nInvolved++;
-            if (EntityManager.HasComponent<Target>(other) &&
-                !EntityManager.Exists(EntityManager.GetComponentData<Target>(other).m_Target)) stats.nNoTarget++;
+            if (diagnostics)
+            {
+                if (EntityManager.HasComponent<Game.Events.InvolvedInAccident>(other)) stats.nInvolved++;
+                if (EntityManager.HasComponent<Target>(other) &&
+                    !EntityManager.Exists(EntityManager.GetComponentData<Target>(other).m_Target)) stats.nNoTarget++;
+            }
 
             // Also drop Stuck|Failed AND the repath triggers (Obsolete|Divert-
             // Obsolete) for EVERY car at a wreck. The repath is what kills the

@@ -26,6 +26,13 @@ namespace ClearTheWay
         /// <summary>Road network search tree provider, for putting a wedged truck back on a road.</summary>
         public Game.Net.SearchSystem NetSearch;
 
+        /// <summary>The way-clearance system, read-only and only for diagnostics: its
+        /// SpeedOverrides answer the one question a haul-phase log line cannot answer from the
+        /// towing side alone - is the truck standing because traffic blocks it, or because WE are
+        /// capping its speed? Without it a motionless loaded truck is indistinguishable from one
+        /// our own corridor is holding.</summary>
+        public ClearTheWaySystem WayClearance;
+
         // Queries the passes below run on; created by TowHookupSystem (only a system can).
         public EntityQuery OrphanQuery;
         public EntityQuery TrailerOrphanQuery;

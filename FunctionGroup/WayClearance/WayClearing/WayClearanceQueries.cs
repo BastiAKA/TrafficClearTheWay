@@ -73,29 +73,6 @@ namespace ClearTheWay.FunctionGroup.WayClearance.WayClearing
         };
 
         /// <summary>
-        /// Recovery / tow vehicles: road-maintenance vehicles that can recover damaged vehicles.
-        /// One heading to a crash gets a gentle make-way corridor - the game already dispatches
-        /// these to accidents on its own.
-        /// </summary>
-        public static EntityQueryDesc Assist => new EntityQueryDesc
-        {
-            All = new[]
-            {
-                ComponentType.ReadOnly<Game.Vehicles.MaintenanceVehicle>(),
-                ComponentType.ReadOnly<PrefabRef>(),
-                ComponentType.ReadWrite<CarCurrentLane>(),
-                ComponentType.ReadOnly<Target>(),
-                ComponentType.ReadOnly<Moving>()
-            },
-            None = new[]
-            {
-                ComponentType.ReadOnly<Deleted>(),
-                ComponentType.ReadOnly<Temp>(),
-                ComponentType.ReadOnly<ParkedCar>()
-            }
-        };
-
-        /// <summary>
         /// Crashed vehicles blocking a lane; the traffic queued behind them is protected from the
         /// stuck-traffic despawn so it waits for recovery.
         ///

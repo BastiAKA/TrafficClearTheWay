@@ -106,6 +106,7 @@ namespace ClearTheWay
                 EntityManager = EntityManager,
                 Simulation = m_SimulationSystem,
                 NetSearch = m_NetSearchSystem,
+                WayClearance = World.GetOrCreateSystemManaged<ClearTheWaySystem>(),
                 OrphanQuery = m_OrphanQuery,
                 TrailerOrphanQuery = m_TrailerOrphanQuery,
                 ArmedRelicQuery = m_ArmedRelicQuery,
@@ -209,6 +210,17 @@ namespace ClearTheWay
             if (frame % 64u == 16u)
             {
                 m_Ctx.ReleaseFrozen.ReleaseFrozenCars(frame, setting);
+            }
+
+            // --- Wedged EMPTY recovery vehicles: a truck that got stuck BEFORE reaching its wreck.
+            //     The loaded case is handled inside the follow pass, which by construction only
+            //     ever sees trucks that are hauling something - so an empty one could stand
+            //     forever, and its wreck waited out the full claimed give-up for a truck that was
+            //     never coming. Staggered off the other cleanup passes; a one-second sampling
+            //     cadence is ample for a check whose threshold is minutes. ---
+            if (frame % 64u == 48u && !m_TruckQuery.IsEmptyIgnoreFilter)
+            {
+                m_Ctx.StuckRecovery.SweepEmptyTrucks(m_TruckQuery, frame, setting);
             }
 
             // --- Orphan finder (LOG-ONLY): report every wreck that has not moved for a while, so

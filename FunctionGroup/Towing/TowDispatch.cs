@@ -204,6 +204,18 @@ namespace ClearTheWay
                 for (int i = 0; i < vans.Length; i++)
                 {
                     Entity van = vans[i];
+                    // The wreck it is driving to is already on somebody else's hook: nothing
+                    // left to do there, so it goes home now instead of standing where it is.
+                    if (m_Ctx.Assignment.TargetsHookedWreck(van))
+                    {
+                        if (setting.VerboseLogging)
+                        {
+                            Mod.Log.Info($"[dispatch] van={van.Index} is redundant - its wreck=" +
+                                $"{EntityManager.GetComponentData<Target>(van).m_Target.Index} is already being towed");
+                        }
+                        m_Ctx.Beeline.SendHome(van, frame);
+                        continue;
+                    }
                     Entity wreck = m_Ctx.Beeline.ResolveVanJob(van, out Entity request);
                     if (wreck == Entity.Null)
                     {
@@ -272,6 +284,10 @@ namespace ClearTheWay
                 EntityMapPrune.PruneDead(EntityManager, m_Ctx.VanAssigned, m_PruneScratch);
                 EntityMapPrune.PruneDead(EntityManager, m_Ctx.PathRetry, m_PruneScratch);
                 EntityMapPrune.PruneDead(EntityManager, m_Ctx.LastAction, m_PruneScratch);
+                // Keyed by the WRECK, so it goes when the wreck does - which is the normal end of a
+                // recovery. OwnVanStillComing drops entries whose VAN died; this covers the rest.
+                EntityMapPrune.PruneDead(EntityManager, m_Ctx.LastAssignedVan, m_PruneScratch);
+                EntityMapPrune.PruneDead(EntityManager, m_Ctx.LastDepotDispatch, m_PruneScratch);
             }
         }
 

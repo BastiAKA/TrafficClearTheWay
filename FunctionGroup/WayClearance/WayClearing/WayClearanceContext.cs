@@ -69,6 +69,9 @@ namespace ClearTheWay
         public ArrivalAssist Arrival;
         public ArrivalTarget ArrivalTarget;
         public DesperateBehaviour Desperate;
+        /// <summary>Why a hard-stuck column is standing: a pedestrian on a crossing, or a genuinely
+        /// dead junction. Guards the last-resort car sacrifice and unsticks the pedestrian instead.</summary>
+        public PedestrianPlug PedPlug;
         public EmergencyEscalation Escalation;
         public EscalationCorridor CorridorRun;
         public EscalationSteering Steering;

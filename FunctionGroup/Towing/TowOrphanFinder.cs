@@ -201,7 +201,21 @@ namespace ClearTheWay
                     ctrlDesc = "other";
                 }
             }
+            // claimed= and giveUp= are what make this line readable at all. A stranded wreck is
+            // measured against ONE of two deadlines that are three times apart (kWreckGiveUpAge
+            // ~10 min unclaimed, kWreckClaimedGiveUpAge ~30 min once a recovery vehicle is on the
+            // way), and without knowing which, "strandedFor=28800" says nothing about whether the
+            // wreck is nearly out of time or has barely started. vanillaIn= is the other half: the
+            // frames left on the game's own delete deadline, which is what actually removes it -
+            // negative means it is already past due and only our hold is keeping it alive.
+            bool claimed = RecoveryClaim.IsClaimed(EntityManager, w);
+            uint giveUpAge = claimed ? kWreckClaimedGiveUpAge : kWreckGiveUpAge;
+            long vanillaIn = EntityManager.HasComponent<Game.Events.InvolvedInAccident>(w)
+                ? (long)kVanillaDeleteAge -
+                  (frame - EntityManager.GetComponentData<Game.Events.InvolvedInAccident>(w).m_InvolvedFrame)
+                : 0L;
             Mod.Log.Info($"[orphanfind] wreck={w.Index} strandedFor={strandedFor}f " +
+                $"claimed={(claimed ? 1 : 0)} giveUp={giveUpAge}f vanillaIn={vanillaIn}f " +
                 $"ctrl={ctrlDesc} carrier={carrierIdx} carrierHauling={(carrierLoad ? 1 : 0)} " +
                 $"invAcc={(EntityManager.HasComponent<Game.Events.InvolvedInAccident>(w) ? 1 : 0)} " +
                 $"tow={(EntityManager.HasComponent<TowMarker>(w) ? 1 : 0)} " +

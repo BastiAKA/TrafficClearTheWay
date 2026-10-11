@@ -278,6 +278,12 @@ namespace ClearTheWay
             {
                 EntityManager.GetBuffer<ServiceDispatch>(truck).Clear();
             }
+            // A new job starts with a clean movement history. The wedge counter is keyed by TRUCK
+            // and is now written from two places - the follow pass while hauling, and the empty
+            // sweep while a truck is still on its way to a wreck. Without this reset a truck that
+            // sat in traffic on the approach carries those strikes into the haul, so its first
+            // stop as a loaded vehicle can trip a threshold it earned before it even had a load.
+            m_Ctx.StuckRecovery.Forget(truck);
             // Aim at the depot and force a fresh path; clear any reached-path-end state so
             // the AI's "Returning + path end => despawn" branch cannot fire at the wreck.
             Entity depot = EntityManager.GetComponentData<Owner>(truck).m_Owner;
