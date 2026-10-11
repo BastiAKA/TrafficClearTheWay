@@ -16,6 +16,7 @@ using static ClearTheWay.Tuning;
 using ClearTheWay.FunctionGroup.WayClearance.WayClearing;
 using ClearTheWay.FunctionGroup.WayClearance.WayClearing.LanePathFinding;
 using ClearTheWay.FunctionGroup.WayClearance.WayClearing.VehicleTypes;
+using ClearTheWay.FunctionGroup.WayClearance.WayClearing.VehicleTypes.Geometry;
 // Game.Net has a LaneGeometry of its own - ours wins here, like the CarLaneFlags alias above.
 using LaneGeometry = ClearTheWay.FunctionGroup.WayClearance.WayClearing.LanePathFinding.M_LaneGeometry;
 
@@ -39,7 +40,7 @@ namespace ClearTheWay.FunctionGroup.WayClearance.Squeezing
     internal sealed class PushVehicles
     {
         // Main-thread profiling switch for this pass - see ModProfiler.
-        private static readonly bool kProfile = true;
+        private static readonly bool kProfile = false;
 
         private readonly WayClearanceContext m_Ctx;
         private EntityManager EntityManager => m_Ctx.EntityManager;
@@ -118,10 +119,11 @@ namespace ClearTheWay.FunctionGroup.WayClearance.Squeezing
                     if (aheadDistance > aheadCap) break;         // ahead of the window; the rest are further ahead
                 }
                 Entity other = laneObject.m_LaneObject;
-                if (other == vehicle || !EntityManager.Exists(other))
+                if (other == vehicle)
                 {
                     continue;
                 }
+                // (No separate Exists: HasComponent is already false for a dead entity.)
                 if (!EntityManager.HasComponent<Car>(other) ||
                     !EntityManager.HasComponent<CarCurrentLane>(other) ||
                     EntityManager.HasComponent<ParkedCar>(other) ||
@@ -223,7 +225,6 @@ namespace ClearTheWay.FunctionGroup.WayClearance.Squeezing
                     count++;
                     continue;
                 }
-                m_PushClaims[other] = new PushClaim { m_Dir = pushDir, m_Frame = frame };
 
                 // Articulated rigs need special handling throughout: the trailer has no lateral
                 // lever and swings out when the tractor is pulled across, actually narrowing the
@@ -237,6 +238,9 @@ namespace ClearTheWay.FunctionGroup.WayClearance.Squeezing
 
                 if (articulated)
                 {
+                    // A rig's claim carries no target offset (MakeWay sets its own); every other
+                    // car's claim is written once, further down, together with where it was sent.
+                    m_PushClaims[other] = new PushClaim { m_Dir = pushDir, m_Frame = frame };
                     m_Ctx.Trucks.MakeWay(other, ref otherLane, corridorLane, corridorLaneWidth, aheadDistance, frame);
                     count++;
                     continue;
@@ -253,7 +257,10 @@ namespace ClearTheWay.FunctionGroup.WayClearance.Squeezing
                 // pushed diagonally forward, and at ~45 degrees the room it makes is a quarter of
                 // its own length (Delivery_MidSize). At a car's offset its body still lies across
                 // the gap.
-                meters = m_Ctx.MidSize.PushMeters(other, meters);
+                // One prefab lookup for all three measurements below (length for the size bonus
+                // and the lateral limit, width for the slack) - each used to fetch it separately.
+                VehicleGeometry geometry = m_Ctx.PrefabGeometry.GetGeometry(other);
+                meters = m_Ctx.MidSize.PushMeters(geometry.length, meters);
                 // Past the lane edge there is often a tram bed, green strip or median that a car
                 // can perfectly well stand on - and on a narrow road, clearing only to the edge
                 // leaves no gap at all (the field report this was built for). Only while EVADING:
@@ -268,8 +275,8 @@ namespace ClearTheWay.FunctionGroup.WayClearance.Squeezing
                     }
                     meters += crossableMeters;
                 }
-                meters = math.min(meters, m_Ctx.PrefabGeometry.MaxLateralMeters(other));
-                float units = meters / m_Ctx.PrefabGeometry.LateralSlack(other, corridorLaneWidth);
+                meters = math.min(meters, m_Ctx.PrefabGeometry.MaxLateralMeters(geometry));
+                float units = meters / math.max(0.5f, corridorLaneWidth - geometry.width);
                 // Record where this car was actually sent, so HoldVehicles can tell "has made
                 // room" from "has barely twitched" and does not brake it after a few centimetres.
                 m_PushClaims[other] = new PushClaim { m_Dir = pushDir, m_Frame = frame, m_TargetUnits = units };

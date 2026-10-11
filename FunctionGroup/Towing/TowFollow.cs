@@ -97,7 +97,28 @@ namespace ClearTheWay
                 }
                 return;
             }
-            m_OurTows.Add(wreck);
+            // First time this tow is seen - right after the hookup, or right after a load, which
+            // empties m_OurTows: hand the truck back a clean lane state for the drive home.
+            if (m_OurTows.Add(wreck))
+            {
+                ReleaseLanePins(carrier, setting);
+            }
+            // Vanilla files a NEW maintenance request for the wreck every 512 frames for as long
+            // as it is Damaged and Stopped (DamagedVehicleSystem: no MaintenanceConsumer => add
+            // one and create a request). The hookup removes consumer and request exactly once,
+            // so a towed wreck went straight back on the dispatch list and kept calling recovery
+            // vehicles to a job that no longer exists - 96 redundant dispatches to 17 towed wrecks
+            // in ten minutes (2026-10-11). Take it off again whenever it reappears; the same two
+            // operations the hookup performs.
+            if (EntityManager.HasComponent<Game.Simulation.MaintenanceConsumer>(wreck))
+            {
+                Entity staleRequest = EntityManager.GetComponentData<Game.Simulation.MaintenanceConsumer>(wreck).m_Request;
+                if (staleRequest != Entity.Null && EntityManager.Exists(staleRequest))
+                {
+                    EntityManager.AddComponent<Deleted>(staleRequest);
+                }
+                EntityManager.RemoveComponent<Game.Simulation.MaintenanceConsumer>(wreck);
+            }
             // Re-tag if missing: covers tows that were coupled before the tag existed and re-asserts
             // ownership after a load, so the persistent tag always tracks what we are hauling.
             if (!EntityManager.HasComponent<TowMarker>(wreck))
@@ -288,6 +309,42 @@ namespace ClearTheWay
         }
 
         /// <summary>
+        /// Gives a truck that has just taken a wreck on its hook a clean lane state.
+        ///
+        /// On the way IN, the assist pins and shifts it: a lane change to get around a jam or
+        /// onto the kerb sets CarLaneFlags.FixedLane, and the hug moves m_LanePosition far out of
+        /// the lane. Both are undone by the assist itself - but only for a vehicle that is still
+        /// on a wreck run, and a loaded truck is not. So it started the drive home with its lane
+        /// pinned and its body logically metres beside it, and nothing ever released either.
+        ///
+        /// Field case 2026-10-11, trucks 1273432 / 1273428 / 1273429: hooked, then eight minutes
+        /// motionless across the carriageway with no blocker and no cap of ours. The watch showed
+        /// lanePos=1.71, FixedLane set, and the path arriving and being marked obsolete again on
+        /// every AI tick - a fresh pathfind every 16 frames, per truck, for nothing.
+        /// </summary>
+        private void ReleaseLanePins(Entity truck, Setting setting)
+        {
+            if (!EntityManager.HasComponent<CarCurrentLane>(truck))
+            {
+                return;
+            }
+            CarCurrentLane lane = EntityManager.GetComponentData<CarCurrentLane>(truck);
+            float oldPos = lane.m_LanePosition;
+            bool wasPinned = (lane.m_LaneFlags & Game.Vehicles.CarLaneFlags.FixedLane) != 0;
+            lane.m_LaneFlags &= ~Game.Vehicles.CarLaneFlags.FixedLane;
+            // Back inside the lane, not to dead centre: +-0.5 is the lane edge, anything beyond
+            // is kerb or the neighbouring lane.
+            lane.m_LanePosition = math.clamp(lane.m_LanePosition, -0.5f, 0.5f);
+            EntityManager.SetComponentData(truck, lane);
+            m_Ctx.WayClearance?.ForgetForcedChange(truck);
+            if (setting.VerboseLogging && (wasPinned || oldPos != lane.m_LanePosition))
+            {
+                Mod.Log.Info($"[tow] truck={truck.Index} lane state reset for the haul " +
+                    $"(fixedLane={(wasPinned ? 1 : 0)} lanePos {oldPos:F2} -> {lane.m_LanePosition:F2})");
+            }
+        }
+
+        /// <summary>
         /// Re-assert every frame that a LOADED tow truck is going home and cannot be re-dispatched.
         /// MaintenanceVehicleAISystem otherwise re-opens dispatch and hands a still-loaded truck a
         /// fresh wreck target; it then abandons its load mid-route. We clear any new request, force
@@ -339,9 +396,18 @@ namespace ClearTheWay
                     m_Ctx.PathFailingSince[truck] = nowFrame;
                 }
             }
-            else
+            else if (m_Ctx.PathFailingSince.ContainsKey(truck) &&
+                EntityManager.HasComponent<PathOwner>(truck) &&
+                (EntityManager.GetComponentData<PathOwner>(truck).m_State &
+                 (PathFlags.Pending | PathFlags.Obsolete)) == 0)
             {
-                m_Ctx.PathFailingSince.Remove(truck); // has a route again
+                // Has a route again - and only then. "No Failed flag this tick" is not that: the
+                // shield has just cleared the flag and asked for a new path, so on the very next
+                // tick the state reads Obsolete or Pending, not Failed. Dropping the clock there
+                // restarted it on every retry, and the retry comes every kTowPathRetryFrames -
+                // far short of kTowPathGiveUpFrames, so the give-up above could never be reached
+                // and a truck with no route home stood forever.
+                m_Ctx.PathFailingSince.Remove(truck);
             }
             if (EntityManager.HasBuffer<ServiceDispatch>(truck))
             {

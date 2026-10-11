@@ -157,7 +157,7 @@ namespace ClearTheWay.FunctionGroup.WayClearance.WayClearing
                         if (aheadDistance > kPassWindowAhead) break;         // ahead of it; the rest are further ahead
                     }
                     Entity other = laneObject.m_LaneObject;
-                    if (other == vehicle || !EntityManager.Exists(other) ||
+                    if (other == vehicle ||
                         !EntityManager.HasComponent<Car>(other) ||
                         !EntityManager.HasComponent<CarCurrentLane>(other) ||
                         EntityManager.HasComponent<ParkedCar>(other) ||

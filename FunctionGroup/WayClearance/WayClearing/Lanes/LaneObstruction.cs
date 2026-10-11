@@ -102,7 +102,7 @@ namespace ClearTheWay.FunctionGroup.WayClearance.WayClearing.LanePathFinding
                     if (ahead > range) break;      // past the window; the rest are further ahead
                 }
                 Entity other = laneObjects[i].m_LaneObject;
-                if (other == vehicle || !EntityManager.Exists(other) ||
+                if (other == vehicle ||
                     !EntityManager.HasComponent<Car>(other))
                 {
                     continue;

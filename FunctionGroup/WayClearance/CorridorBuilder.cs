@@ -40,7 +40,7 @@ namespace ClearTheWay
     internal sealed class CorridorBuilder
     {
         // Main-thread profiling switch for this pass - see ModProfiler.
-        private static readonly bool kProfile = true;
+        private static readonly bool kProfile = false;
 
         private readonly WayClearanceContext m_Ctx;
         private EntityManager EntityManager => m_Ctx.EntityManager;

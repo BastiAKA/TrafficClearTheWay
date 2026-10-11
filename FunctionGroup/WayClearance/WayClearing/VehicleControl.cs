@@ -25,8 +25,10 @@ namespace ClearTheWay.FunctionGroup.WayClearance.WayClearing
         private readonly EntityManager EntityManager;
         private readonly Dictionary<Entity, SpeedOverride> m_SpeedOverrides = new Dictionary<Entity, SpeedOverride>();
 
-        /// <summary>This tick's pending overrides, drained by ClearTheWayPostSystem.</summary>
-        public IReadOnlyDictionary<Entity, SpeedOverride> SpeedOverrides => m_SpeedOverrides;
+        /// <summary>This tick's pending overrides, drained by ClearTheWayPostSystem. Handed out as
+        /// the concrete Dictionary on purpose: enumerating it through IReadOnlyDictionary boxes
+        /// the enumerator, which was one heap allocation per simulation tick.</summary>
+        public Dictionary<Entity, SpeedOverride> SpeedOverrides => m_SpeedOverrides;
 
         public VehicleControl(EntityManager entityManager)
         {

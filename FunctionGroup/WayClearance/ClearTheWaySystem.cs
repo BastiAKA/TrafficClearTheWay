@@ -40,7 +40,7 @@ namespace ClearTheWay
     {
 
         private EntityQuery m_EmergencyQuery;
-        private EntityQuery m_AssistQuery;
+        private ClearTheWayPostSystem m_PostSystem;
         private EntityQuery m_EmergencyPathQuery;
         private EntityQuery m_WreckQuery;
         private CityConfigurationSystem m_CityConfigurationSystem;
@@ -65,7 +65,7 @@ namespace ClearTheWay
         /// <summary>The queued traffic-light writes; flushed by GreenLightSystem after the game's
         /// light systems have run (see there for why the write cannot happen in this pass).</summary>
         internal GreenLightChain Lights => modContext?.Lights;
-        public IReadOnlyDictionary<Entity, SpeedOverride> SpeedOverrides => modContext.VehicleControl.SpeedOverrides;
+        public Dictionary<Entity, SpeedOverride> SpeedOverrides => modContext.VehicleControl.SpeedOverrides;
 
         /// <summary>How long this responder has been held by the same blocker, in frames; 0 when it
         /// is not blocked or has never been seen. Exposed so the pedestrian pass can ask the ONE
@@ -82,6 +82,14 @@ namespace ClearTheWay
             return frame - stuck.m_BlockerSinceFrame;
         }
 
+        /// <summary>Drops the record of a forced lane change for a vehicle whose FixedLane pin the
+        /// caller has just released itself (a recovery truck taking a wreck on its hook) - so the
+        /// release logic here does not later act on a change that is no longer pinned.</summary>
+        internal void ForgetForcedChange(Entity vehicle)
+        {
+            m_ForcedChanges.Remove(vehicle);
+        }
+
         protected override void OnCreate()
         {
             base.OnCreate();
@@ -89,7 +97,6 @@ namespace ClearTheWay
             m_CityConfigurationSystem = World.GetOrCreateSystemManaged<CityConfigurationSystem>();
             m_EmergencyQuery = GetEntityQuery(WayClearanceQueries.Emergency);
             m_EmergencyPathQuery = GetEntityQuery(WayClearanceQueries.EmergencyPath);
-            m_AssistQuery = GetEntityQuery(WayClearanceQueries.Assist);
             m_WreckQuery = GetEntityQuery(WayClearanceQueries.Wrecks);
 
             // Two-phase construction: the leaves first, then the passes that reference each
@@ -154,7 +161,7 @@ namespace ClearTheWay
         // Main-thread profiling switch for this pass - see ModProfiler for how to use it.
         // Everything here runs on the sim thread, so a slow tick shows up as a frame-rate
         // drop with CPU and GPU both idle. Flip to true, rebuild, read the [perf] lines.
-        private static readonly bool kProfile = true;
+        private static readonly bool kProfile = false;
 
         protected override void OnUpdate()
         {
@@ -253,21 +260,42 @@ namespace ClearTheWay
             }
 
             // Gentle make-way corridor for recovery/tow vehicles en route to an accident.
-            if (setting.AssistTowTrucks && !m_AssistQuery.IsEmptyIgnoreFilter)
+            //
+            // Driven by the post system's recovery-duty set instead of a query of its own. That
+            // query matched EVERY moving maintenance vehicle in the city, and each one cost a
+            // prefab test plus the wreck-run test every tick only to be turned away - in a large
+            // city that is a couple of hundred road and park vans for a handful of recovery runs.
+            // The duty set already is that handful (target is a wreck, or hauling one), refreshed
+            // every few ticks for the beacons. A vehicle that has just been given a wreck is
+            // therefore picked up at most one scan interval late, which is nothing against the
+            // ~30 s the assist needs to see before it does anything at all.
+            if (setting.AssistTowTrucks)
             {
-                float side = m_CityConfigurationSystem.leftHandTraffic ? -1f : 1f;
-                NativeArray<Entity> assist = m_AssistQuery.ToEntityArray(Allocator.Temp);
-                try
+                // Resolved lazily: the post system resolves THIS system in its own OnCreate.
+                m_PostSystem ??= World.GetExistingSystemManaged<ClearTheWayPostSystem>();
+                HashSet<Entity> onDuty = m_PostSystem?.OnRecoveryDuty;
+                if (onDuty != null && onDuty.Count != 0)
                 {
-                    for (int i = 0; i < assist.Length; i++)
+                    float side = m_CityConfigurationSystem.leftHandTraffic ? -1f : 1f;
+                    foreach (Entity candidate in onDuty)
                     {
-                        modRecovery.ProcessAssistVehicle(assist[i], side, frame);
+                        // What the old query guaranteed and the duty set does not: a vehicle that
+                        // is actually rolling on a lane. (False for a dead entity as well.)
+                        if (!EntityManager.HasComponent<Game.Objects.Moving>(candidate) ||
+                            !EntityManager.HasComponent<CarCurrentLane>(candidate) ||
+                            !EntityManager.HasComponent<Game.Prefabs.PrefabRef>(candidate) ||
+                            EntityManager.HasComponent<Game.Common.Deleted>(candidate))
+                        {
+                            continue;
+                        }
+                        modRecovery.ProcessAssistVehicle(candidate, side, frame);
                     }
                 }
-                finally
-                {
-                    assist.Dispose();
-                }
+                // The assist used to drop a vehicle's progress watch on the first tick it was no
+                // longer on a wreck run. Vehicles outside the duty set are not visited any more,
+                // so that has to be done for them here - otherwise a stale watch would be
+                // inherited by the vehicle's NEXT run.
+                modRecovery.DropProgressOutside(onDuty);
             }
 
             // Keep the queue behind a crashed vehicle alive (they would otherwise be

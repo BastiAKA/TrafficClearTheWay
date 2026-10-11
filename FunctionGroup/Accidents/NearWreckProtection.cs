@@ -41,8 +41,8 @@ namespace ClearTheWay.FunctionGroup.Accidents
         private static bool kDespawnForensics => AccidentGuard.kDespawnForensics;
         private List<float3> m_WreckPosScratch => m_Ctx.Accidents.m_WreckPosScratch;
         private List<int> m_WreckClusterOf => m_Ctx.Accidents.m_WreckClusterOf;
-        private HashSet<Entity> m_NearSeenScratch => m_Ctx.Accidents.m_NearSeenScratch;
         private List<Entity> m_NearWreckCars => m_Ctx.Accidents.m_NearWreckCars;
+        private List<Entity> m_NearWreckGuardCars => m_Ctx.Accidents.m_NearWreckGuardCars;
         public NearWreckProtection(WayClearanceContext ctx)
         {
             m_Ctx = ctx;
@@ -51,17 +51,23 @@ namespace ClearTheWay.FunctionGroup.Accidents
         /// <summary>Per-car protection work for one cluster sweep: despawn shields, repath
         /// shield and approach-brake, each car exactly once per tick (deduped across
         /// clusters). Component reads are hoisted; the per-wreck brake test is pure float
-        /// math against the cluster's wreck positions.</summary>
-        public void ProtectNearWreckCars(NativeList<Entity> found, int cluster, Setting setting, uint frame,
+        /// math against the cluster's wreck positions.
+        ///
+        /// <paramref name="cars"/> is the cluster's cached membership list: already deduped
+        /// across clusters and filtered to Car + PathOwner by the sweep that built it, up to
+        /// kNearWreckSweepInterval ticks ago. So the only thing to re-establish per tick is that
+        /// the car still exists.</summary>
+        public void ProtectNearWreckCars(List<NearWreckCar> cars, int cluster, Setting setting, uint frame,
             ref int protectedCount, ref int stuckCleared, ref int nPending, ref int nFailed, ref int nStuck,
             ref int nDummy, ref int nStopped, ref int nObsCleared, ref int nBrakeCand, ref int nBraked)
         {
-            for (int i = 0; i < found.Length; i++)
+            Dictionary<Entity, uint> sacrifice = m_Ctx.States.Sacrifice;
+            bool anySacrifice = sacrifice.Count != 0;
+            for (int i = 0; i < cars.Count; i++)
             {
-                Entity other = found[i];
-                if (!m_NearSeenScratch.Add(other) || !EntityManager.Exists(other) ||
-                    !EntityManager.HasComponent<Car>(other) ||
-                    !EntityManager.HasComponent<PathOwner>(other))
+                Entity other = cars[i].m_Entity;
+                // False for an entity that has despawned since the sweep, too.
+                if (!EntityManager.HasComponent<PathOwner>(other))
                 {
                     continue;
                 }
@@ -70,15 +76,18 @@ namespace ClearTheWay.FunctionGroup.Accidents
                 // plug. Do NOT keep it alive or track it - leave it to the game's own re-path /
                 // despawn so the lane frees for the queue behind. Time-boxed; once the window
                 // elapses it falls back to normal protection here.
-                if (m_Ctx.States.Sacrifice.TryGetValue(other, out uint sacUntil) && frame < sacUntil)
+                if (anySacrifice && sacrifice.TryGetValue(other, out uint sacUntil) && frame < sacUntil)
                 {
                     continue;
                 }
                 m_NearWreckCars.Add(other);
                 protectedCount++;
                 bool isEmergency = (EntityManager.GetComponentData<Car>(other).m_Flags & CarFlags.Emergency) != 0;
-                bool isMaintenance = EntityManager.HasComponent<Game.Vehicles.MaintenanceVehicle>(other);
-                bool isInvolved = EntityManager.HasComponent<Game.Events.InvolvedInAccident>(other);
+                bool isMaintenance = cars[i].m_Maintenance;
+                if (!isEmergency && !isMaintenance)
+                {
+                    m_NearWreckGuardCars.Add(other);
+                }
                 PathFlags state = EntityManager.GetComponentData<PathOwner>(other).m_State;
                 if ((state & PathFlags.Pending) != 0) nPending++;
                 if ((state & PathFlags.Failed) != 0) nFailed++;
@@ -120,12 +129,16 @@ namespace ClearTheWay.FunctionGroup.Accidents
                 // itself). Skip cars already in an accident, emergency and recovery
                 // vehicles. The per-wreck test is pure float math; component reads
                 // happen once per car.
-                if (!isInvolved && !isEmergency && !isMaintenance &&
-                    EntityManager.HasComponent<Transform>(other) &&
+                // The Moving test goes first and the rest only for a car that is actually
+                // rolling: most of a queue behind a wreck is standing still, and for those the
+                // InvolvedInAccident and Transform lookups were paid for nothing.
+                if (!isEmergency && !isMaintenance &&
                     EntityManager.HasComponent<Moving>(other))
                 {
                     float3 vel = EntityManager.GetComponentData<Moving>(other).m_Velocity;
-                    if (math.lengthsq(vel) > kBrakeMinSpeed * kBrakeMinSpeed)
+                    if (math.lengthsq(vel) > kBrakeMinSpeed * kBrakeMinSpeed &&
+                        !EntityManager.HasComponent<Game.Events.InvolvedInAccident>(other) &&
+                        EntityManager.HasComponent<Transform>(other))
                     {
                         nBrakeCand++;
                         float3 carPos = EntityManager.GetComponentData<Transform>(other).m_Position;

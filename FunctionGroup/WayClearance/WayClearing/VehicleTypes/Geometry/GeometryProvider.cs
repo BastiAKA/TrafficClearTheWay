@@ -85,7 +85,13 @@ namespace ClearTheWay.FunctionGroup.WayClearance.WayClearing.VehicleTypes.Geomet
         /// </summary>
         public float MaxLateralMeters(Entity vehicle, bool articulated = false)
         {
-            float byLength = GetGeometry(vehicle).length * kLateralPerLength;
+            return MaxLateralMeters(GetGeometry(vehicle), articulated);
+        }
+
+        /// <summary>The same limit for a body that has already been fetched.</summary>
+        public float MaxLateralMeters(VehicleGeometry geometry, bool articulated = false)
+        {
+            float byLength = geometry.length * kLateralPerLength;
             float capped = math.clamp(byLength, kLateralMinMeters, kLateralMaxMeters);
             return articulated ? capped * kArticLateralScale : capped;
         }

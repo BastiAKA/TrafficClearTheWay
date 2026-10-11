@@ -41,7 +41,7 @@ namespace ClearTheWay
     internal sealed class RecoveryAssist
     {
         // Main-thread profiling switch for this pass - see ModProfiler.
-        private static readonly bool kProfile = true;
+        private static readonly bool kProfile = false;
 
         private readonly EntityManager EntityManager;
         private readonly LaneGeometry m_Geometry;
@@ -91,6 +91,33 @@ namespace ClearTheWay
                 // is the natural end and cannot reset anything, because there is nothing left to
                 // reset.
                 if (!EntityManager.Exists(entry.Key) || !IsOnWreckRun(entry.Key))
+                {
+                    m_PruneScratch.Add(entry.Key);
+                }
+            }
+            for (int i = 0; i < m_PruneScratch.Count; i++)
+            {
+                m_AssistProgress.Remove(m_PruneScratch[i]);
+            }
+            m_PruneScratch.Clear();
+        }
+
+        /// <summary>
+        /// Drops the progress watch of every vehicle that is not in <paramref name="onDuty"/> (the
+        /// recovery-duty set the assist pass is driven by; null counts as empty). Those vehicles
+        /// are no longer visited by <see cref="ProcessAssistVehicle"/>, which is where a watch
+        /// used to be dropped the moment its run ended.
+        /// </summary>
+        public void DropProgressOutside(HashSet<Entity> onDuty)
+        {
+            if (m_AssistProgress.Count == 0)
+            {
+                return;
+            }
+            m_PruneScratch.Clear();
+            foreach (KeyValuePair<Entity, AssistProgress> entry in m_AssistProgress)
+            {
+                if (onDuty == null || !onDuty.Contains(entry.Key))
                 {
                     m_PruneScratch.Add(entry.Key);
                 }
@@ -216,6 +243,11 @@ namespace ClearTheWay
             // this call is the first thing to take back out.
             if (m_Ctx.Arrival.TryArrivalAssist(vehicle, ref currentLane, side, frame, out _))
             {
+                // The assist works on the lane by ref and leaves the write to its caller, exactly
+                // as in the responder pass. Without it every decision was thrown away: the kerb
+                // lane change was re-decided on each tick and never started (truck 2738102,
+                // 2026-10-11: "changing onto the kerb lane" 80 times in two seconds).
+                EntityManager.SetComponentData(vehicle, currentLane);
                 return;
             }
 
@@ -242,7 +274,18 @@ namespace ClearTheWay
             float targetDistance = math.distance(
                 assistPos.xz,
                 EntityManager.GetComponentData<Transform>(target).m_Position.xz);
-            if (!m_AssistProgress.TryGetValue(vehicle, out AssistProgress progress) ||
+            bool known = m_AssistProgress.TryGetValue(vehicle, out AssistProgress progress);
+            // A new wreck is a new run. The record is keyed by vehicle, and a vehicle that is
+            // re-targeted without a tick off duty in between kept everything from the old job:
+            // truck 1273409 (2026-10-11) counted "no progress for 53s .. 62s" while closing from
+            // 190 m to 2 m, because its reference distance was still the 5 m of the wreck before.
+            if (known && progress.m_Target != target)
+            {
+                progress = default;
+                known = false;
+            }
+            progress.m_Target = target;
+            if (!known ||
                 targetDistance < progress.m_BestDistance - kAssistProgressMeters)
             {
                 progress.m_SinceFrame = frame;                 // real progress - start over
@@ -251,7 +294,14 @@ namespace ClearTheWay
             }
             else
             {
-                progress.m_BestDistance = math.min(progress.m_BestDistance, targetDistance);
+                // m_BestDistance is deliberately NOT pulled down here. It is the reference the
+                // progress test above measures against, i.e. the distance at the last reset. It
+                // used to follow the vehicle on every tick, which turned "kAssistProgressMeters
+                // closer than before" into "kAssistProgressMeters closer than ONE TICK ago" - a
+                // jump no vehicle makes, so the clock never reset at all and every recovery
+                // vehicle counted as stuck 30 s after it came within range of its wreck. Field
+                // log 2026-10-11, truck 562456: "no progress for 74s / 77s / 80s" while its
+                // distance fell 171 -> 91 -> 29 m, with emergency rights and green preemption on.
                 // Only near the wreck does "no progress" actually mean stuck in ITS jam. Out
                 // on the route it just means the road bends away from the target, so the
                 // escalation must never fire there (it did: trucks 1.7 km out escalating

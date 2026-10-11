@@ -191,6 +191,28 @@ namespace ClearTheWay
                 EntityManager.HasComponent<Game.Vehicles.MaintenanceVehicle>(carrier);
         }
 
+        /// <summary>
+        /// True for a recovery vehicle that is still driving to a wreck which a DIFFERENT recovery
+        /// vehicle has meanwhile hooked - the redundant truck. Its job no longer exists: the
+        /// coupling pass refuses it, the assist skips it, and nothing ever gave it a new target,
+        /// so it stood where the news reached it. Field log 2026-10-11: wreck 1509836 was re-armed,
+        /// five trucks answered, 2738088 hooked it, and 2738043 then stood motionless on a road
+        /// for over four minutes collecting wedge strikes while its "wreck" was towed 3.8 km away.
+        /// </summary>
+        public bool TargetsHookedWreck(Entity van)
+        {
+            if (m_HookupSystem.TrucksWithLoad.Contains(van) ||
+                !EntityManager.HasComponent<Target>(van) ||
+                (EntityManager.GetComponentData<Game.Vehicles.MaintenanceVehicle>(van).m_State &
+                 MaintenanceVehicleFlags.Returning) != 0)
+            {
+                return false;
+            }
+            Entity target = EntityManager.GetComponentData<Target>(van).m_Target;
+            return target != Entity.Null && EntityManager.Exists(target) && IsOnAHook(target) &&
+                EntityManager.GetComponentData<Controller>(target).m_Controller != van;
+        }
+
         private bool OwnVanStillComing(Entity wreck, float3 wreckPos, uint frame)
         {
             if (!m_LastAssignedVan.TryGetValue(wreck, out Entity van))

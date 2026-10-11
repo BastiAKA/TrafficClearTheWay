@@ -12,6 +12,7 @@ namespace ClearTheWay
     /// </summary>
     internal struct AssistProgress
     {
+        public Entity m_Target;                     // the wreck this record was built for. A vehicle that is handed a DIFFERENT wreck starts a fresh record - the distances, clocks and latches below all describe the old run.
         public uint m_SinceFrame;
         public float m_BestDistance;
         public Unity.Mathematics.float3 m_LastPos;  // last position at which it had physically MOVED - the metric that still works out on the route, where straight-line distance to the wreck says nothing

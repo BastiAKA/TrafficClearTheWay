@@ -33,6 +33,7 @@ namespace ClearTheWay
 
         private Entity m_Entity = Entity.Null;
         private int m_ResolvedIndex = int.MinValue;
+        private uint m_NextScanFrame;
 
         public VehicleWatch(WayClearanceContext ctx)
         {
@@ -49,14 +50,27 @@ namespace ClearTheWay
             {
                 return;
             }
-            // A few dumps per second, not every tick.
-            if ((frame & 0xFu) != 0u)
+            // A dozen dumps per second, not every tick - and deliberately NOT every 16th. The
+            // vehicle AIs tick each vehicle once per 16 frames, so a 16-frame sample always lands
+            // on the same phase of that cycle and shows one frozen picture of it (2026-10-11: 85
+            // of 87 samples read the identical path state while the truck was in fact re-pathing
+            // on every AI tick). 5 is coprime to 16 and walks through all the phases.
+            if (frame % 5u != 0u)
             {
                 return;
             }
             // Resolve index -> live Entity, cached until the index changes or it despawns.
             if (m_ResolvedIndex != idx || !EntityManager.Exists(m_Entity))
             {
+                // An index that is not there is looked for again only now and then. Every miss is
+                // a scan of every car in the city plus a log line, and a stale index (entity ids
+                // change on each load) used to cost both on every dump - 855 "not found" lines in
+                // two minutes on 2026-10-11.
+                if (m_ResolvedIndex == idx && frame < m_NextScanFrame)
+                {
+                    return;
+                }
+                m_NextScanFrame = frame + 600u;
                 m_ResolvedIndex = idx;
                 m_Entity = Entity.Null;
                 NativeArray<Entity> cars = m_Ctx.WatchScanQuery.ToEntityArray(Allocator.Temp);
@@ -90,7 +104,8 @@ namespace ClearTheWay
             if (EntityManager.HasComponent<CarCurrentLane>(e))
             {
                 CarCurrentLane cl = EntityManager.GetComponentData<CarCurrentLane>(e);
-                lane = $"lanePos={cl.m_LanePosition:F2} laneFlags={(uint)cl.m_LaneFlags:X} " +
+                lane = $"lane={cl.m_Lane.Index} curve=({cl.m_CurvePosition.x:F2},{cl.m_CurvePosition.y:F2},{cl.m_CurvePosition.z:F2}) " +
+                    $"lanePos={cl.m_LanePosition:F2} laneFlags={(uint)cl.m_LaneFlags:X} " +
                     $"obsolete={((cl.m_LaneFlags & CarLaneFlags.Obsolete) != 0 ? 1 : 0)} " +
                     $"ignoreBlk={((cl.m_LaneFlags & CarLaneFlags.IgnoreBlocker) != 0 ? 1 : 0)} " +
                     $"change={(cl.m_ChangeLane != Entity.Null ? 1 : 0)}";
@@ -100,7 +115,17 @@ namespace ClearTheWay
             if (EntityManager.HasComponent<PathOwner>(e))
             {
                 PathFlags st = EntityManager.GetComponentData<PathOwner>(e).m_State;
-                path = $"pathState={(uint)st:X} pend={((st & PathFlags.Pending) != 0 ? 1 : 0)} " +
+                // How much route it actually HOLDS, which the state word alone does not say: path
+                // elements left to drive, and the navigation lanes built from them. "A path arrived
+                // but nav stays 0" and "the path itself is emptied again" are different failures.
+                int pathLen = EntityManager.HasBuffer<PathElement>(e)
+                    ? EntityManager.GetBuffer<PathElement>(e, isReadOnly: true).Length : -1;
+                int navLen = EntityManager.HasBuffer<CarNavigationLane>(e)
+                    ? EntityManager.GetBuffer<CarNavigationLane>(e, isReadOnly: true).Length : -1;
+                string motion = EntityManager.HasComponent<Game.Objects.Stopped>(e) ? "STOPPED"
+                    : EntityManager.HasComponent<Moving>(e) ? "moving" : "neither";
+                path = $"{motion} pathElems={pathLen} elemIdx={EntityManager.GetComponentData<PathOwner>(e).m_ElementIndex} nav={navLen} " +
+                    $"pathState={(uint)st:X} pend={((st & PathFlags.Pending) != 0 ? 1 : 0)} " +
                     $"stuck={((st & PathFlags.Stuck) != 0 ? 1 : 0)} fail={((st & PathFlags.Failed) != 0 ? 1 : 0)} " +
                     $"obs={((st & PathFlags.Obsolete) != 0 ? 1 : 0)}";
             }

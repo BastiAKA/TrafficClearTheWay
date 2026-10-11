@@ -47,7 +47,13 @@ namespace ClearTheWay.FunctionGroup.WayClearance.WayClearing.VehicleTypes
         /// </summary>
         public float PushMeters(Entity vehicle, float baseMeters)
         {
-            float length = m_Geometry.VehicleLength(vehicle);
+            return PushMeters(m_Geometry.VehicleLength(vehicle), baseMeters);
+        }
+
+        /// <summary>The same rule when the body length is already in hand - the corridor pass
+        /// fetches a car's geometry once and must not look it up again per measurement.</summary>
+        public float PushMeters(float length, float baseMeters)
+        {
             if (length <= kLongVehicleLength)
             {
                 return baseMeters;
