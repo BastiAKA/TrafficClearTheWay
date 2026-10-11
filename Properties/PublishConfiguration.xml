@@ -33,7 +33,7 @@ Cars ahead of a vehicle running with lights and siren pull to the side of their 
 - ✅ The nearest capable van gets the job — or a tow truck from your depot if none is close
 - ✅ Recovery vehicles drive **directly** to the crash instead of finishing their road-repair round first
 - ✅ Amber beacons while responding, on scene and while towing
-- ✅ Traffic makes way for them too, and after 30 seconds stuck they force their light green and work through the jam
+- ✅ Traffic makes way for them too: stuck for 30 seconds they get a corridor and a green-light request, after a minute the same rights as an ambulance
 
 ## ⚙️ Compatibility &amp; safety
 - **No Harmony patches, no replaced game systems.** The mod writes vanilla component fields from its own small systems; towing adds two tiny marker tags that are safe to remove with the mod.
@@ -68,7 +68,7 @@ tags: emergency, rettungsgasse, move over, ambulance, police, fire truck, accide
 	<!--Link to the forum post where the mod can be discussed-->
 	<ForumLink Value="" />
 	<!--Version of the mod-->
-	<ModVersion Value="0.1.12" />
+	<ModVersion Value="0.1.13" />
 	<!--Recommended version of the base game to use the mod-->
 	<GameVersion Value="1.6.*" />
 	<!--Dependency for the mod, can be set multiple times-->
@@ -77,25 +77,37 @@ tags: emergency, rettungsgasse, move over, ambulance, police, fire truck, accide
 	<RequiredDLC Value="" />
 	<!--Change log for new version. Single line or multi line. Supports minimal markdown subset-->
 	<ChangeLog>
-This release is about wrecks that actually get cleared, a corridor that stops changing its mind - and a simulation that runs measurably faster.
+This release is about recovery vehicles that get through, tow trucks that stop disappearing, and an accident pass that costs a fraction of what it did.
 
-**Faster**
-- The mod costs noticeably less per simulation step. Measured on the same city at the same load: **+14% simulation speed** over the previous release, and the busier it gets the more it helps - with 50+ emergency vehicles running at once it was +19%. Over a 3.5-hour session the tick rate in the last twenty minutes was the same as in the first, so it holds up.
-- Almost all of it came from one place: the pass that holds pedestrians at the kerb. It was searching a cube of 40 m in every direction around every siren - including 40 m backwards, and 40 m up and down, which on a map with tunnels or elevated roads dragged whole extra layers of footpath into the search and then threw them away again. It now looks only along the stretch the responder is actually driving.
+**Recovery vehicles get rights of their own**
+A tow truck or maintenance van on its way to a wreck drives like ordinary traffic until it is genuinely stuck. Then it escalates in steps:
+- After about 30 seconds without progress: a corridor, cars ahead pull aside, a traffic-light request, squeezing past, and changing lane around the jam.
+- After about a minute: the rights an ambulance has. Cars clear fully onto the kerb, the light is switched green outright, the queue ahead is pushed through the junction, and the oncoming lane may be used.
+- After about ten minutes without progress it stops disturbing traffic.
 
-**A stability fix worth naming**
-- A recovery truck that was merely queueing in traffic used to be "rescued" every 15 seconds - teleported back onto the lane it was already standing on, forever. One 100-minute session logged 904 of these, none of which did anything. Worse, doing it rewrote lane bookkeeping behind the game's back, which can take the whole simulation down. That is gone.
+Once earned, the rights are held until the vehicle has driven freely for 45 seconds, so stop-and-go traffic does not switch them on and off. A column of recovery vehicles queues behind its leader instead of fanning out across the road.
 
-**Wrecks get cleared**
-- Wrecks are hauled away and delivered instead of the truck giving up halfway.
-- A truck that is genuinely off the road network, or has not moved for about five minutes, is now removed and its wreck goes back into the queue for another one. Losing a single truck is much cheaper than an unstable save.
+**Tow trucks that stay**
+- A loaded tow truck is no longer removed for standing in traffic. In a busy city it reached the "wedged" threshold just by queueing: one session lost five trucks in twenty minutes, and each replacement hooked the same wreck, stood in the same jam and was removed in turn.
+- A truck that hooked a wreck but has no route to its own depot no longer stands there forever. After about ten seconds the wreck goes back up for recovery, and a truck from a depot that does have a route can take it.
+- A wreck already on a hook no longer keeps calling more vehicles. The game files a new recovery request for it every few seconds; one session saw 96 pointless call-outs in ten minutes.
+- The dispatcher and the tow depot no longer take the same wreck off each other.
+- "Stuck" now means stuck. The progress check for recovery vehicles compared against the previous simulation step, so every one of them near its wreck counted as stuck after 30 seconds, moving or not.
 
-**The corridor commits**
-- The responder picks ONE shape - the classic single gap, a central channel on wide roads, or heading for a free lane - and sticks with it. Previously three separate tests ran every step and disagreed with each other, so a responder standing in one spot kept changing its mind about which way to go and therefore never went anywhere.
-- A responder squeezing between two cars side by side could stall completely: the game only ever ignores ONE obstacle, and with two stopped cars it flipped between them every step so neither was ignored. It noses its way out of that now.
+**Faster around accidents**
+- The accident pass costs about 0.2 ms per simulation step instead of about 1 ms, measured with 6 to 20 wrecks on the map. A wreck that could not be moved aside was re-examined on every step; now about once a second.
+- The search for cars near an accident runs every eighth step instead of every step, and what it learns about each car is kept until the next search.
+- The recovery assist looks only at vehicles actually on a recovery run, not at every maintenance vehicle in the city.
+- On a city of 567,000 the mod's main pass costs about 1.3 ms per simulation step in ordinary play.
 
-**Cars pulled aside onto space that exists**
-- The room beside a lane is measured on the side the car is actually being pushed towards. On carriageways running against the road direction the mod measured the far side and handed out up to 4 m of clearance that was not there - which is what threw cars across parking bays and onto kerbs.
+**Pedestrian crossings**
+A responder stuck behind cars yielding at a zebra used to end with a car being removed - pointless, because the next car stops in exactly the same place. The mod now recognises the case. If the pedestrian itself has stopped making progress it is asked to take another route; nobody is deleted. After 90 seconds at the same crossing the old behaviour resumes, so a busy crossing cannot hold a responder indefinitely.
+
+**Worth reporting**
+A log with "Verbose logging" switched on, plus roughly where it happened, for any of these:
+- A recovery vehicle forcing its way through where it clearly should not.
+- A wreck that is hooked and released again and again, or handed from vehicle to vehicle and never collected.
+- A responder waiting unusually long at a pedestrian crossing.
 </ChangeLog>
 	<!--External link, can be set multiple times. supported types are "discord", "github", "youtube", "twitch", "x", "paypal", "patreon", "buymeacoffee", "kofi", "crowdin", "gitlab", "gofundme"-->
 	<ExternalLink Type="github" Url="https://github.com/BastiAKA/TrafficClearTheWay" />
