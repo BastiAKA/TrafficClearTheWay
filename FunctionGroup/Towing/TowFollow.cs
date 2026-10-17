@@ -526,13 +526,17 @@ namespace ClearTheWay
         /// Eases a loaded truck past a STANDING wreck in its way - usually the other car of the
         /// same accident, or an old relic. Its route leads past it (TowingContext.RequestRouteHome
         /// ignores lane blockage); this is the physical part, run as one manoeuvre per truck:
-        ///  - starts when the truck's blocker is a standing wreck (never its own load);
+        ///  - starts only when the truck has (nearly) stopped and its blocker is a standing wreck
+        ///    (never its own load) right in front of it. Starting on any wreck-typed blocker sent
+        ///    a truck 800 m across town with up to 4 m of offset (2104259, 2026-10-17): the
+        ///    blocker can be a wreck far ahead, and the truck simply drove on and turned off;
         ///  - picks its side ONCE - away from the wreck, toward the centre line when it stands dead
         ///    ahead - and keeps it. Re-deciding every tick flipped the side as the truck moved and
         ///    it swung left and right on the spot for a minute (truck 3177332, 2026-10-17);
         ///  - holds the offset and passes that one entity (IgnoreBlocker) until the wreck is
-        ///    BEHIND it. Easing back as soon as the wreck stopped being the blocker steered it
-        ///    straight back into the wreck - it stops being the blocker while still alongside;
+        ///    BEHIND it, or the truck has moved well away from it in any direction (turned off).
+        ///    Easing back as soon as the wreck stopped being the blocker steered it straight back
+        ///    into the wreck - it stops being the blocker while still alongside;
         ///  - gives up after kHaulPassTimeoutFrames, then eases back into its lane.
         /// </summary>
         private void PassStandingWreck(Entity truck, Entity hooked, uint frame, Setting setting)
@@ -560,7 +564,11 @@ namespace ClearTheWay
                 {
                     blocking = blocker.m_Blocker;
                 }
-                if (blocking != Entity.Null && Lookups.TryGetComponent(blocking, out Transform blockingTransform))
+                float truckSpeed = Lookups.TryGetComponent(truck, out Moving truckMoving)
+                    ? math.length(truckMoving.m_Velocity) : 0f;
+                if (blocking != Entity.Null && truckSpeed <= kHaulPassStartSpeed &&
+                    Lookups.TryGetComponent(blocking, out Transform blockingTransform) &&
+                    IsRightInFront(truck, blocking, blockingTransform.m_Position.xz - truckTransform.m_Position.xz, forward, right, geometry))
                 {
                     // A new manoeuvre - the side is decided here, once.
                     float side = math.dot(blockingTransform.m_Position.xz - truckTransform.m_Position.xz, right); // + = right
@@ -588,26 +596,29 @@ namespace ClearTheWay
                 bool wreckGone = !EntityManager.Exists(pass.m_Wreck) || !IsStandingWreck(pass.m_Wreck) ||
                     !Lookups.TryGetComponent(pass.m_Wreck, out wreckTransform);
                 bool passed = false;
+                bool movedAway = false;
                 float targetLateral = 0f;
                 if (!wreckGone)
                 {
                     float2 toWreck = wreckTransform.m_Position.xz - truckTransform.m_Position.xz;
                     float along = math.dot(toWreck, forward);
-                    float behind = (geometry.VehicleLength(truck) + geometry.VehicleLength(pass.m_Wreck)) * 0.5f + 1f;
-                    passed = along < -behind;
+                    float halfLengths = (geometry.VehicleLength(truck) + geometry.VehicleLength(pass.m_Wreck)) * 0.5f;
+                    passed = along < -(halfLengths + 1f);
+                    // Turned off or drove on some other way: the wreck is no longer anywhere near.
+                    movedAway = math.length(toWreck) > halfLengths + 2f * kHaulPassStartGap;
                     float truckLateral = lane.m_LanePosition * laneSign * slack;   // physical, + = right
                     float wreckLateral = truckLateral + math.dot(toWreck, right);
                     float clear = (geometry.VehicleWidth(truck) + geometry.VehicleWidth(pass.m_Wreck)) * 0.5f + kHaulPassClearance;
                     targetLateral = math.clamp(wreckLateral + pass.m_Dir * clear, -kHaulPassMaxMeters, kHaulPassMaxMeters);
                 }
                 bool timedOut = frame - pass.m_SinceFrame > kHaulPassTimeoutFrames;
-                if (wreckGone || passed || timedOut)
+                if (wreckGone || passed || movedAway || timedOut)
                 {
                     pass.m_Returning = true;
                     m_HaulPasses[truck] = pass;
                     if (setting.VerboseLogging)
                     {
-                        string why = passed ? "passed" : wreckGone ? "wreck gone" : "timed out";
+                        string why = passed ? "passed" : wreckGone ? "wreck gone" : movedAway ? "moved away" : "timed out";
                         Mod.Log.Info($"[towpass] truck={truck.Index} wreck={pass.m_Wreck.Index} {why} - back into its lane");
                     }
                 }
@@ -646,6 +657,19 @@ namespace ClearTheWay
         }
 
         private readonly Dictionary<Entity, HaulPass> m_HaulPasses = new Dictionary<Entity, HaulPass>();
+
+        /// <summary>
+        /// Is the wreck the one the truck is actually standing behind: ahead of it (not behind),
+        /// within half the two lengths plus kHaulPassStartGap, and no further to the side than a
+        /// pass could ever shift (kHaulPassMaxMeters).
+        /// </summary>
+        private static bool IsRightInFront(Entity truck, Entity wreck, float2 toWreck, float2 forward, float2 right,
+            GeometryProvider geometry)
+        {
+            float along = math.dot(toWreck, forward);
+            float reach = (geometry.VehicleLength(truck) + geometry.VehicleLength(wreck)) * 0.5f + kHaulPassStartGap;
+            return along > 0f && along <= reach && math.abs(math.dot(toWreck, right)) <= kHaulPassMaxMeters;
+        }
 
         /// <summary>A crashed car standing on the road: damaged or destroyed, or still in an
         /// accident, and not moving.</summary>
