@@ -90,6 +90,13 @@ namespace ClearTheWay
             m_ForcedChanges.Remove(vehicle);
         }
 
+        /// <summary>Vehicle and lane measurements, shared with the towing passes (a loaded
+        /// truck easing past a second wreck needs the same widths the corridor uses).</summary>
+        internal GeometryProvider PrefabGeometry => modContext.PrefabGeometry;
+
+        /// <summary>True in a left-hand-traffic city: the centre line is then on the right.</summary>
+        internal bool LeftHandTraffic => m_CityConfigurationSystem.leftHandTraffic;
+
         protected override void OnCreate()
         {
             base.OnCreate();

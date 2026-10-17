@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using ClearTheWay.FunctionGroup.WayClearance.WayClearing;
 using Game.Simulation;
+using Unity.Collections;
 using Unity.Entities;
 using Unity.Mathematics;
 
@@ -32,6 +33,11 @@ namespace ClearTheWay
         /// capping its speed? Without it a motionless loaded truck is indistinguishable from one
         /// our own corridor is holding.</summary>
         public ClearTheWaySystem WayClearance;
+        /// <summary>The game's pathfind request queue, for <see cref="RequestRouteHome"/>.</summary>
+        public PathfindSetupSystem PathfindSetup;
+        /// <summary>The system that owns our path requests (PathfindSetupSystem keys its queues by
+        /// the requesting system).</summary>
+        public SystemBase RequestingSystem;
 
         // Queries the passes below run on; created by TowHookupSystem (only a system can).
         public EntityQuery OrphanQuery;
@@ -120,6 +126,79 @@ namespace ClearTheWay
                     EntityManager.AddComponent<Game.Common.PathfindUpdated>(lane);
                 }
             }
+            return true;
+        }
+
+        /// <summary>
+        /// Asks for a route home for a loaded truck - the game's own request, with one rule
+        /// relaxed: lane blockages are ignored.
+        ///
+        /// The game builds a returning maintenance vehicle's request in
+        /// MaintenanceVehicleAISystem.FindNewPath, and that request respects lane blockage. An
+        /// accident is nearly always two cars; the truck comes from behind, hooks the rear one,
+        /// and the front one still stands on its lane - a real blockage that PathfindJobs.IsValid-
+        /// Delta lets no route through, while the truck cannot turn mid-segment. Every request
+        /// failed until the give-up deleted the truck. With RuleFlags.HasBlockage ignored (the
+        /// game does the same for reachability: ResourceAvailabilitySystem, ServiceCoverageSystem)
+        /// the route leads past the second wreck, and TowFollow.PassStandingWreck handles the
+        /// physical passing. Everything else is a copy of FindNewPath for a Returning vehicle.
+        ///
+        /// Returns false when the truck lacks what the request needs; the caller then leaves the
+        /// game's own (Obsolete-triggered) request in place.
+        /// </summary>
+        public bool RequestRouteHome(Entity truck, Entity depot)
+        {
+            if (PathfindSetup == null || RequestingSystem == null || depot == Entity.Null ||
+                !Lookups.TryGetComponent(truck, out Game.Prefabs.PrefabRef prefabRef) ||
+                !Lookups.TryGetComponent(prefabRef.m_Prefab, out Game.Prefabs.CarData carData) ||
+                !Lookups.TryGetComponent(truck, out Game.Vehicles.CarCurrentLane currentLane) ||
+                !Lookups.TryGetComponent(truck, out Game.Pathfind.PathOwner pathOwner))
+            {
+                return false;
+            }
+            Lookups.TryGetComponent(prefabRef.m_Prefab, out Game.Prefabs.ObjectGeometryData geometry);
+            // VehicleUtils.GetParkingSource, with our lookups.
+            Entity parkingSource = truck;
+            if (Lookups.HasComponent<Game.Net.ParkingLane>(currentLane.m_Lane) ||
+                (Lookups.TryGetComponent(currentLane.m_Lane, out Game.Net.ConnectionLane connection) &&
+                 (connection.m_Flags & Game.Net.ConnectionLaneFlags.Parking) != 0))
+            {
+                parkingSource = currentLane.m_Lane;
+            }
+            var parameters = new Game.Pathfind.PathfindParameters
+            {
+                m_MaxSpeed = carData.m_MaxSpeed,
+                m_WalkSpeed = 5.555556f,
+                m_Weights = new Game.Pathfind.PathfindWeights(1f, 1f, 1f, 1f),
+                m_Methods = Game.Pathfind.PathMethod.Road | Game.Pathfind.PathMethod.SpecialParking,
+                m_ParkingTarget = parkingSource,
+                m_ParkingDelta = currentLane.m_CurvePosition.z,
+                m_ParkingSize = Game.Vehicles.VehicleUtils.GetParkingSize(geometry, out float _),
+                m_IgnoredRules = Game.Vehicles.VehicleUtils.GetIgnoredPathfindRules(carData) |
+                    Game.Pathfind.RuleFlags.ForbidCombustionEngines | Game.Pathfind.RuleFlags.ForbidTransitTraffic |
+                    Game.Pathfind.RuleFlags.ForbidHeavyTraffic | Game.Pathfind.RuleFlags.ForbidPrivateTraffic |
+                    Game.Pathfind.RuleFlags.HasBlockage
+            };
+            var origin = new Game.Pathfind.SetupQueueTarget
+            {
+                m_Type = Game.Pathfind.SetupTargetType.CurrentLocation,
+                m_Methods = Game.Pathfind.PathMethod.Road | Game.Pathfind.PathMethod.SpecialParking,
+                m_RoadTypes = Game.Net.RoadTypes.Car
+            };
+            var destination = new Game.Pathfind.SetupQueueTarget
+            {
+                m_Type = Game.Pathfind.SetupTargetType.CurrentLocation,
+                m_Methods = Game.Pathfind.PathMethod.Road | Game.Pathfind.PathMethod.SpecialParking,
+                m_RoadTypes = Game.Net.RoadTypes.Car,
+                m_Entity = depot,
+                m_RandomCost = 30f
+            };
+            NativeQueue<Game.Pathfind.SetupQueueItem> queue = PathfindSetup.GetQueue(RequestingSystem, 64);
+            Game.Vehicles.VehicleUtils.SetupPathfind(ref currentLane, ref pathOwner, queue.AsParallelWriter(),
+                new Game.Pathfind.SetupQueueItem(truck, parameters, origin, destination));
+            PathfindSetup.AddQueueWriter(default);
+            Lookups.SetComponentData(truck, currentLane);
+            Lookups.SetComponentData(truck, pathOwner);
             return true;
         }
 

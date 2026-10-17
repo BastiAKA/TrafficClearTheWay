@@ -296,7 +296,11 @@ namespace ClearTheWay
                 truckLane.m_LaneFlags &= ~(CarLaneFlags.EndOfPath | CarLaneFlags.EndReached);
                 Lookups.SetComponentData(truck, truckLane);
             }
-            if (Lookups.TryGetComponent(truck, out PathOwner pathOwner))
+            // Our own request, with lane blockage ignored: the other car of the same accident
+            // usually still stands right ahead (TowingContext.RequestRouteHome). The game's
+            // Obsolete-triggered request stays as the fallback.
+            if (!m_Ctx.RequestRouteHome(truck, depot) &&
+                Lookups.TryGetComponent(truck, out PathOwner pathOwner))
             {
                 pathOwner.m_State &= ~(PathFlags.Failed | PathFlags.Stuck);
                 pathOwner.m_State |= PathFlags.Obsolete;

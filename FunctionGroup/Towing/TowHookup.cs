@@ -107,6 +107,8 @@ namespace ClearTheWay
                 Simulation = m_SimulationSystem,
                 NetSearch = m_NetSearchSystem,
                 WayClearance = World.GetOrCreateSystemManaged<ClearTheWaySystem>(),
+                PathfindSetup = World.GetOrCreateSystemManaged<PathfindSetupSystem>(),
+                RequestingSystem = this,
                 OrphanQuery = m_OrphanQuery,
                 TrailerOrphanQuery = m_TrailerOrphanQuery,
                 ArmedRelicQuery = m_ArmedRelicQuery,
