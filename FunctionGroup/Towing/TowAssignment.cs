@@ -181,11 +181,11 @@ namespace ClearTheWay
         /// guard exists to tolerate.</summary>
         private bool IsOnAHook(Entity wreck)
         {
-            if (!Lookups.HasComponent<Controller>(wreck))
+            if (!Lookups.TryGetComponent(wreck, out Controller wreckController))
             {
                 return false;
             }
-            Entity carrier = Lookups.GetComponentData<Controller>(wreck).m_Controller;
+            Entity carrier = wreckController.m_Controller;
             return carrier != Entity.Null && carrier != wreck && EntityManager.Exists(carrier) &&
                 !Lookups.HasComponent<Deleted>(carrier) &&
                 Lookups.HasComponent<Game.Vehicles.MaintenanceVehicle>(carrier);
@@ -202,13 +202,13 @@ namespace ClearTheWay
         public bool TargetsHookedWreck(Entity van)
         {
             if (m_HookupSystem.TrucksWithLoad.Contains(van) ||
-                !Lookups.HasComponent<Target>(van) ||
+                !Lookups.TryGetComponent(van, out Target vanTarget) ||
                 (Lookups.GetComponentData<Game.Vehicles.MaintenanceVehicle>(van).m_State &
                  MaintenanceVehicleFlags.Returning) != 0)
             {
                 return false;
             }
-            Entity target = Lookups.GetComponentData<Target>(van).m_Target;
+            Entity target = vanTarget.m_Target;
             return target != Entity.Null && EntityManager.Exists(target) && IsOnAHook(target) &&
                 Lookups.GetComponentData<Controller>(target).m_Controller != van;
         }
@@ -283,9 +283,9 @@ namespace ClearTheWay
                 return false; // hauling a wreck home already
             }
             // Already dispatched to a different wreck? Leave it on that job.
-            if (Lookups.HasComponent<Target>(van))
+            if (Lookups.TryGetComponent(van, out Target vanTarget))
             {
-                Entity target = Lookups.GetComponentData<Target>(van).m_Target;
+                Entity target = vanTarget.m_Target;
                 if (target != Entity.Null && target != wreck && EntityManager.Exists(target) &&
                     Lookups.HasComponent<Game.Events.InvolvedInAccident>(target))
                 {
@@ -406,9 +406,9 @@ namespace ClearTheWay
             {
                 EntityManager.RemoveComponent<PathInformation>(request);
             }
-            if (Lookups.HasBuffer<PathElement>(request))
+            if (Lookups.TryGetBuffer(request, out DynamicBuffer<PathElement> requestPath))
             {
-                Lookups.GetBuffer<PathElement>(request).Clear();
+                requestPath.Clear();
             }
             dispatches.Add(new ServiceDispatch(request));
             m_LastAction[wreck] = frame;

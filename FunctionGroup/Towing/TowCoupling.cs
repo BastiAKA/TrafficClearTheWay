@@ -152,7 +152,7 @@ namespace ClearTheWay
                 }
                 return;
             }
-            if (!Lookups.HasComponent<Transform>(wreck) ||
+            if (!Lookups.TryGetComponent(wreck, out Transform wreckTransform) ||
                 !Lookups.HasComponent<Stopped>(wreck) ||
                 Lookups.HasComponent<Game.Events.OnFire>(wreck) ||
                 Lookups.TryGetComponent(wreck, out Controller wreckController) && wreckController.m_Controller != wreck)
@@ -168,7 +168,7 @@ namespace ClearTheWay
             }
             // Close and slow = it pulled up next to the wreck.
             float3 truckPos = Lookups.GetComponentData<Transform>(truck).m_Position;
-            float3 wreckPos = Lookups.GetComponentData<Transform>(wreck).m_Position;
+            float3 wreckPos = wreckTransform.m_Position;
             float dist = math.distance(truckPos.xz, wreckPos.xz);
             float speed = Lookups.TryGetComponent(truck, out Moving truckMoving)
                 ? math.length(truckMoving.m_Velocity) : 0f;
@@ -183,9 +183,9 @@ namespace ClearTheWay
 
             // --- Couple the wreck ---
             // Strip everything that made it a managed accident wreck / an AI-driven car.
-            if (Lookups.HasComponent<Game.Simulation.MaintenanceConsumer>(wreck))
+            if (Lookups.TryGetComponent(wreck, out Game.Simulation.MaintenanceConsumer consumer))
             {
-                Entity request = Lookups.GetComponentData<Game.Simulation.MaintenanceConsumer>(wreck).m_Request;
+                Entity request = consumer.m_Request;
                 if (request != Entity.Null && EntityManager.Exists(request))
                 {
                     EntityManager.AddComponent<Deleted>(request);
@@ -229,9 +229,9 @@ namespace ClearTheWay
                     {
                         continue;
                     }
-                    if (Lookups.HasComponent<Game.Simulation.MaintenanceConsumer>(member))
+                    if (Lookups.TryGetComponent(member, out Game.Simulation.MaintenanceConsumer memberConsumer))
                     {
-                        Entity memberRequest = Lookups.GetComponentData<Game.Simulation.MaintenanceConsumer>(member).m_Request;
+                        Entity memberRequest = memberConsumer.m_Request;
                         if (memberRequest != Entity.Null && EntityManager.Exists(memberRequest))
                         {
                             EntityManager.AddComponent<Deleted>(memberRequest);
@@ -273,9 +273,9 @@ namespace ClearTheWay
             maintenance.m_Maintained = math.max(maintenance.m_Maintained,
                 Lookups.GetComponentData<MaintenanceVehicleData>(prefab).m_MaintenanceCapacity);
             Lookups.SetComponentData(truck, maintenance);
-            if (Lookups.HasBuffer<ServiceDispatch>(truck))
+            if (Lookups.TryGetBuffer(truck, out DynamicBuffer<ServiceDispatch> truckDispatches))
             {
-                Lookups.GetBuffer<ServiceDispatch>(truck).Clear();
+                truckDispatches.Clear();
             }
             // A new job starts with a clean movement history. The wedge counter is keyed by TRUCK
             // and is now written from two places - the follow pass while hauling, and the empty

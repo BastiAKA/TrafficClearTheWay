@@ -112,7 +112,7 @@ namespace ClearTheWay.FunctionGroup.GeneralImprovements
             {
                 Entity lane = subLanes[i].m_SubLane;
                 if ((subLanes[i].m_PathMethods & PathMethod.Road) == 0 ||
-                    !Lookups.HasComponent<Game.Net.CarLane>(lane) ||
+                    !Lookups.TryGetComponent(lane, out Game.Net.CarLane carLane) ||
                     Lookups.HasComponent<MasterLane>(lane) ||
                     !Lookups.TryGetComponent(lane, out Curve laneCurve))
                 {
@@ -126,7 +126,6 @@ namespace ClearTheWay.FunctionGroup.GeneralImprovements
                     continue; // other side of the road - a wreck here doesn't stop this carriageway
                 }
                 sideLaneCount++;
-                Game.Net.CarLane carLane = Lookups.GetComponentData<Game.Net.CarLane>(lane);
                 // LaneDataSystem resets an unblocked lane to (start=255, end=0) and otherwise
                 // fills a real blockage range from its lane objects (incl. accident wrecks).
                 if (!(carLane.m_BlockageStart == byte.MaxValue && carLane.m_BlockageEnd == 0))

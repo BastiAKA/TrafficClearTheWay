@@ -62,13 +62,13 @@ namespace ClearTheWay
                     // recovery request: Damaged (is it even a candidate?), Destroyed + m_Cleared>=1
                     // (a cleared totaled wreck has its consumer REMOVED, so no request).
                     bool hasDamaged = Lookups.HasComponent<Game.Objects.Damaged>(wreck);
-                    bool hasDestroyed = Lookups.HasComponent<Destroyed>(wreck);
-                    bool hasConsumer = Lookups.HasComponent<Game.Simulation.MaintenanceConsumer>(wreck);
+                    bool hasDestroyed = Lookups.TryGetComponent(wreck, out Destroyed wreckDestroyed);
+                    bool hasConsumer = Lookups.TryGetComponent(wreck, out Game.Simulation.MaintenanceConsumer wreckConsumer);
                     if (hasDamaged) damaged++;
                     if (hasDestroyed)
                     {
                         destroyed++;
-                        if (Lookups.GetComponentData<Destroyed>(wreck).m_Cleared >= 1f) clearedGe1++;
+                        if (wreckDestroyed.m_Cleared >= 1f) clearedGe1++;
                     }
                     if (hasDamaged && !hasConsumer) damagedNoConsumer++;
                     if (!hasConsumer)
@@ -76,7 +76,7 @@ namespace ClearTheWay
                         continue;
                     }
                     consumer++;
-                    Entity req = Lookups.GetComponentData<Game.Simulation.MaintenanceConsumer>(wreck).m_Request;
+                    Entity req = wreckConsumer.m_Request;
                     if (req != Entity.Null && EntityManager.Exists(req) &&
                         Lookups.HasComponent<MaintenanceRequest>(req))
                     {

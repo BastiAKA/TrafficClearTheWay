@@ -146,17 +146,17 @@ namespace ClearTheWay
         /// </summary>
         private bool IsOnWreckRun(Entity vehicle)
         {
-            if (!Lookups.HasComponent<Target>(vehicle) ||
-                !Lookups.HasComponent<Game.Vehicles.MaintenanceVehicle>(vehicle))
+            if (!Lookups.TryGetComponent(vehicle, out Target vehicleTarget) ||
+                !Lookups.TryGetComponent(vehicle, out Game.Vehicles.MaintenanceVehicle maintenance))
             {
                 return false;
             }
-            if ((Lookups.GetComponentData<Game.Vehicles.MaintenanceVehicle>(vehicle).m_State &
+            if ((maintenance.m_State &
                  MaintenanceVehicleFlags.Returning) != 0)
             {
                 return false;
             }
-            Entity target = Lookups.GetComponentData<Target>(vehicle).m_Target;
+            Entity target = vehicleTarget.m_Target;
             if (target == Entity.Null || !EntityManager.Exists(target) ||
                 (!Lookups.HasComponent<Damaged>(target) &&
                  !Lookups.HasComponent<Game.Events.InvolvedInAccident>(target)))
@@ -164,9 +164,9 @@ namespace ClearTheWay
                 return false;
             }
             // Already on somebody's hook? Then this vehicle is the redundant second truck.
-            if (Lookups.HasComponent<Controller>(target))
+            if (Lookups.TryGetComponent(target, out Controller targetController))
             {
-                Entity carrier = Lookups.GetComponentData<Controller>(target).m_Controller;
+                Entity carrier = targetController.m_Controller;
                 if (carrier != Entity.Null && carrier != target && carrier != vehicle &&
                     EntityManager.Exists(carrier) && !Lookups.HasComponent<Deleted>(carrier) &&
                     Lookups.HasComponent<Game.Vehicles.MaintenanceVehicle>(carrier))
@@ -210,9 +210,9 @@ namespace ClearTheWay
                 // either way. Throttled per tick-block rather than per vehicle - the interesting
                 // signal is "a convoy of trucks is being skipped at this wreck", not each one.
                 if (Mod.Setting.VerboseLogging && frame % 300u == 0u &&
-                    Lookups.HasComponent<Target>(vehicle))
+                    Lookups.TryGetComponent(vehicle, out Target skippedTarget))
                 {
-                    Entity skipped = Lookups.GetComponentData<Target>(vehicle).m_Target;
+                    Entity skipped = skippedTarget.m_Target;
                     Mod.Log.Info($"[assist] veh={vehicle.Index} skipped: not on a wreck run " +
                         $"(target={skipped.Index}) - redundant second truck, returning, or target no longer a wreck");
                 }
@@ -645,12 +645,12 @@ namespace ClearTheWay
             }
             // A trailer in the way means the RIG is in the way - work on its tractor.
             Entity head = VehicleTrailerExt.ResolveHead(EntityManager, blocker);
-            if (!EntityManager.Exists(head) || !Lookups.HasComponent<Car>(head) ||
+            if (!EntityManager.Exists(head) || !Lookups.TryGetComponent(head, out Car headCar) ||
                 Lookups.HasComponent<Deleted>(head))
             {
                 return;
             }
-            if ((Lookups.GetComponentData<Car>(head).m_Flags & CarFlags.Emergency) != 0 ||
+            if ((headCar.m_Flags & CarFlags.Emergency) != 0 ||
                 Lookups.HasComponent<Game.Vehicles.MaintenanceVehicle>(head) ||
                 Lookups.HasComponent<Game.Events.InvolvedInAccident>(head) ||
                 Lookups.HasComponent<Damaged>(head))

@@ -66,8 +66,10 @@ namespace ClearTheWay.FunctionGroup.Accidents
             for (int i = 0; i < cars.Count; i++)
             {
                 Entity other = cars[i].m_Entity;
-                // False for an entity that has despawned since the sweep, too.
-                if (!Lookups.HasComponent<PathOwner>(other))
+                // False for an entity that has despawned since the sweep, too. The state word is
+                // read here once; the repath shield below re-reads PathOwner on purpose, because
+                // ClearStuckAndFailed writes it in between.
+                if (!Lookups.TryGetComponent(other, out PathOwner otherPathOwner))
                 {
                     continue;
                 }
@@ -88,7 +90,7 @@ namespace ClearTheWay.FunctionGroup.Accidents
                 {
                     m_NearWreckGuardCars.Add(other);
                 }
-                PathFlags state = Lookups.GetComponentData<PathOwner>(other).m_State;
+                PathFlags state = otherPathOwner.m_State;
                 if ((state & PathFlags.Pending) != 0) nPending++;
                 if ((state & PathFlags.Failed) != 0) nFailed++;
                 if ((state & PathFlags.Stuck) != 0) nStuck++;
@@ -133,15 +135,15 @@ namespace ClearTheWay.FunctionGroup.Accidents
                 // rolling: most of a queue behind a wreck is standing still, and for those the
                 // InvolvedInAccident and Transform lookups were paid for nothing.
                 if (!isEmergency && !isMaintenance &&
-                    Lookups.HasComponent<Moving>(other))
+                    Lookups.TryGetComponent(other, out Moving otherMovingNow))
                 {
-                    float3 vel = Lookups.GetComponentData<Moving>(other).m_Velocity;
+                    float3 vel = otherMovingNow.m_Velocity;
                     if (math.lengthsq(vel) > kBrakeMinSpeed * kBrakeMinSpeed &&
                         !Lookups.HasComponent<Game.Events.InvolvedInAccident>(other) &&
-                        Lookups.HasComponent<Transform>(other))
+                        Lookups.TryGetComponent(other, out Transform otherTransform))
                     {
                         nBrakeCand++;
-                        float3 carPos = Lookups.GetComponentData<Transform>(other).m_Position;
+                        float3 carPos = otherTransform.m_Position;
                         float2 fwd = math.normalizesafe(vel.xz);
                         for (int wi = 0; wi < m_WreckPosScratch.Count; wi++)
                         {
@@ -197,9 +199,9 @@ namespace ClearTheWay.FunctionGroup.Accidents
                     bool snapTargetExists = false;
                     char snapTargetType = '-';
                     float3 snapTargetPos = default;
-                    if (Lookups.HasComponent<Target>(other))
+                    if (Lookups.TryGetComponent(other, out Target otherTarget))
                     {
-                        snapTarget = Lookups.GetComponentData<Target>(other).m_Target;
+                        snapTarget = otherTarget.m_Target;
                         snapTargetExists = snapTarget != Entity.Null && EntityManager.Exists(snapTarget);
                         if (snapTargetExists)
                         {
@@ -208,9 +210,9 @@ namespace ClearTheWay.FunctionGroup.Accidents
                                 : Lookups.HasComponent<Vehicle>(snapTarget) ? 'V'
                                 : Lookups.HasComponent<Game.Creatures.Creature>(snapTarget) ? 'C'
                                 : Lookups.HasComponent<Game.Net.Lane>(snapTarget) ? 'L' : '?';
-                            if (Lookups.HasComponent<Transform>(snapTarget))
+                            if (Lookups.TryGetComponent(snapTarget, out Transform snapTargetTransform))
                             {
-                                snapTargetPos = Lookups.GetComponentData<Transform>(snapTarget).m_Position;
+                                snapTargetPos = snapTargetTransform.m_Position;
                             }
                         }
                     }

@@ -110,9 +110,9 @@ namespace ClearTheWay
             // vehicles to a job that no longer exists - 96 redundant dispatches to 17 towed wrecks
             // in ten minutes (2026-10-11). Take it off again whenever it reappears; the same two
             // operations the hookup performs.
-            if (Lookups.HasComponent<Game.Simulation.MaintenanceConsumer>(wreck))
+            if (Lookups.TryGetComponent(wreck, out Game.Simulation.MaintenanceConsumer consumer))
             {
-                Entity staleRequest = Lookups.GetComponentData<Game.Simulation.MaintenanceConsumer>(wreck).m_Request;
+                Entity staleRequest = consumer.m_Request;
                 if (staleRequest != Entity.Null && EntityManager.Exists(staleRequest))
                 {
                     EntityManager.AddComponent<Deleted>(staleRequest);
@@ -351,12 +351,11 @@ namespace ClearTheWay
         /// </summary>
         public void KeepTruckReturning(Entity truck)
         {
-            if (!Lookups.HasComponent<Game.Vehicles.MaintenanceVehicle>(truck))
+            if (!Lookups.TryGetComponent(truck, out Game.Vehicles.MaintenanceVehicle m))
             {
                 return;
             }
             Entity prefab = Lookups.GetComponentData<PrefabRef>(truck).m_Prefab;
-            Game.Vehicles.MaintenanceVehicle m = Lookups.GetComponentData<Game.Vehicles.MaintenanceVehicle>(truck);
             if (m.m_TargetRequest != Entity.Null && EntityManager.Exists(m.m_TargetRequest))
             {
                 EntityManager.AddComponent<Deleted>(m.m_TargetRequest);
@@ -407,15 +406,15 @@ namespace ClearTheWay
                 // and a truck with no route home stood forever.
                 m_Ctx.PathFailingSince.Remove(truck);
             }
-            if (Lookups.HasBuffer<ServiceDispatch>(truck))
+            if (Lookups.TryGetBuffer(truck, out DynamicBuffer<ServiceDispatch> truckDispatches))
             {
-                Lookups.GetBuffer<ServiceDispatch>(truck).Clear();
+                truckDispatches.Clear();
             }
             // Steer back to the depot only if the game re-targeted the truck elsewhere (avoid churn).
-            if (Lookups.TryGetComponent(truck, out Owner truckOwner) && Lookups.HasComponent<Target>(truck))
+            if (Lookups.TryGetComponent(truck, out Owner truckOwner) && Lookups.TryGetComponent(truck, out Target truckTarget))
             {
                 Entity depot = truckOwner.m_Owner;
-                if (depot != Entity.Null && Lookups.GetComponentData<Target>(truck).m_Target != depot)
+                if (depot != Entity.Null && truckTarget.m_Target != depot)
                 {
                     Lookups.SetComponentData(truck, new Target(depot));
                     if (Lookups.TryGetComponent(truck, out PathOwner po))

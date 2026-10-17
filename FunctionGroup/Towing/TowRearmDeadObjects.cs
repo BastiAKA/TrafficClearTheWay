@@ -64,9 +64,9 @@ namespace ClearTheWay
             m_TowingTruckPos.Clear();
             foreach (Entity truck in m_TrucksWithLoad)
             {
-                if (EntityManager.Exists(truck) && Lookups.HasComponent<Transform>(truck))
+                if (EntityManager.Exists(truck) && Lookups.TryGetComponent(truck, out Transform truckTransform))
                 {
-                    m_TowingTruckPos.Add(Lookups.GetComponentData<Transform>(truck).m_Position);
+                    m_TowingTruckPos.Add(truckTransform.m_Position);
                 }
             }
 
@@ -78,9 +78,9 @@ namespace ClearTheWay
                     Entity relic = relics[i];
                     // A wreck whose Controller is a LIVE recovery truck is genuinely on a hook (or
                     // mid-hookup) - never re-arm that, regardless of distance.
-                    if (Lookups.HasComponent<Controller>(relic))
+                    if (Lookups.TryGetComponent(relic, out Controller relicController))
                     {
-                        Entity ctrl = Lookups.GetComponentData<Controller>(relic).m_Controller;
+                        Entity ctrl = relicController.m_Controller;
                         if (ctrl != relic && ctrl != Entity.Null && EntityManager.Exists(ctrl) &&
                             Lookups.HasComponent<MaintenanceVehicle>(ctrl))
                         {
@@ -133,9 +133,9 @@ namespace ClearTheWay
             {
                 EntityManager.RemoveComponent<Controller>(relic);
             }
-            if (Lookups.HasComponent<MaintenanceConsumer>(relic))
+            if (Lookups.TryGetComponent(relic, out MaintenanceConsumer consumer))
             {
-                Entity req = Lookups.GetComponentData<MaintenanceConsumer>(relic).m_Request;
+                Entity req = consumer.m_Request;
                 if (req != Entity.Null && EntityManager.Exists(req))
                 {
                     EntityManager.AddComponent<Deleted>(req);

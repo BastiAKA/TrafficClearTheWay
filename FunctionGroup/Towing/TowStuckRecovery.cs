@@ -277,14 +277,14 @@ namespace ClearTheWay
             if (setting.VerboseLogging)
             {
                 string where = string.Empty;
-                if (Lookups.HasComponent<Transform>(truck))
+                if (Lookups.TryGetComponent(truck, out Transform truckTransform))
                 {
-                    float3 p = Lookups.GetComponentData<Transform>(truck).m_Position;
+                    float3 p = truckTransform.m_Position;
                     where = $" pos=({p.x:F0},{p.z:F0})";
                     if (job != Entity.Null && EntityManager.Exists(job) &&
-                        Lookups.HasComponent<Transform>(job))
+                        Lookups.TryGetComponent(job, out Transform jobTransform))
                     {
-                        float3 t = Lookups.GetComponentData<Transform>(job).m_Position;
+                        float3 t = jobTransform.m_Position;
                         where += $" wreck={job.Index}@({t.x:F0},{t.z:F0}) dist={math.distance(p.xz, t.xz):F0}";
                     }
                     else if (job != Entity.Null)

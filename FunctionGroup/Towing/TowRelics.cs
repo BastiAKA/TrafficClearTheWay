@@ -80,9 +80,9 @@ namespace ClearTheWay
                             EntityManager.RemoveComponent<Controller>(relic);
                         }
                         // Drop any stale recovery request so DamagedVehicleSystem raises a fresh one.
-                        if (Lookups.HasComponent<Game.Simulation.MaintenanceConsumer>(relic))
+                        if (Lookups.TryGetComponent(relic, out Game.Simulation.MaintenanceConsumer consumer))
                         {
-                            Entity req = Lookups.GetComponentData<Game.Simulation.MaintenanceConsumer>(relic).m_Request;
+                            Entity req = consumer.m_Request;
                             if (req != Entity.Null && EntityManager.Exists(req))
                             {
                                 EntityManager.AddComponent<Deleted>(req);
@@ -173,12 +173,12 @@ namespace ClearTheWay
                 for (int i = 0; i < cars.Length; i++)
                 {
                     Entity car = cars[i];
-                    bool hasCtrl = Lookups.HasComponent<Controller>(car);
+                    bool hasCtrl = Lookups.TryGetComponent(car, out Controller carController);
                     bool ctrlIsRecovery = hasCtrl &&
-                        Lookups.GetComponentData<Controller>(car).m_Controller != car &&
-                        EntityManager.Exists(Lookups.GetComponentData<Controller>(car).m_Controller) &&
+                        carController.m_Controller != car &&
+                        EntityManager.Exists(carController.m_Controller) &&
                         Lookups.HasComponent<Game.Vehicles.MaintenanceVehicle>(
-                            Lookups.GetComponentData<Controller>(car).m_Controller);
+                            carController.m_Controller);
                     bool tow = Lookups.HasComponent<TowMarker>(car);
                     if (tow)
                     {
@@ -191,7 +191,7 @@ namespace ClearTheWay
                         logged++;
                         // Resolve the carrier so we understand WHY OrphanSweep leaves it: it only
                         // deletes when the carrier is gone or a parked recovery truck.
-                        Entity carrier = hasCtrl ? Lookups.GetComponentData<Controller>(car).m_Controller : Entity.Null;
+                        Entity carrier = hasCtrl ? carController.m_Controller : Entity.Null;
                         bool carrierExists = carrier != Entity.Null && carrier != car && EntityManager.Exists(carrier) &&
                             !Lookups.HasComponent<Deleted>(carrier);
                         bool carrierRecov = carrierExists && Lookups.HasComponent<Game.Vehicles.MaintenanceVehicle>(carrier);

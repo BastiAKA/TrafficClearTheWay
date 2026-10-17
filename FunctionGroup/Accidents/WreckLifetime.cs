@@ -55,10 +55,10 @@ namespace ClearTheWay.FunctionGroup.GeneralImprovements
                 }
                 uint trueAge = frame - originalInvolved;
                 stats.m_MaxWreckAge = math.max(stats.m_MaxWreckAge, trueAge);
-                bool destroyed = Lookups.HasComponent<Destroyed>(wreck);
+                bool destroyed = Lookups.TryGetComponent(wreck, out Destroyed wreckDestroyed);
                 if (destroyed) stats.m_Destroyed++;
                 bool cleared = destroyed &&
-                    Lookups.GetComponentData<Destroyed>(wreck).m_Cleared >= 1f;
+                    wreckDestroyed.m_Cleared >= 1f;
                 // Only touch settled (no longer Moving) wrecks so we never disturb the
                 // game's come-to-rest detection; skip already-cleared ones; stop once the
                 // wreck has genuinely waited longer than the cap. Bicycles/motorcycles
@@ -126,10 +126,9 @@ namespace ClearTheWay.FunctionGroup.GeneralImprovements
                         for (int b = 0; b < blockedLanes.Length; b++)
                         {
                             Entity blockedLane = blockedLanes[b].m_Lane;
-                            if (Lookups.HasComponent<Game.Net.CarLane>(blockedLane))
+                            if (Lookups.TryGetComponent(blockedLane, out Game.Net.CarLane carLane))
                             {
                                 carLanes++;
-                                Game.Net.CarLane carLane = Lookups.GetComponentData<Game.Net.CarLane>(blockedLane);
                                 if ((carLane.m_Flags & Game.Net.CarLaneFlags.IsSecured) == 0)
                                 {
                                     carLane.m_Flags |= Game.Net.CarLaneFlags.IsSecured;
@@ -161,9 +160,8 @@ namespace ClearTheWay.FunctionGroup.GeneralImprovements
                 // its velocity so the pile stays where it is and the game settles it.
                 if (setting.PreventAccidentDespawn &&
                     Lookups.HasComponent<OutOfControl>(wreck) &&
-                    Lookups.HasComponent<Moving>(wreck))
+                    Lookups.TryGetComponent(wreck, out Moving wreckMoving))
                 {
-                    Moving wreckMoving = Lookups.GetComponentData<Moving>(wreck);
                     if (math.lengthsq(wreckMoving.m_Velocity) < kWreckFreezeSpeed * kWreckFreezeSpeed &&
                         (math.lengthsq(wreckMoving.m_Velocity) > 0f || math.lengthsq(wreckMoving.m_AngularVelocity) > 0f))
                     {

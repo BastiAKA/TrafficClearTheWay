@@ -131,9 +131,9 @@ namespace ClearTheWay
         /// </summary>
         private void DeleteStranded(Entity w, uint strandedFor, Setting setting)
         {
-            if (Lookups.HasComponent<Controller>(w))
+            if (Lookups.TryGetComponent(w, out Controller wController))
             {
-                Entity carrier = Lookups.GetComponentData<Controller>(w).m_Controller;
+                Entity carrier = wController.m_Controller;
                 if (carrier != w && carrier != Entity.Null && EntityManager.Exists(carrier) &&
                     !Lookups.HasComponent<Deleted>(carrier) &&
                     Lookups.HasComponent<MaintenanceVehicle>(carrier))
@@ -174,9 +174,9 @@ namespace ClearTheWay
             string ctrlDesc = "none";
             int carrierIdx = 0;
             bool carrierLoad = false;
-            if (Lookups.HasComponent<Controller>(w))
+            if (Lookups.TryGetComponent(w, out Controller wController))
             {
-                Entity carrier = Lookups.GetComponentData<Controller>(w).m_Controller;
+                Entity carrier = wController.m_Controller;
                 carrierIdx = carrier.Index;
                 if (carrier == w)
                 {

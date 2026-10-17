@@ -64,20 +64,19 @@ namespace ClearTheWay
         public Entity ResolveVanJob(Entity van, out Entity request)
         {
             request = Entity.Null;
-            if (Lookups.HasComponent<Target>(van))
+            if (Lookups.TryGetComponent(van, out Target vanTarget))
             {
-                Entity target = Lookups.GetComponentData<Target>(van).m_Target;
+                Entity target = vanTarget.m_Target;
                 if (IsOpenWreck(target, out Entity targetRequest))
                 {
                     request = targetRequest;
                     return target;
                 }
             }
-            if (!Lookups.HasBuffer<ServiceDispatch>(van))
+            if (!Lookups.TryGetBuffer(van, out DynamicBuffer<ServiceDispatch> dispatches, isReadOnly: true))
             {
                 return Entity.Null;
             }
-            DynamicBuffer<ServiceDispatch> dispatches = Lookups.GetBuffer<ServiceDispatch>(van, isReadOnly: true);
             for (int i = 0; i < dispatches.Length; i++)
             {
                 Entity candidate = dispatches[i].m_Request;
@@ -138,11 +137,11 @@ namespace ClearTheWay
             if (wreck == Entity.Null || !EntityManager.Exists(wreck) ||
                 !Lookups.HasComponent<Game.Events.InvolvedInAccident>(wreck) ||
                 !Lookups.HasComponent<Transform>(wreck) ||
-                !Lookups.HasComponent<Game.Simulation.MaintenanceConsumer>(wreck))
+                !Lookups.TryGetComponent(wreck, out Game.Simulation.MaintenanceConsumer consumer))
             {
                 return false;
             }
-            request = Lookups.GetComponentData<Game.Simulation.MaintenanceConsumer>(wreck).m_Request;
+            request = consumer.m_Request;
             return request != Entity.Null && EntityManager.Exists(request) &&
                 Lookups.HasComponent<MaintenanceRequest>(request);
         }
@@ -222,9 +221,9 @@ namespace ClearTheWay
         {
             m_VanJob.Remove(van); // no longer serving a wreck this pass
             m_VanSentHome[van] = frame; // bar it from an instant re-grab by another wreck
-            if (Lookups.HasBuffer<ServiceDispatch>(van))
+            if (Lookups.TryGetBuffer(van, out DynamicBuffer<ServiceDispatch> vanDispatches))
             {
-                Lookups.GetBuffer<ServiceDispatch>(van).Clear();
+                vanDispatches.Clear();
             }
             Game.Vehicles.MaintenanceVehicle maintenance =
                 Lookups.GetComponentData<Game.Vehicles.MaintenanceVehicle>(van);

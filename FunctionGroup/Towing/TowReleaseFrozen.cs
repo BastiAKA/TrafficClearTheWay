@@ -69,9 +69,9 @@ namespace ClearTheWay
                         m_Seen.Add(car);
                         // A car whose Controller is a LIVE recovery truck is genuinely on a hook
                         // (or mid-hookup) - never touch that, whatever its damage state.
-                        if (Lookups.HasComponent<Controller>(car))
+                        if (Lookups.TryGetComponent(car, out Controller carController))
                         {
-                            Entity ctrl = Lookups.GetComponentData<Controller>(car).m_Controller;
+                            Entity ctrl = carController.m_Controller;
                             if (ctrl != car && ctrl != Entity.Null && EntityManager.Exists(ctrl) &&
                                 Lookups.HasComponent<Game.Vehicles.MaintenanceVehicle>(ctrl))
                             {
@@ -185,9 +185,9 @@ namespace ClearTheWay
             {
                 EntityManager.RemoveComponent<Controller>(car);
             }
-            if (Lookups.HasComponent<Game.Simulation.MaintenanceConsumer>(car))
+            if (Lookups.TryGetComponent(car, out Game.Simulation.MaintenanceConsumer consumer))
             {
-                Entity req = Lookups.GetComponentData<Game.Simulation.MaintenanceConsumer>(car).m_Request;
+                Entity req = consumer.m_Request;
                 if (req != Entity.Null && EntityManager.Exists(req))
                 {
                     EntityManager.AddComponent<Deleted>(req);
@@ -253,9 +253,9 @@ namespace ClearTheWay
             {
                 EntityManager.RemoveComponent<Controller>(car);
             }
-            if (Lookups.HasComponent<Game.Simulation.MaintenanceConsumer>(car))
+            if (Lookups.TryGetComponent(car, out Game.Simulation.MaintenanceConsumer consumer))
             {
-                Entity req = Lookups.GetComponentData<Game.Simulation.MaintenanceConsumer>(car).m_Request;
+                Entity req = consumer.m_Request;
                 if (req != Entity.Null && EntityManager.Exists(req))
                 {
                     EntityManager.AddComponent<Deleted>(req);
