@@ -57,6 +57,9 @@ Behaviour is unchanged from 0.1.13.2. This build is for measuring frame cost in 
 - Switches take effect on the next tick, no restart. Every change is written to the log with its frame, so a log can be split there and the two halves compared.
 - All switches are off by default and cost nothing while off. Leave them off for normal play.
 
+**Log format**
+- Numbers in Logs/ClearTheWay.log are now always written with a decimal point ("speed=69.4", "total=0.28ms"), whatever language the game runs in. On a German or French system they used to come out with a decimal comma, so logs from different players did not read the same.
+
 **What to report**
 Your ClearTheWay.log with one switch on (or "Measure all passes"), the city size, and roughly how many emergency vehicles and wrecks were on the map.
 	</ChangeLog>
