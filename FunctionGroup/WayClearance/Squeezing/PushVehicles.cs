@@ -39,8 +39,8 @@ namespace ClearTheWay.FunctionGroup.WayClearance.Squeezing
     /// </summary>
     internal sealed class PushVehicles
     {
-        // Main-thread profiling switch for this pass - see ModProfiler.
-        private static readonly bool kProfile = false;
+        // Main-thread profiling switch for this pass, set from the Performance options tab - see ModProfiler.
+        private static bool Profiling => ModProfiler.IsOn(ProfiledPass.PushVehicles);
 
         private readonly WayClearanceContext m_Ctx;
         private EntityManager EntityManager => m_Ctx.EntityManager;
@@ -59,7 +59,7 @@ namespace ClearTheWay.FunctionGroup.WayClearance.Squeezing
         /// has been stuck long enough simply asks for more (kDeepEvadeMeters).</param>
         public int PullCarsAside(Entity vehicle, CorridorLane corridorLane, uint frame, bool hardEvade, bool allowHold = true, bool drainAhead = false, bool shakeStuck = false, float evadeMeters = kEvadeMeters)
         {
-            using (ModProfiler.Sample(kProfile, "TrafficShaper.PullCarsAside"))
+            using (ModProfiler.Sample(Profiling, "TrafficShaper.PullCarsAside"))
             {
                 return PullCarsAsideImpl(vehicle, corridorLane, frame, hardEvade, allowHold, drainAhead, shakeStuck, evadeMeters);
             }

@@ -37,8 +37,8 @@ namespace ClearTheWay.FunctionGroup.WayClearance.Squeezing
     /// </summary>
     internal sealed class DesperateBehaviour
     {
-        // Main-thread profiling switch for this pass - see ModProfiler.
-        private static readonly bool kProfile = false;
+        // Main-thread profiling switch for this pass, set from the Performance options tab - see ModProfiler.
+        private static bool Profiling => ModProfiler.IsOn(ProfiledPass.DesperateBehaviour);
 
         private readonly WayClearanceContext m_Ctx;
         private EntityManager EntityManager => m_Ctx.EntityManager;
@@ -68,7 +68,7 @@ namespace ClearTheWay.FunctionGroup.WayClearance.Squeezing
         public int TryOncomingDisplacement(Entity vehicle, ref CarCurrentLane currentLane, float side, bool desperate, uint frame,
             out float oncomingClearAhead, out OncomingReason reason, out float nearestOffset)
         {
-            using (ModProfiler.Sample(kProfile, "DesperateBehaviour"))
+            using (ModProfiler.Sample(Profiling, "DesperateBehaviour"))
             {
                 return TryOncomingDisplacementImpl(vehicle, ref currentLane, side, desperate, frame,
                     out oncomingClearAhead, out reason, out nearestOffset);

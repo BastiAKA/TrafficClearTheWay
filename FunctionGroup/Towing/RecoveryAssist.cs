@@ -40,8 +40,8 @@ namespace ClearTheWay
     /// </summary>
     internal sealed class RecoveryAssist
     {
-        // Main-thread profiling switch for this pass - see ModProfiler.
-        private static readonly bool kProfile = false;
+        // Main-thread profiling switch for this pass, set from the Performance options tab - see ModProfiler.
+        private static bool Profiling => ModProfiler.IsOn(ProfiledPass.RecoveryAssist);
 
         private readonly EntityManager EntityManager;
         private readonly LaneGeometry m_Geometry;
@@ -185,7 +185,7 @@ namespace ClearTheWay
         /// </summary>
         public void ProcessAssistVehicle(Entity vehicle, float side, uint frame)
         {
-            using (ModProfiler.Sample(kProfile, "RecoveryAssist"))
+            using (ModProfiler.Sample(Profiling, "RecoveryAssist"))
             {
                 ProcessAssistVehicleImpl(vehicle, side, frame);
             }

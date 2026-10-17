@@ -34,8 +34,8 @@ namespace ClearTheWay.FunctionGroup.WayClearance.Squeezing.AtTarget
     /// </summary>
     internal sealed class ArrivalAssist
     {
-        // Main-thread profiling switch for this pass - see ModProfiler.
-        private static readonly bool kProfile = false;
+        // Main-thread profiling switch for this pass, set from the Performance options tab - see ModProfiler.
+        private static bool Profiling => ModProfiler.IsOn(ProfiledPass.ArrivalAssist);
 
         private readonly WayClearanceContext m_Ctx;
         private EntityManager EntityManager => m_Ctx.EntityManager;
@@ -65,7 +65,7 @@ namespace ClearTheWay.FunctionGroup.WayClearance.Squeezing.AtTarget
         /// </summary>
         public bool TryArrivalAssist(Entity vehicle, ref CarCurrentLane currentLane, float side, uint frame, out bool nearTarget)
         {
-            using (ModProfiler.Sample(kProfile, "ArrivalAssist"))
+            using (ModProfiler.Sample(Profiling, "ArrivalAssist"))
             {
                 return TryArrivalAssistImpl(vehicle, ref currentLane, side, frame, out nearTarget);
             }

@@ -26,7 +26,7 @@ namespace ClearTheWay.FunctionGroup.WayClearance.WayClearing.LanePathFinding
     /// </summary>
     internal sealed class M_LaneGeometry
     {
-        // No kProfile switch here on purpose: these are leaf queries called thousands of
+        // No profiling switch here on purpose: these are leaf queries called thousands of
         // times a tick, so timing each call would cost more than it measures. Their cost
         // belongs to - and shows up in - whichever pass is calling them.
         private readonly EntityManager EntityManager;

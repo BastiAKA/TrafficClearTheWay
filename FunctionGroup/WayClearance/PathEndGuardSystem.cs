@@ -45,8 +45,8 @@ namespace ClearTheWay
             CarLaneFlags.ParkingSpace | CarLaneFlags.Waypoint | CarLaneFlags.Connection | CarLaneFlags.Area;
         private const CarLaneFlags kPathEndValue = CarLaneFlags.EndOfPath | CarLaneFlags.EndReached;
 
-        // Main-thread profiling switch for this pass - see ModProfiler.
-        private static readonly bool kProfile = false;
+        // Main-thread profiling switch for this pass, set from the Performance options tab - see ModProfiler.
+        private static bool Profiling => ModProfiler.IsOn(ProfiledPass.PathEndGuard);
 
         private SimulationSystem m_SimulationSystem;
         private Game.Objects.SearchSystem m_ObjectSearchSystem;
@@ -84,11 +84,11 @@ namespace ClearTheWay
                 return;
             }
 
-            using (ModProfiler.Sample(kProfile, "PathEndGuardSystem"))
+            using (ModProfiler.Sample(Profiling, "PathEndGuardSystem"))
             {
                 RunGuard(setting);
             }
-            ModProfiler.EndTick(kProfile, "PathEndGuardSystem");
+            ModProfiler.EndTick(Profiling, "PathEndGuardSystem");
         }
 
         private void RunGuard(Setting setting)

@@ -131,15 +131,15 @@ namespace ClearTheWay
         // way (toggling StopPedestrians mid-session and comparing halves) instead of simply
         // being read off a [perf] line. It measured at ~10% of the tick, so it is exactly the
         // pass that needed one.
-        private static readonly bool kProfile = false;
+        private static bool Profiling => ModProfiler.IsOn(ProfiledPass.Pedestrians);
 
         protected override void OnUpdate()
         {
-            using (ModProfiler.Sample(kProfile, "Pedestrians"))
+            using (ModProfiler.Sample(Profiling, "Pedestrians"))
             {
                 RunPass();
             }
-            ModProfiler.EndTick(kProfile, "Pedestrians");
+            ModProfiler.EndTick(Profiling, "Pedestrians");
         }
 
         private void RunPass()

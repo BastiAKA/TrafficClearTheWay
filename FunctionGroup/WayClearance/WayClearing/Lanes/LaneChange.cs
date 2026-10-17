@@ -31,8 +31,8 @@ namespace ClearTheWay.FunctionGroup.WayClearance.WayClearing.LanePathFinding
     /// </summary>
     internal sealed class LaneChange
     {
-        // Main-thread profiling switch for this pass - see ModProfiler.
-        private static readonly bool kProfile = false;
+        // Main-thread profiling switch for this pass, set from the Performance options tab - see ModProfiler.
+        private static bool Profiling => ModProfiler.IsOn(ProfiledPass.LaneChange);
 
         private readonly WayClearanceContext m_Ctx;
         private EntityManager EntityManager => m_Ctx.EntityManager;
@@ -97,7 +97,7 @@ namespace ClearTheWay.FunctionGroup.WayClearance.WayClearing.LanePathFinding
 
         public bool TryOvertakeLaneChange(Entity vehicle, ref CarCurrentLane currentLane, uint frame, int turnHint, bool relaxDensity = false, float preferDir = 0f)
         {
-            using (ModProfiler.Sample(kProfile, "LaneChange"))
+            using (ModProfiler.Sample(Profiling, "LaneChange"))
             {
                 return TryOvertakeLaneChangeImpl(vehicle, ref currentLane, frame, turnHint, relaxDensity, preferDir);
             }

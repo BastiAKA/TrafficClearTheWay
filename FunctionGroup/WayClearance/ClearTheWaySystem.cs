@@ -160,12 +160,16 @@ namespace ClearTheWay
 
         // Main-thread profiling switch for this pass - see ModProfiler for how to use it.
         // Everything here runs on the sim thread, so a slow tick shows up as a frame-rate
-        // drop with CPU and GPU both idle. Flip to true, rebuild, read the [perf] lines.
-        private static readonly bool kProfile = false;
+        // drop with CPU and GPU both idle. Switch it on in the options, read the [perf] lines.
+        private static bool Profiling => ModProfiler.IsOn(ProfiledPass.MainSystem);
 
         protected override void OnUpdate()
         {
             Setting setting = Mod.Setting;
+            // The one place the profiling toggles are read: every pass in every system tests
+            // the same static mask, so a toggle takes effect within a tick. Before the Enabled
+            // check, so it still runs with the mod switched off.
+            ModProfiler.Refresh(setting, m_SimulationSystem.frameIndex);
             if (setting == null || !setting.Enabled)
             {
                 if (modContext.PushedCars.PushedCarCount != 0)
@@ -175,11 +179,11 @@ namespace ClearTheWay
                 return;
             }
 
-            using (ModProfiler.Sample(kProfile, "ClearTheWaySystem"))
+            using (ModProfiler.Sample(Profiling, "ClearTheWaySystem"))
             {
                 RunPass(setting);
             }
-            ModProfiler.EndTick(kProfile, "ClearTheWaySystem");
+            ModProfiler.EndTick(Profiling, "ClearTheWaySystem");
             ModProfiler.Report(m_SimulationSystem.frameIndex);
         }
 

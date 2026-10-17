@@ -22,8 +22,8 @@ namespace ClearTheWay
     /// </summary>
     public partial class ClearTheWayPostSystem : GameSystemBase
     {
-        // Main-thread profiling switch for this pass - see ModProfiler.
-        private static readonly bool kProfile = false;
+        // Main-thread profiling switch for this pass, set from the Performance options tab - see ModProfiler.
+        private static bool Profiling => ModProfiler.IsOn(ProfiledPass.PostSystem);
 
         private ClearTheWaySystem m_MainSystem;
         private TowHookupSystem m_HookupSystem;
@@ -180,11 +180,11 @@ namespace ClearTheWay
 
         protected override void OnUpdate()
         {
-            using (ModProfiler.Sample(kProfile, "ClearTheWayPostSystem"))
+            using (ModProfiler.Sample(Profiling, "ClearTheWayPostSystem"))
             {
                 RunPass();
             }
-            ModProfiler.EndTick(kProfile, "ClearTheWayPostSystem");
+            ModProfiler.EndTick(Profiling, "ClearTheWayPostSystem");
         }
 
         private void RunPass()

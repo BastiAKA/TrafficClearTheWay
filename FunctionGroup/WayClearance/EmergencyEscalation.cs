@@ -33,8 +33,8 @@ namespace ClearTheWay
     /// </summary>
     internal sealed class EmergencyEscalation
     {
-        // Main-thread profiling switch for this pass - see ModProfiler.
-        private static readonly bool kProfile = false;
+        // Main-thread profiling switch for this pass, set from the Performance options tab - see ModProfiler.
+        private static bool Profiling => ModProfiler.IsOn(ProfiledPass.EmergencyEscalation);
 
         private readonly WayClearanceContext m_Ctx;
         private EntityManager EntityManager => m_Ctx.EntityManager;
@@ -51,7 +51,7 @@ namespace ClearTheWay
 
         public void ProcessEmergencyVehicle(Entity vehicle, Setting setting, float side, uint frame)
         {
-            using (ModProfiler.Sample(kProfile, "EmergencyEscalation"))
+            using (ModProfiler.Sample(Profiling, "EmergencyEscalation"))
             {
                 ProcessEmergencyVehicleImpl(vehicle, setting, side, frame);
             }

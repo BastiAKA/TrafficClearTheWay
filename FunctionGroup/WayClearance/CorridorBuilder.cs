@@ -39,8 +39,8 @@ namespace ClearTheWay
     /// </summary>
     internal sealed class CorridorBuilder
     {
-        // Main-thread profiling switch for this pass - see ModProfiler.
-        private static readonly bool kProfile = false;
+        // Main-thread profiling switch for this pass, set from the Performance options tab - see ModProfiler.
+        private static bool Profiling => ModProfiler.IsOn(ProfiledPass.CorridorBuilder);
 
         private readonly WayClearanceContext m_Ctx;
         private EntityManager EntityManager => m_Ctx.EntityManager;
@@ -73,7 +73,7 @@ namespace ClearTheWay
         /// </summary>
         public void BuildCorridor(Entity vehicle, ref CarCurrentLane currentLane, Setting setting, float side, float emergencySpeed, bool desperate)
         {
-            using (ModProfiler.Sample(kProfile, "CorridorBuilder"))
+            using (ModProfiler.Sample(Profiling, "CorridorBuilder"))
             {
                 BuildCorridorImpl(vehicle, ref currentLane, setting, side, emergencySpeed, desperate);
             }

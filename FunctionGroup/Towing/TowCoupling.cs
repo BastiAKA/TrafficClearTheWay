@@ -32,8 +32,8 @@ namespace ClearTheWay
     /// </summary>
     internal sealed class TowCoupling
     {
-        // Main-thread profiling switch for this pass - see ModProfiler.
-        private static readonly bool kProfile = false;
+        // Main-thread profiling switch for this pass, set from the Performance options tab - see ModProfiler.
+        private static bool Profiling => ModProfiler.IsOn(ProfiledPass.TowCoupling);
 
         private readonly TowingContext m_Ctx;
         private EntityManager EntityManager => m_Ctx.EntityManager;
@@ -66,7 +66,7 @@ namespace ClearTheWay
 
         public void TryHookup(Entity truck, uint frame)
         {
-            using (ModProfiler.Sample(kProfile, "TowCoupling"))
+            using (ModProfiler.Sample(Profiling, "TowCoupling"))
             {
                 TryHookupImpl(truck, frame);
             }
