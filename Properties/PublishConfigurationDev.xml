@@ -37,7 +37,7 @@ Release version: https://mods.paradoxplaza.com/mods/151583/Windows
 	<!--Link to the forum post where the mod can be discussed-->
 	<ForumLink Value="" />
 	<!--Version of the mod-->
-	<ModVersion Value="0.1.14.0" />
+	<ModVersion Value="0.1.14.1" />
 	<!--Recommended version of the base game to use the mod-->
 	<GameVersion Value="1.6.*" />
 	<!--Dependency for the mod, can be set multiple times-->
@@ -46,28 +46,21 @@ Release version: https://mods.paradoxplaza.com/mods/151583/Windows
 	<RequiredDLC Value="" />
 	<!--Change log for new version. Single line or multi line. Supports minimal markdown subset-->
 	<ChangeLog>
-0.1.14.0 - tow trucks that drive home, and a cheaper main pass.
+0.1.14.1 - a tighter passing manoeuvre, and the performance timers off again.
 
-**Tow trucks no longer stand still after hooking a wreck**
-A loaded tow truck often stood still right after hooking its wreck, with the road ahead apparently free, and was removed about ten seconds later. That has been there since towing exists - it was not a rare case, it was the normal one:
-- An accident is almost always two cars. The truck arrives from behind, hooks the rear one, and the front one still stands on its lane. The game plans a returning vehicle's route around blocked lanes, so there was no way home at all, and our own safety net removed the truck.
-- The truck now gets a route that leads past the second wreck, pulls out beside it (away from it, or toward the centre line when it stands dead ahead), passes it and moves back into its lane once the wreck is behind it.
-- After a wreck has been towed away, the spot it stood on is released for the rest of the traffic. The game kept treating the lane as blocked until something else updated it.
+**Tow trucks passing a standing wreck**
+- A loaded tow truck now only starts pulling out to pass a wreck when it has stopped and the wreck stands right in front of it. In 0.1.14.0 a truck could start the manoeuvre for a wreck far ahead and then drive on for several hundred metres with its sideways offset.
+- The manoeuvre also ends as soon as the truck has moved well away from the wreck, for example because it turned off, instead of only once the wreck is behind it.
 
-**Performance**
-- Every component read in the mod was rebuilt around one cached lookup per component type instead of the game's general-purpose access. Measured in a city of about 570,000: pulling cars aside costs half as much per car, the main pass 18 to 40 percent less at comparable load.
+**Performance measurement off by default again**
+The timers in the Performance tab are switched off again by default. If you switched them on yourself, your choice is kept; "All off" turns them off.
 
-**Fixes**
-- An error message when the camera followed a tow truck the mod was removing.
-
-**Performance measurement is ON in this dev build**
-All timers in the Performance tab are switched on by default, including the new "Waiting for game jobs" (how long the mod waits for the game's own jobs, per component type). That costs a little frame time; "All off" turns everything off. The release build will have them off again.
+Everything else is as in 0.1.14.0: tow trucks drive home past the second wreck of an accident instead of being removed, the accident spot is released after towing, and the main pass is cheaper.
 
 **What to report**
-Logs/ClearTheWay.log, the city size, and roughly how many emergency vehicles and wrecks were on the map.
-- A tow truck that stands still with a wreck on its hook, or one that is removed. "[towpass]" lines show the truck passing a second wreck.
-- A truck that swings left and right beside a wreck instead of passing it.
-- Short regular stutters: please note the time, so they can be matched against the log.
+Logs/ClearTheWay.log, plus roughly where it happened.
+- A tow truck that stands still with a wreck on its hook, or one that is removed.
+- A tow truck driving along with a sideways offset away from any wreck.
 	</ChangeLog>
 	<!--External link, can be set multiple times. supported types are "discord", "github", "youtube", "twitch", "x", "paypal", "patreon", "buymeacoffee", "kofi", "crowdin", "gitlab", "gofundme"-->
 	<ExternalLink Type="github" Url="https://github.com/BastiAKA/TrafficClearTheWay" />

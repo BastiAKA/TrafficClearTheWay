@@ -244,7 +244,7 @@ namespace ClearTheWay
 
         /// <summary>Default of every profiling switch. TRUE only for dev-channel builds - flip to
         /// false before a release-page upload.</summary>
-        private const bool kDevPerfDefaults = true;
+        private const bool kDevPerfDefaults = false;
 
         public sealed override void SetDefaults()
         {
@@ -267,9 +267,8 @@ namespace ClearTheWay
             TowTruckPrefab = true; // dedicated tow-truck prefab + flatbed towing (on by default per Sebastian)
             VerboseLogging = false;
             WatchVehicle = "";
-            // DEV BUILD DEFAULTS (0.1.14.0 dev channel): every timer on, so testers' logs carry the
-            // [perf] lines without them having to find the tab. Costs a little frame time.
-            // MUST go back to false before the release-page upload (kDevPerfDefaults below).
+            // Profiling defaults come from kDevPerfDefaults: true only for a dev build that should
+            // ship with every timer on (0.1.14.0 did), false otherwise - always false on release.
             ShowProfiledPasses = kDevPerfDefaults;
             ProfileMainSystem = kDevPerfDefaults;
             ProfilePostSystem = kDevPerfDefaults;
