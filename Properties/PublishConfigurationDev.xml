@@ -37,7 +37,7 @@ Release version: https://mods.paradoxplaza.com/mods/151583/Windows
 	<!--Link to the forum post where the mod can be discussed-->
 	<ForumLink Value="" />
 	<!--Version of the mod-->
-	<ModVersion Value="0.1.13.2" />
+	<ModVersion Value="0.1.13.3" />
 	<!--Recommended version of the base game to use the mod-->
 	<GameVersion Value="1.6.*" />
 	<!--Dependency for the mod, can be set multiple times-->
@@ -46,37 +46,19 @@ Release version: https://mods.paradoxplaza.com/mods/151583/Windows
 	<RequiredDLC Value="" />
 	<!--Change log for new version. Single line or multi line. Supports minimal markdown subset-->
 	<ChangeLog>
-0.1.13.2 - recovery vehicles get rights of their own, and the accident pass gets cheap.
+0.1.13.3 - a performance measurement you can switch on in the options.
 
-**Recovery vehicles: a staged escalation**
-A tow truck or maintenance van on its way to a wreck drives like ordinary traffic until it is genuinely stuck. Then it escalates in steps:
-- After about 30 seconds without progress: a corridor, cars ahead pull aside, a traffic-light request, squeezing past, and changing lane around the jam.
-- After about a minute: the rights an ambulance has. Cars ahead clear fully onto the kerb, the light is switched to green outright, the queue ahead is pushed through the junction, and the oncoming lane may be used.
-- After about ten minutes without progress it stops disturbing traffic. What remains is the lane change and, as a last resort, clearing the single vehicle directly in front.
+Behaviour is unchanged from 0.1.13.2. This build is for measuring frame cost in your own city.
 
-Once earned, the rights are held until the vehicle has driven freely for 45 seconds, so stop-and-go traffic does not switch them on and off. A column of recovery vehicles queues behind its leader instead of fanning out across the road. Recovery vehicles also get the arrival help responders have: the last metres to a wreck are where a run used to stall.
-
-**Fixes found by playing this build**
-- "No progress" was measured against the previous tick, so the clock never reset: every recovery vehicle near its wreck counted as stuck after 30 seconds, moving or not. It is now measured from where the vehicle was when the clock started, and starts over when the vehicle is given a different wreck.
-- A truck that had hooked a wreck but had no usable route to its own depot stood where it was, forever, with nothing in front of it, asking for a new path several times a second. The way out of that existed, but its timer restarted on every retry and never ran out. It now fires after about ten seconds: the wreck goes back up for recovery, and a truck from a depot that does have a route can take it. Seen working on three wrecks in one session. The truck that could not get home is removed.
-- A truck taking a wreck on its hook starts the drive home with a clean lane state. The lane pin and the sideways offset from its approach used to be carried all the way to the depot.
-- The game files a new recovery request for a damaged vehicle every few seconds - including one that is already being towed. Vans were called to wrecks that were leaving on a hook, 96 times in ten minutes in one session. The request is now removed again while the wreck is in tow, and a vehicle still heading for a towed wreck is sent home.
-- The kerb-side lane change at a wreck was decided on every tick and never carried out for recovery vehicles. It is now.
-
-**Performance**
-- The accident pass went from roughly 1 ms per simulation tick to roughly 0.2 ms, measured with 6 to 20 wrecks on the map. Almost all of it was one check: a wreck that could not be moved aside was re-examined every tick, with a main-thread wait each time. It is now re-examined about once a second.
-- Cars near an accident are classified when the area is searched, not again on every tick.
-- The recovery assist looked at every maintenance vehicle in the city on every tick. It now looks only at the ones on a recovery run.
-- Measured on a city of 567,000: the main pass costs about 1.3 ms per simulation tick in ordinary play and about 1.7 ms with 20 wrecks on the map.
+**New: Performance tab in the mod options**
+- "All on" / "All off" switch every part of the mod at once. Measuring everything is good for an overview, and the most expensive setting.
+- "Show single passes" opens the list of single switches, one per part (main corridor pass, second pass, path-end guard, pedestrian hold, escalation chain, corridor builder, lane change, pulling cars aside, oncoming-lane logic, arrival assist, accident pass, recovery assist, tow coupling). Measure one at a time for clean numbers.
+- Every 300 simulation frames the mod writes [perf] lines to Logs/ClearTheWay.log: total time, number of calls, average and worst call, and the cost per tick.
+- Switches take effect on the next tick, no restart. Every change is written to the log with its frame, so a log can be split there and the two halves compared.
+- All switches are off by default and cost nothing while off. Leave them off for normal play.
 
 **What to report**
-Log with "Verbose logging" enabled, plus roughly where it happened.
-- A recovery vehicle forcing its way through where it clearly should not, or one that stays stuck for minutes in spite of it.
-- A wreck that is handed to one vehicle after another and never collected.
-- A loaded tow truck standing still with a free road ahead, or a wreck that is hooked and released again and again.
-- Known, not fixed: a road maintenance van that is not a tow truck can drive up to a wreck it cannot tow and wait beside it, with full rights, until the wreck times out.
-- Frame rate in a big city, particularly compared with 0.1.13.1.
-- Still unconfirmed in play: the crossing guard from 0.1.13.0. A responder waiting behind a busy zebra is exactly the case to send.
+Your ClearTheWay.log with one switch on (or "Measure all passes"), the city size, and roughly how many emergency vehicles and wrecks were on the map.
 	</ChangeLog>
 	<!--External link, can be set multiple times. supported types are "discord", "github", "youtube", "twitch", "x", "paypal", "patreon", "buymeacoffee", "kofi", "crowdin", "gitlab", "gofundme"-->
 	<ExternalLink Type="github" Url="https://github.com/BastiAKA/TrafficClearTheWay" />
