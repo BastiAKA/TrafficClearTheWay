@@ -751,11 +751,14 @@ namespace ClearTheWay
             }
         }
 
-        /// <summary>Deletes a vehicle the way the towing passes do: a Moving-less entity that still
-        /// carries a Game.Simulation.UpdateFrame null-derefs UpdateGroupSystem, so strip it first.</summary>
+        /// <summary>Deletes a vehicle the way the towing passes do (TowingContext.SafeDelete): a
+        /// Moving-less entity that still carries a Game.Simulation.UpdateFrame null-derefs
+        /// UpdateGroupSystem, so it is stripped there - and ONLY there: a driving vehicle keeps it,
+        /// or a selected / camera-followed one throws in SelectedInfoUISystem.</summary>
         private void SafeDelete(Entity entity)
         {
-            if (EntityManager.HasComponent<Game.Simulation.UpdateFrame>(entity))
+            if (!Lookups.HasComponent<Moving>(entity) &&
+                EntityManager.HasComponent<Game.Simulation.UpdateFrame>(entity))
             {
                 EntityManager.RemoveComponent<Game.Simulation.UpdateFrame>(entity);
             }
