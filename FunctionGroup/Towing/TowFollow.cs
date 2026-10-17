@@ -324,11 +324,10 @@ namespace ClearTheWay
         /// </summary>
         private void ReleaseLanePins(Entity truck, Setting setting)
         {
-            if (!Lookups.HasComponent<CarCurrentLane>(truck))
+            if (!Lookups.TryGetComponent(truck, out CarCurrentLane lane))
             {
                 return;
             }
-            CarCurrentLane lane = Lookups.GetComponentData<CarCurrentLane>(truck);
             float oldPos = lane.m_LanePosition;
             bool wasPinned = (lane.m_LaneFlags & Game.Vehicles.CarLaneFlags.FixedLane) != 0;
             lane.m_LaneFlags &= ~Game.Vehicles.CarLaneFlags.FixedLane;
@@ -420,9 +419,8 @@ namespace ClearTheWay
                 if (depot != Entity.Null && Lookups.GetComponentData<Target>(truck).m_Target != depot)
                 {
                     Lookups.SetComponentData(truck, new Target(depot));
-                    if (Lookups.HasComponent<PathOwner>(truck))
+                    if (Lookups.TryGetComponent(truck, out PathOwner po))
                     {
-                        PathOwner po = Lookups.GetComponentData<PathOwner>(truck);
                         po.m_State |= PathFlags.Obsolete; // re-path home
                         Lookups.SetComponentData(truck, po);
                     }
@@ -461,9 +459,8 @@ namespace ClearTheWay
                 return; // rolling along - nothing to explain
             }
             string blockerInfo = "none";
-            if (Lookups.HasComponent<Blocker>(truck))
+            if (Lookups.TryGetComponent(truck, out Blocker b))
             {
-                Blocker b = Lookups.GetComponentData<Blocker>(truck);
                 if (b.m_Blocker != Entity.Null && EntityManager.Exists(b.m_Blocker))
                 {
                     float bspeed = Lookups.TryGetComponent(b.m_Blocker, out Moving blockerMoving)

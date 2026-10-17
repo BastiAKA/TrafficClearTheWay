@@ -188,9 +188,8 @@ namespace ClearTheWay.FunctionGroup.WayClearance.Squeezing
             float nearestAhead = float.MaxValue;
             float length = math.max(1f, bestCurve.m_Length);
             float paramSign = math.dot(math.normalizesafe(MathUtils.Tangent(bestCurve.m_Bezier, bestS).xz), travelDir) < 0f ? -1f : 1f;
-            if (Lookups.HasBuffer<LaneObject>(bestLane))
+            if (Lookups.TryGetBuffer(bestLane, out DynamicBuffer<LaneObject> laneObjects, isReadOnly: true))
             {
-                DynamicBuffer<LaneObject> laneObjects = Lookups.GetBuffer<LaneObject>(bestLane, isReadOnly: true);
                 for (int i = 0; i < laneObjects.Length; i++)
                 {
                     float2 range = laneObjects[i].m_CurvePosition;

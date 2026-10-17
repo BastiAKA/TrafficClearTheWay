@@ -697,11 +697,10 @@ namespace ClearTheWay
                 // Skip a rig mid lane-change: forcing Obsolete on a foreign car while m_ChangeLane
                 // is set risks dangling it in the change lane's LaneObject buffer (see
                 // EmergencyEscalation.TryReleaseLeadBlocker for the full reasoning).
-                if (!Lookups.HasComponent<CarCurrentLane>(head))
+                if (!Lookups.TryGetComponent(head, out CarCurrentLane headLane))
                 {
                     return;
                 }
-                CarCurrentLane headLane = Lookups.GetComponentData<CarCurrentLane>(head);
                 if (headLane.m_ChangeLane != Entity.Null)
                 {
                     return;
@@ -728,9 +727,8 @@ namespace ClearTheWay
             }
 
             int parts = 0;
-            if (Lookups.HasBuffer<LayoutElement>(head))
+            if (Lookups.TryGetBuffer(head, out DynamicBuffer<LayoutElement> layout, isReadOnly: true))
             {
-                DynamicBuffer<LayoutElement> layout = Lookups.GetBuffer<LayoutElement>(head, isReadOnly: true);
                 for (int i = 0; i < layout.Length; i++)
                 {
                     Entity part = layout[i].m_Vehicle;
@@ -783,9 +781,8 @@ namespace ClearTheWay
             bool ignore = (lane.m_LaneFlags & CarLaneFlags.IgnoreBlocker) != 0;
 
             string blockerInfo = "none";
-            if (Lookups.HasComponent<Blocker>(vehicle))
+            if (Lookups.TryGetComponent(vehicle, out Blocker b))
             {
-                Blocker b = Lookups.GetComponentData<Blocker>(vehicle);
                 Entity be = b.m_Blocker;
                 if (be != Entity.Null && EntityManager.Exists(be))
                 {

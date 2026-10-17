@@ -222,9 +222,8 @@ namespace ClearTheWay
             // into a building connection and the car evaporates mid-drive. This
             // guard runs right before the vehicle AIs, closing the same-frame
             // window the main pass (pre-navigation) cannot cover.
-            if (Lookups.HasComponent<PathOwner>(other))
+            if (Lookups.TryGetComponent(other, out PathOwner po))
             {
-                PathOwner po = Lookups.GetComponentData<PathOwner>(other);
                 stats.pathOr |= (uint)po.m_State;
                 if ((po.m_State & PathFlags.Pending) != 0) stats.nPending++;
                 if ((po.m_State & (PathFlags.Stuck | PathFlags.Failed |

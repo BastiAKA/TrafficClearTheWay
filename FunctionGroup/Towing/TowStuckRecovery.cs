@@ -122,11 +122,10 @@ namespace ClearTheWay
                         // here), not a footway, not the master lane of a group.
                         if (!Lookups.HasComponent<Game.Net.CarLane>(lane) ||
                             Lookups.HasComponent<Game.Net.MasterLane>(lane) ||
-                            !Lookups.HasComponent<Curve>(lane))
+                            !Lookups.TryGetComponent(lane, out Curve laneCurve))
                         {
                             continue;
                         }
-                        Curve laneCurve = Lookups.GetComponentData<Curve>(lane);
                         if (MathUtils.Distance(laneCurve.m_Bezier, pos, out float _) <= kTowOnRoadMeters)
                         {
                             return true;

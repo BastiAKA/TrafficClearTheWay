@@ -154,9 +154,8 @@ namespace ClearTheWay
             Game.Vehicles.MaintenanceVehicle maintenance =
                 Lookups.GetComponentData<Game.Vehicles.MaintenanceVehicle>(van);
             bool changed = false;
-            if (Lookups.HasBuffer<ServiceDispatch>(van))
+            if (Lookups.TryGetBuffer(van, out DynamicBuffer<ServiceDispatch> dispatches))
             {
-                DynamicBuffer<ServiceDispatch> dispatches = Lookups.GetBuffer<ServiceDispatch>(van);
                 int accepted = math.min(maintenance.m_RequestCount, dispatches.Length);
                 for (int i = 1; i < dispatches.Length; i++)
                 {
@@ -248,9 +247,8 @@ namespace ClearTheWay
 
         public void Repath(Entity vehicle)
         {
-            if (Lookups.HasComponent<PathOwner>(vehicle))
+            if (Lookups.TryGetComponent(vehicle, out PathOwner pathOwner))
             {
-                PathOwner pathOwner = Lookups.GetComponentData<PathOwner>(vehicle);
                 pathOwner.m_State |= PathFlags.Obsolete;
                 Lookups.SetComponentData(vehicle, pathOwner);
             }

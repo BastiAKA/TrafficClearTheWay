@@ -199,9 +199,8 @@ namespace ClearTheWay
                     }
                 }
 
-                if (Lookups.HasComponent<Curve>(navLane.m_Lane))
+                if (Lookups.TryGetComponent(navLane.m_Lane, out Curve curve))
                 {
-                    Curve curve = Lookups.GetComponentData<Curve>(navLane.m_Lane);
                     distance += curve.m_Length * math.abs(navLane.m_CurvePosition.y - navLane.m_CurvePosition.x);
                 }
 
@@ -261,14 +260,12 @@ namespace ClearTheWay
         /// </summary>
         public void AddCounterEvadeNeighbor(Entity lane, float minPos, float side, bool inverted, float startOffset, float pushDirection)
         {
-            if (!Lookups.HasComponent<SlaveLane>(lane) ||
-                !Lookups.HasComponent<Owner>(lane) ||
+            if (!Lookups.TryGetComponent(lane, out SlaveLane slaveLane) ||
+                !Lookups.TryGetComponent(lane, out Owner owner) ||
                 !Lookups.HasComponent<Game.Net.CarLane>(lane))
             {
                 return;
             }
-            SlaveLane slaveLane = Lookups.GetComponentData<SlaveLane>(lane);
-            Owner owner = Lookups.GetComponentData<Owner>(lane);
             if (!Lookups.HasBuffer<Game.Net.SubLane>(owner.m_Owner))
             {
                 return;

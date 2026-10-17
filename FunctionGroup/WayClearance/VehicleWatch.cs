@@ -101,9 +101,8 @@ namespace ClearTheWay
                 ? math.length(eMoving.m_Velocity) : 0f;
 
             string lane = "lane=-";
-            if (Lookups.HasComponent<CarCurrentLane>(e))
+            if (Lookups.TryGetComponent(e, out CarCurrentLane cl))
             {
-                CarCurrentLane cl = Lookups.GetComponentData<CarCurrentLane>(e);
                 lane = $"lane={cl.m_Lane.Index} curve=({cl.m_CurvePosition.x:F2},{cl.m_CurvePosition.y:F2},{cl.m_CurvePosition.z:F2}) " +
                     $"lanePos={cl.m_LanePosition:F2} laneFlags={(uint)cl.m_LaneFlags:X} " +
                     $"obsolete={((cl.m_LaneFlags & CarLaneFlags.Obsolete) != 0 ? 1 : 0)} " +
@@ -131,9 +130,8 @@ namespace ClearTheWay
             }
 
             string blk = "blocker=-";
-            if (Lookups.HasComponent<Blocker>(e))
+            if (Lookups.TryGetComponent(e, out Blocker b))
             {
-                Blocker b = Lookups.GetComponentData<Blocker>(e);
                 blk = $"blocker={b.m_Blocker.Index} type={b.m_Type}";
             }
 

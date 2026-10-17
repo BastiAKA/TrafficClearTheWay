@@ -142,9 +142,8 @@ namespace ClearTheWay
                 }
             }
             int members = 0;
-            if (Lookups.HasBuffer<LayoutElement>(w))
+            if (Lookups.TryGetBuffer(w, out DynamicBuffer<LayoutElement> layout, isReadOnly: true))
             {
-                DynamicBuffer<LayoutElement> layout = Lookups.GetBuffer<LayoutElement>(w, isReadOnly: true);
                 for (int i = 0; i < layout.Length; i++)
                 {
                     Entity member = layout[i].m_Vehicle;

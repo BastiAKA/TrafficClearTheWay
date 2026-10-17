@@ -61,9 +61,8 @@ namespace ClearTheWay.FunctionGroup.WayClearance.WayClearing
             }
             // We force these cars to stand - protect them from the game's stuck-vehicle
             // detection, which would otherwise despawn held traffic around the corridor.
-            if (Lookups.HasComponent<PathOwner>(other))
+            if (Lookups.TryGetComponent(other, out PathOwner pathOwner))
             {
-                PathOwner pathOwner = Lookups.GetComponentData<PathOwner>(other);
                 if ((pathOwner.m_State & PathFlags.Stuck) != 0)
                 {
                     pathOwner.m_State &= ~PathFlags.Stuck;

@@ -91,9 +91,8 @@ namespace ClearTheWay
                         }
                         // Un-clear a Destroyed wreck so DamagedVehicleSystem requests recovery again
                         // (it removes the consumer while m_Cleared >= 1).
-                        if (Lookups.HasComponent<Destroyed>(relic))
+                        if (Lookups.TryGetComponent(relic, out Destroyed d))
                         {
-                            Destroyed d = Lookups.GetComponentData<Destroyed>(relic);
                             d.m_Cleared = 0f;
                             Lookups.SetComponentData(relic, d);
                         }

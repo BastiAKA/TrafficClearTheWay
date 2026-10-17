@@ -129,14 +129,12 @@ namespace ClearTheWay.FunctionGroup.WayClearance.WayClearing.LanePathFinding
         public bool IsEvadeSideBlocked(Entity vehicle, CarCurrentLane currentLane, float side)
         {
             Entity lane = currentLane.m_Lane;
-            if (!Lookups.HasComponent<SlaveLane>(lane) ||
-                !Lookups.HasComponent<Owner>(lane) ||
+            if (!Lookups.TryGetComponent(lane, out SlaveLane slaveLane) ||
+                !Lookups.TryGetComponent(lane, out Owner owner) ||
                 !Lookups.HasComponent<Game.Net.CarLane>(lane))
             {
                 return false; // no lane group (single-lane road): leave the normal logic alone
             }
-            SlaveLane slaveLane = Lookups.GetComponentData<SlaveLane>(lane);
-            Owner owner = Lookups.GetComponentData<Owner>(lane);
             if (!Lookups.HasBuffer<Game.Net.SubLane>(owner.m_Owner))
             {
                 return false;

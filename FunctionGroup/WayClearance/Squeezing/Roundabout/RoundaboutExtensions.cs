@@ -49,11 +49,10 @@ namespace ClearTheWay.FunctionGroup.WayClearance.Squeezing.Roundabout
         public bool TryAddRing(Entity lane, float minPos, float side, bool inverted, float startOffset)
         {
             if (!Lookups.HasComponent<Game.Net.CarLane>(lane) ||
-                !Lookups.HasComponent<Owner>(lane))
+                !Lookups.TryGetComponent(lane, out Owner owner))
             {
                 return false;
             }
-            Owner owner = Lookups.GetComponentData<Owner>(lane);
             if (!Lookups.HasBuffer<Game.Net.SubLane>(owner.m_Owner))
             {
                 return false;

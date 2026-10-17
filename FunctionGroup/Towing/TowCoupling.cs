@@ -219,9 +219,8 @@ namespace ClearTheWay
             // trimmed to the wreck itself: a Deleted entity left inside a LayoutElement
             // buffer is exactly the dangling-reference crash from the wreck-as-trailer
             // branch (CarTrailerMoveSystem reads members' prefabs unguarded).
-            if (Lookups.HasBuffer<LayoutElement>(wreck))
+            if (Lookups.TryGetBuffer(wreck, out DynamicBuffer<LayoutElement> wreckLayout))
             {
-                DynamicBuffer<LayoutElement> wreckLayout = Lookups.GetBuffer<LayoutElement>(wreck);
                 for (int i = 0; i < wreckLayout.Length; i++)
                 {
                     Entity member = wreckLayout[i].m_Vehicle;
@@ -288,15 +287,13 @@ namespace ClearTheWay
             // the AI's "Returning + path end => despawn" branch cannot fire at the wreck.
             Entity depot = Lookups.GetComponentData<Owner>(truck).m_Owner;
             Lookups.SetComponentData(truck, new Target(depot));
-            if (Lookups.HasComponent<CarCurrentLane>(truck))
+            if (Lookups.TryGetComponent(truck, out CarCurrentLane truckLane))
             {
-                CarCurrentLane truckLane = Lookups.GetComponentData<CarCurrentLane>(truck);
                 truckLane.m_LaneFlags &= ~(CarLaneFlags.EndOfPath | CarLaneFlags.EndReached);
                 Lookups.SetComponentData(truck, truckLane);
             }
-            if (Lookups.HasComponent<PathOwner>(truck))
+            if (Lookups.TryGetComponent(truck, out PathOwner pathOwner))
             {
-                PathOwner pathOwner = Lookups.GetComponentData<PathOwner>(truck);
                 pathOwner.m_State &= ~(PathFlags.Failed | PathFlags.Stuck);
                 pathOwner.m_State |= PathFlags.Obsolete;
                 Lookups.SetComponentData(truck, pathOwner);

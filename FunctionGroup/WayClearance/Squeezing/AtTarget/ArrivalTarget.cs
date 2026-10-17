@@ -95,9 +95,8 @@ namespace ClearTheWay.FunctionGroup.WayClearance.Squeezing.AtTarget
         /// </summary>
         public bool RouteEndsOffStreet(Entity vehicle)
         {
-            if (Lookups.HasBuffer<CarNavigationLane>(vehicle))
+            if (Lookups.TryGetBuffer(vehicle, out DynamicBuffer<CarNavigationLane> navLanes, isReadOnly: true))
             {
-                DynamicBuffer<CarNavigationLane> navLanes = Lookups.GetBuffer<CarNavigationLane>(vehicle, isReadOnly: true);
                 for (int i = 0; i < navLanes.Length; i++)
                 {
                     if ((navLanes[i].m_Flags & (CarLaneFlags.ParkingSpace | CarLaneFlags.Area | CarLaneFlags.TransformTarget)) != 0 ||
@@ -148,11 +147,10 @@ namespace ClearTheWay.FunctionGroup.WayClearance.Squeezing.AtTarget
             }
             if (!Lookups.HasComponent<SlaveLane>(currentLane.m_Lane) ||
                 !Lookups.HasComponent<Owner>(currentLane.m_Lane) ||
-                !Lookups.HasComponent<Curve>(currentLane.m_Lane))
+                !Lookups.TryGetComponent(currentLane.m_Lane, out Curve curve))
             {
                 return false;
             }
-            Curve curve = Lookups.GetComponentData<Curve>(currentLane.m_Lane);
             bool inverted = currentLane.m_CurvePosition.z < currentLane.m_CurvePosition.x;
             // Enough lane left to physically swing over at creep speed; shorter than the
             // overtake minimum on purpose - this is a low-speed maneuver right at the scene.

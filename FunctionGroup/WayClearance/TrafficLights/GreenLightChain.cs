@@ -127,11 +127,10 @@ namespace ClearTheWay.FunctionGroup.WayClearance.TrafficLights
             {
                 Request request = m_Pending[i];
                 if (!EntityManager.Exists(request.m_Lane) ||
-                    !Lookups.HasComponent<LaneSignal>(request.m_Lane))
+                    !Lookups.TryGetComponent(request.m_Lane, out LaneSignal signal))
                 {
                     continue; // lane went away between the decision and this write
                 }
-                LaneSignal signal = Lookups.GetComponentData<LaneSignal>(request.m_Lane);
                 bool write = false;
                 if (signal.m_Priority < request.m_Priority)
                 {

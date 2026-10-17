@@ -69,11 +69,10 @@ namespace ClearTheWay.FunctionGroup.WayClearance.Squeezing
             }
             if (!Lookups.HasComponent<SlaveLane>(blockerLane.m_Lane) ||
                 !Lookups.HasComponent<Owner>(blockerLane.m_Lane) ||
-                !Lookups.HasComponent<Curve>(blockerLane.m_Lane))
+                !Lookups.TryGetComponent(blockerLane.m_Lane, out Curve curve))
             {
                 return false;
             }
-            Curve curve = Lookups.GetComponentData<Curve>(blockerLane.m_Lane);
             bool inverted = blockerLane.m_CurvePosition.z < blockerLane.m_CurvePosition.x;
             if (curve.m_Length * math.abs(blockerLane.m_CurvePosition.z - blockerLane.m_CurvePosition.x) < kOvertakeMinRemaining)
             {
@@ -226,9 +225,8 @@ namespace ClearTheWay.FunctionGroup.WayClearance.Squeezing
             // Known-aside state only exists for cars with lane data; trailers and parked
             // vehicles rely on the measured separation alone.
             bool aside = false;
-            if (Lookups.HasComponent<CarCurrentLane>(blockingEntity))
+            if (Lookups.TryGetComponent(blockingEntity, out CarCurrentLane blockerLane))
             {
-                CarCurrentLane blockerLane = Lookups.GetComponentData<CarCurrentLane>(blockingEntity);
                 aside = math.abs(blockerLane.m_LanePosition) >= kMinAsidePosition ||
                         blockerLane.m_ChangeLane != Entity.Null;
             }

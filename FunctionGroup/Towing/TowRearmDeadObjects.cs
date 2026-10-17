@@ -142,9 +142,8 @@ namespace ClearTheWay
                 }
                 EntityManager.RemoveComponent<MaintenanceConsumer>(relic);
             }
-            if (Lookups.HasComponent<Destroyed>(relic))
+            if (Lookups.TryGetComponent(relic, out Destroyed d))
             {
-                Destroyed d = Lookups.GetComponentData<Destroyed>(relic);
                 d.m_Cleared = 0f;
                 Lookups.SetComponentData(relic, d);
             }

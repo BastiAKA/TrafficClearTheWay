@@ -288,9 +288,8 @@ namespace ClearTheWay.FunctionGroup.WayClearance.Squeezing.AtTarget
             {
                 Lookups.GetBuffer<CarNavigationLane>(vehicle).Clear();
             }
-            if (Lookups.HasComponent<PathOwner>(vehicle))
+            if (Lookups.TryGetComponent(vehicle, out PathOwner pathOwner))
             {
-                PathOwner pathOwner = Lookups.GetComponentData<PathOwner>(vehicle);
                 pathOwner.m_ElementIndex = 0;
                 pathOwner.m_State &= ~(PathFlags.Obsolete | PathFlags.DivertObsolete);
                 Lookups.SetComponentData(vehicle, pathOwner);

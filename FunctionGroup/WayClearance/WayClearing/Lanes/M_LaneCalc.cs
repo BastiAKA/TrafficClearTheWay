@@ -45,12 +45,11 @@ namespace ClearTheWay.FunctionGroup.WayClearance.WayClearing.LanePathFinding
         {
             target = default;
             rotation = quaternion.identity;
-            if (!Lookups.HasComponent<Curve>(lane.m_Lane) ||
+            if (!Lookups.TryGetComponent(lane.m_Lane, out Curve curve) ||
                 !Lookups.HasComponent<Transform>(entity))
             {
                 return false;
             }
-            Curve curve = Lookups.GetComponentData<Curve>(lane.m_Lane);
             float length = math.max(1f, curve.m_Length);
             bool inverted = lane.m_CurvePosition.z < lane.m_CurvePosition.x;
             // m_LanePosition is stored in the driving frame; flip into curve frame when

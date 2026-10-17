@@ -34,11 +34,10 @@ namespace ClearTheWay
         public static bool Shield(Dictionary<Entity, uint> retryFrames,
             Entity vehicle, uint frame)
         {
-            if (!Lookups.HasComponent<PathOwner>(vehicle))
+            if (!Lookups.TryGetComponent(vehicle, out PathOwner pathOwner))
             {
                 return false;
             }
-            PathOwner pathOwner = Lookups.GetComponentData<PathOwner>(vehicle);
             if ((pathOwner.m_State & (PathFlags.Failed | PathFlags.Stuck)) == 0)
             {
                 // Healthy: forget it, so the next failure counts as a first one and is repathed

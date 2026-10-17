@@ -125,20 +125,18 @@ namespace ClearTheWay.FunctionGroup.WayClearance.WayClearing.LanePathFinding
             }
             Entity axisLane = currentLane.m_Lane;
             float axisPosition = currentLane.m_CurvePosition.x;
-            if (Lookups.HasComponent<CarCurrentLane>(blockingEntity))
+            if (Lookups.TryGetComponent(blockingEntity, out CarCurrentLane blockerLane))
             {
-                CarCurrentLane blockerLane = Lookups.GetComponentData<CarCurrentLane>(blockingEntity);
                 if (Lookups.HasComponent<Curve>(blockerLane.m_Lane))
                 {
                     axisLane = blockerLane.m_Lane;
                     axisPosition = blockerLane.m_CurvePosition.x;
                 }
             }
-            if (!Lookups.HasComponent<Curve>(axisLane))
+            if (!Lookups.TryGetComponent(axisLane, out Curve curve))
             {
                 return 0f;
             }
-            Curve curve = Lookups.GetComponentData<Curve>(axisLane);
             float2 tangent = math.normalizesafe(MathUtils.Tangent(curve.m_Bezier, axisPosition).xz);
             float2 right = MathUtils.Right(tangent);
             float3 vehiclePos = Lookups.GetComponentData<Transform>(vehicle).m_Position;

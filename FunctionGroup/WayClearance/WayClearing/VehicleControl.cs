@@ -115,11 +115,10 @@ namespace ClearTheWay.FunctionGroup.WayClearance.WayClearing
         /// </summary>
         public void ClearStuck(Entity entity)
         {
-            if (!Lookups.HasComponent<PathOwner>(entity))
+            if (!Lookups.TryGetComponent(entity, out PathOwner pathOwner))
             {
                 return;
             }
-            PathOwner pathOwner = Lookups.GetComponentData<PathOwner>(entity);
             if ((pathOwner.m_State & PathFlags.Stuck) != 0)
             {
                 pathOwner.m_State &= ~PathFlags.Stuck;
@@ -135,11 +134,10 @@ namespace ClearTheWay.FunctionGroup.WayClearance.WayClearing
         /// </summary>
         public void ClearStuckAndFailed(Entity entity)
         {
-            if (!Lookups.HasComponent<PathOwner>(entity))
+            if (!Lookups.TryGetComponent(entity, out PathOwner pathOwner))
             {
                 return;
             }
-            PathOwner pathOwner = Lookups.GetComponentData<PathOwner>(entity);
             if ((pathOwner.m_State & (PathFlags.Stuck | PathFlags.Failed)) != 0)
             {
                 pathOwner.m_State &= ~(PathFlags.Stuck | PathFlags.Failed);

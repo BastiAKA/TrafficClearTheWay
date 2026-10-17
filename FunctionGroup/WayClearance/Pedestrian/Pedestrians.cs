@@ -310,11 +310,10 @@ namespace ClearTheWay
             // but Transform, so everything the responder has already driven past now costs one
             // lookup instead of nine. Order only, no behavioural change: every occupant that
             // survived to here before still survives to here now.
-            if (!Lookups.HasComponent<Transform>(pedestrian))
+            if (!Lookups.TryGetComponent(pedestrian, out Transform transform))
             {
                 return false;
             }
-            Transform transform = Lookups.GetComponentData<Transform>(pedestrian);
             if (math.dot(transform.m_Position - vehiclePos, vehicleForward) < kBehindRange)
             {
                 return false;

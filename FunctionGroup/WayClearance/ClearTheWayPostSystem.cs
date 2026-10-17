@@ -101,14 +101,13 @@ namespace ClearTheWay
                     // Gone or parked: drop it and take the beacon back off. Nothing else ever
                     // clears the flag, so a truck that parked between scans must not keep
                     // flashing on the depot apron until the next one.
-                    if (!EntityManager.Exists(vehicle) || !Lookups.HasComponent<Car>(vehicle) ||
+                    if (!EntityManager.Exists(vehicle) || !Lookups.TryGetComponent(vehicle, out Car onDutyCar) ||
                         Lookups.HasComponent<Game.Vehicles.ParkedCar>(vehicle))
                     {
                         m_OnRecoveryDuty.Remove(vehicle);
                         ClearBeacon(vehicle);
                         continue;
                     }
-                    Car onDutyCar = Lookups.GetComponentData<Car>(vehicle);
                     if ((onDutyCar.m_Flags & CarFlags.Warning) == 0)
                     {
                         onDutyCar.m_Flags |= CarFlags.Warning;
@@ -166,11 +165,10 @@ namespace ClearTheWay
         /// clears it again.</summary>
         private void ClearBeacon(Entity vehicle)
         {
-            if (!EntityManager.Exists(vehicle) || !Lookups.HasComponent<Car>(vehicle))
+            if (!EntityManager.Exists(vehicle) || !Lookups.TryGetComponent(vehicle, out Car car))
             {
                 return;
             }
-            Car car = Lookups.GetComponentData<Car>(vehicle);
             if ((car.m_Flags & CarFlags.Warning) != 0)
             {
                 car.m_Flags &= ~CarFlags.Warning;
@@ -222,9 +220,8 @@ namespace ClearTheWay
                         Lookups.SetComponentData(entity, navigation);
                     }
                     // Protect every held car from the game's stuck-vehicle despawn.
-                    if (Lookups.HasComponent<PathOwner>(entity))
+                    if (Lookups.TryGetComponent(entity, out PathOwner pathOwner))
                     {
-                        PathOwner pathOwner = Lookups.GetComponentData<PathOwner>(entity);
                         if ((pathOwner.m_State & PathFlags.Stuck) != 0)
                         {
                             pathOwner.m_State &= ~PathFlags.Stuck;
@@ -256,9 +253,8 @@ namespace ClearTheWay
                         Lookups.SetComponentData(entity, navigation);
                     }
                     // Also protect these from the stuck-despawn while we steer/nudge them.
-                    if (Lookups.HasComponent<PathOwner>(entity))
+                    if (Lookups.TryGetComponent(entity, out PathOwner pathOwner))
                     {
-                        PathOwner pathOwner = Lookups.GetComponentData<PathOwner>(entity);
                         if ((pathOwner.m_State & PathFlags.Stuck) != 0)
                         {
                             pathOwner.m_State &= ~PathFlags.Stuck;

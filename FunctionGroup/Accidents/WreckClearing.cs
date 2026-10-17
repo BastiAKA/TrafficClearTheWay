@@ -68,12 +68,11 @@ namespace ClearTheWay.FunctionGroup.GeneralImprovements
                     Entity candidate = nets[i];
                     if (!Lookups.HasComponent<Game.Net.Edge>(candidate) ||
                         !Lookups.HasComponent<Game.Net.Road>(candidate) ||
-                        !Lookups.HasComponent<Curve>(candidate) ||
+                        !Lookups.TryGetComponent(candidate, out Curve curve) ||
                         !Lookups.HasBuffer<Game.Net.SubLane>(candidate))
                     {
                         continue;
                     }
-                    Curve curve = Lookups.GetComponentData<Curve>(candidate);
                     float dist = MathUtils.Distance(curve.m_Bezier, wreckPos, out float t);
                     if (dist < bestDist)
                     {
@@ -115,11 +114,10 @@ namespace ClearTheWay.FunctionGroup.GeneralImprovements
                 if ((subLanes[i].m_PathMethods & PathMethod.Road) == 0 ||
                     !Lookups.HasComponent<Game.Net.CarLane>(lane) ||
                     Lookups.HasComponent<MasterLane>(lane) ||
-                    !Lookups.HasComponent<Curve>(lane))
+                    !Lookups.TryGetComponent(lane, out Curve laneCurve))
                 {
                     continue;
                 }
-                Curve laneCurve = Lookups.GetComponentData<Curve>(lane);
                 MathUtils.Distance(laneCurve.m_Bezier, wreckPos, out float laneT);
                 float3 lanePos = MathUtils.Position(laneCurve.m_Bezier, laneT);
                 float offset = math.dot(lanePos.xz - edgePos.xz, rightDir) * side;
@@ -179,20 +177,18 @@ namespace ClearTheWay.FunctionGroup.GeneralImprovements
             // move aside too - otherwise the trailer stays where it crashed and keeps the
             // lane blocked ("Aufräumtool hat den Hänger vergessen"). Line each one up behind
             // the moved wreck on the outer lane, keeping its original hitch distance.
-            if (Lookups.HasBuffer<LayoutElement>(wreck))
+            if (Lookups.TryGetBuffer(wreck, out DynamicBuffer<LayoutElement> layout, isReadOnly: true))
             {
-                DynamicBuffer<LayoutElement> layout = Lookups.GetBuffer<LayoutElement>(wreck, isReadOnly: true);
                 float3 newForward = math.forward(wreckTransform.m_Rotation);
                 for (int i = 0; i < layout.Length; i++)
                 {
                     Entity member = layout[i].m_Vehicle;
                     if (member == wreck || member == Entity.Null || !EntityManager.Exists(member) ||
                         Lookups.HasComponent<Deleted>(member) ||
-                        !Lookups.HasComponent<Transform>(member))
+                        !Lookups.TryGetComponent(member, out Transform memberTransform))
                     {
                         continue;
                     }
-                    Transform memberTransform = Lookups.GetComponentData<Transform>(member);
                     float hitch = math.max(3f, math.distance(memberTransform.m_Position.xz, wreckPos.xz));
                     memberTransform.m_Position = targetPos - newForward * hitch;
                     memberTransform.m_Position.y = targetPos.y;
