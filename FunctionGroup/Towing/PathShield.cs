@@ -31,14 +31,14 @@ namespace ClearTheWay
         /// Clear a failed/stuck path so the AI cannot delete the vehicle, and get it a new route.
         /// Returns true when the path had actually failed (worth logging by the caller).
         /// </summary>
-        public static bool Shield(EntityManager entityManager, Dictionary<Entity, uint> retryFrames,
+        public static bool Shield(Dictionary<Entity, uint> retryFrames,
             Entity vehicle, uint frame)
         {
-            if (!entityManager.HasComponent<PathOwner>(vehicle))
+            if (!Lookups.HasComponent<PathOwner>(vehicle))
             {
                 return false;
             }
-            PathOwner pathOwner = entityManager.GetComponentData<PathOwner>(vehicle);
+            PathOwner pathOwner = Lookups.GetComponentData<PathOwner>(vehicle);
             if ((pathOwner.m_State & (PathFlags.Failed | PathFlags.Stuck)) == 0)
             {
                 // Healthy: forget it, so the next failure counts as a first one and is repathed
@@ -53,7 +53,7 @@ namespace ClearTheWay
                 pathOwner.m_State |= PathFlags.Obsolete;
                 retryFrames[vehicle] = frame;
             }
-            entityManager.SetComponentData(vehicle, pathOwner);
+            Lookups.SetComponentData(vehicle, pathOwner);
             return true;
         }
     }

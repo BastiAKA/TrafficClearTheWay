@@ -49,12 +49,12 @@ namespace ClearTheWay.FunctionGroup.WayClearance.WayClearing.LanePathFinding
         /// the plain head-count for the density callers that want exactly that.</param>
         public int LaneVehiclesAhead(Entity lane, float curvePosition, bool inverted, float blockingBelowSpeed = 0f, float windowMeters = kDensityWindow)
         {
-            if (!EntityManager.HasComponent<Curve>(lane) || !EntityManager.HasBuffer<LaneObject>(lane))
+            if (!Lookups.HasComponent<Curve>(lane) || !Lookups.HasBuffer<LaneObject>(lane))
             {
                 return 0;
             }
-            float length = math.max(1f, EntityManager.GetComponentData<Curve>(lane).m_Length);
-            DynamicBuffer<LaneObject> laneObjects = EntityManager.GetBuffer<LaneObject>(lane, isReadOnly: true);
+            float length = math.max(1f, Lookups.GetComponentData<Curve>(lane).m_Length);
+            DynamicBuffer<LaneObject> laneObjects = Lookups.GetBuffer<LaneObject>(lane, isReadOnly: true);
             int count = 0;
             for (int i = 0; i < laneObjects.Length; i++)
             {
@@ -65,8 +65,8 @@ namespace ClearTheWay.FunctionGroup.WayClearance.WayClearing.LanePathFinding
                     if (blockingBelowSpeed > 0f)
                     {
                         Entity obj = laneObjects[i].m_LaneObject;
-                        if (EntityManager.HasComponent<Moving>(obj) &&
-                            math.length(EntityManager.GetComponentData<Moving>(obj).m_Velocity) >= blockingBelowSpeed)
+                        if (Lookups.HasComponent<Moving>(obj) &&
+                            math.length(Lookups.GetComponentData<Moving>(obj).m_Velocity) >= blockingBelowSpeed)
                         {
                             continue; // rolling along - joining this lane is fine
                         }
@@ -80,16 +80,16 @@ namespace ClearTheWay.FunctionGroup.WayClearance.WayClearing.LanePathFinding
         public bool IsLaneClearAround(Entity lane, float curvePosition, bool inverted,
             float clearAhead = kOvertakeClearAhead, float clearBehind = kOvertakeClearBehind)
         {
-            if (!EntityManager.HasComponent<Curve>(lane))
+            if (!Lookups.HasComponent<Curve>(lane))
             {
                 return false;
             }
-            float length = math.max(1f, EntityManager.GetComponentData<Curve>(lane).m_Length);
-            if (!EntityManager.HasBuffer<LaneObject>(lane))
+            float length = math.max(1f, Lookups.GetComponentData<Curve>(lane).m_Length);
+            if (!Lookups.HasBuffer<LaneObject>(lane))
             {
                 return true;
             }
-            DynamicBuffer<LaneObject> laneObjects = EntityManager.GetBuffer<LaneObject>(lane, isReadOnly: true);
+            DynamicBuffer<LaneObject> laneObjects = Lookups.GetBuffer<LaneObject>(lane, isReadOnly: true);
             for (int i = 0; i < laneObjects.Length; i++)
             {
                 float2 range = laneObjects[i].m_CurvePosition;
@@ -118,31 +118,31 @@ namespace ClearTheWay.FunctionGroup.WayClearance.WayClearing.LanePathFinding
         /// </summary>
         public float GetLateralSeparation(Entity vehicle, CarCurrentLane currentLane, Entity blockingEntity)
         {
-            if (!EntityManager.HasComponent<Transform>(vehicle) ||
-                !EntityManager.HasComponent<Transform>(blockingEntity))
+            if (!Lookups.HasComponent<Transform>(vehicle) ||
+                !Lookups.HasComponent<Transform>(blockingEntity))
             {
                 return 0f;
             }
             Entity axisLane = currentLane.m_Lane;
             float axisPosition = currentLane.m_CurvePosition.x;
-            if (EntityManager.HasComponent<CarCurrentLane>(blockingEntity))
+            if (Lookups.HasComponent<CarCurrentLane>(blockingEntity))
             {
-                CarCurrentLane blockerLane = EntityManager.GetComponentData<CarCurrentLane>(blockingEntity);
-                if (EntityManager.HasComponent<Curve>(blockerLane.m_Lane))
+                CarCurrentLane blockerLane = Lookups.GetComponentData<CarCurrentLane>(blockingEntity);
+                if (Lookups.HasComponent<Curve>(blockerLane.m_Lane))
                 {
                     axisLane = blockerLane.m_Lane;
                     axisPosition = blockerLane.m_CurvePosition.x;
                 }
             }
-            if (!EntityManager.HasComponent<Curve>(axisLane))
+            if (!Lookups.HasComponent<Curve>(axisLane))
             {
                 return 0f;
             }
-            Curve curve = EntityManager.GetComponentData<Curve>(axisLane);
+            Curve curve = Lookups.GetComponentData<Curve>(axisLane);
             float2 tangent = math.normalizesafe(MathUtils.Tangent(curve.m_Bezier, axisPosition).xz);
             float2 right = MathUtils.Right(tangent);
-            float3 vehiclePos = EntityManager.GetComponentData<Transform>(vehicle).m_Position;
-            float3 blockerPos = EntityManager.GetComponentData<Transform>(blockingEntity).m_Position;
+            float3 vehiclePos = Lookups.GetComponentData<Transform>(vehicle).m_Position;
+            float3 blockerPos = Lookups.GetComponentData<Transform>(blockingEntity).m_Position;
             return math.abs(math.dot(blockerPos.xz - vehiclePos.xz, right));
         }
 
@@ -153,9 +153,9 @@ namespace ClearTheWay.FunctionGroup.WayClearance.WayClearing.LanePathFinding
         /// </summary>
         public float GetBlockerSeparation(Entity vehicle, CarCurrentLane currentLane)
         {
-            Blocker blocker = EntityManager.GetComponentData<Blocker>(vehicle);
+            Blocker blocker = Lookups.GetComponentData<Blocker>(vehicle);
             if (blocker.m_Blocker == Entity.Null || !EntityManager.Exists(blocker.m_Blocker) ||
-                !EntityManager.HasComponent<Transform>(blocker.m_Blocker))
+                !Lookups.HasComponent<Transform>(blocker.m_Blocker))
             {
                 return float.MaxValue;
             }

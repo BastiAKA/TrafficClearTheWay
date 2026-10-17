@@ -172,6 +172,8 @@ namespace ClearTheWay
         {
             // Numbers in the log with '.', whatever the game language - see InvariantCultureScope.
             using InvariantCultureScope culture = InvariantCultureScope.Enter();
+            // New epoch for the shared component lookups: the game's jobs ran since our last system.
+            Lookups.Begin(this);
             Setting setting = Mod.Setting;
             if (setting == null || !setting.Enabled || !setting.AssistTowTrucks)
             {
@@ -213,7 +215,7 @@ namespace ClearTheWay
                         if (setting.VerboseLogging)
                         {
                             Mod.Log.Info($"[dispatch] van={van.Index} is redundant - its wreck=" +
-                                $"{EntityManager.GetComponentData<Target>(van).m_Target.Index} is already being towed");
+                                $"{Lookups.GetComponentData<Target>(van).m_Target.Index} is already being towed");
                         }
                         m_Ctx.Beeline.SendHome(van, frame);
                         continue;
@@ -226,8 +228,8 @@ namespace ClearTheWay
                     m_VanJob[van] = wreck;
                     m_Ctx.Beeline.ShieldPath(van, frame);
                     float dist = math.distance(
-                        EntityManager.GetComponentData<Transform>(van).m_Position.xz,
-                        EntityManager.GetComponentData<Transform>(wreck).m_Position.xz);
+                        Lookups.GetComponentData<Transform>(van).m_Position.xz,
+                        Lookups.GetComponentData<Transform>(wreck).m_Position.xz);
                     if (dist > kHandsOffRange)
                     {
                         m_Ctx.Beeline.EnforceBeeline(van, wreck, request);

@@ -70,20 +70,20 @@ namespace ClearTheWay
                 for (int i = 0; i < wrecks.Length; i++)
                 {
                     Entity wreck = wrecks[i];
-                    Entity carrier = EntityManager.GetComponentData<Controller>(wreck).m_Controller;
+                    Entity carrier = Lookups.GetComponentData<Controller>(wreck).m_Controller;
                     if (carrier == Entity.Null || carrier == wreck)
                     {
                         continue; // no / self controller - not one of our tows
                     }
                     bool carrierExists = EntityManager.Exists(carrier) &&
-                        !EntityManager.HasComponent<Deleted>(carrier);
+                        !Lookups.HasComponent<Deleted>(carrier);
                     if (carrierExists)
                     {
-                        if (!EntityManager.HasComponent<Game.Vehicles.MaintenanceVehicle>(carrier))
+                        if (!Lookups.HasComponent<Game.Vehicles.MaintenanceVehicle>(carrier))
                         {
                             continue; // Controller points at a live non-recovery vehicle - not ours
                         }
-                        if (!EntityManager.HasComponent<ParkedCar>(carrier))
+                        if (!Lookups.HasComponent<ParkedCar>(carrier))
                         {
                             continue; // live recovery truck still hauling it (incl. stuck in a jam) - leave it
                         }
@@ -123,12 +123,12 @@ namespace ClearTheWay
                 for (int i = 0; i < trailers.Length; i++)
                 {
                     Entity trailer = trailers[i];
-                    Entity controller = EntityManager.GetComponentData<Controller>(trailer).m_Controller;
+                    Entity controller = Lookups.GetComponentData<Controller>(trailer).m_Controller;
                     if (controller == Entity.Null || controller == trailer)
                     {
                         continue; // no/self controller - never one of our tows, leave it
                     }
-                    if (EntityManager.Exists(controller) && !EntityManager.HasComponent<Deleted>(controller))
+                    if (EntityManager.Exists(controller) && !Lookups.HasComponent<Deleted>(controller))
                     {
                         continue; // live tractor (driving or parked) - a real rig
                     }

@@ -22,6 +22,10 @@ namespace ClearTheWay
         AccidentGuard,
         RecoveryAssist,
         TowCoupling,
+        /// <summary>Waiting for the game's jobs before a component type is read or
+        /// written - one bucket per type ("JobSync.Transform"), see Lookups. Nested inside
+        /// whichever pass touched the type first in that system update.</summary>
+        JobSync,
     }
 
     /// <summary>
@@ -126,6 +130,7 @@ namespace ClearTheWay
             Add(ref mask, ProfiledPass.AccidentGuard, setting.ProfileAccidentGuard);
             Add(ref mask, ProfiledPass.RecoveryAssist, setting.ProfileRecoveryAssist);
             Add(ref mask, ProfiledPass.TowCoupling, setting.ProfileTowCoupling);
+            Add(ref mask, ProfiledPass.JobSync, setting.ProfileJobSync);
             return mask;
         }
 

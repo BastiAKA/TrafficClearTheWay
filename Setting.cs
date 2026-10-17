@@ -201,6 +201,11 @@ namespace ClearTheWay
         [SettingsUISection(kPerfSection, kPerfGroup)]
         public bool ProfileTowCoupling { get; set; }
 
+        /// <summary>Time the waits for the game's jobs, per component type.</summary>
+        [SettingsUIHideByCondition(typeof(Setting), nameof(ShowProfiledPasses), true)]
+        [SettingsUISection(kPerfSection, kPerfGroup)]
+        public bool ProfileJobSync { get; set; }
+
         private void SetAllProfiled(bool on)
         {
             ProfileMainSystem = on;
@@ -216,6 +221,7 @@ namespace ClearTheWay
             ProfileAccidentGuard = on;
             ProfileRecoveryAssist = on;
             ProfileTowCoupling = on;
+            ProfileJobSync = on;
             // A plain button only calls the setter; toggles save themselves, this has to.
             ApplyAndSave();
         }
@@ -271,6 +277,7 @@ namespace ClearTheWay
             ProfileAccidentGuard = false;
             ProfileRecoveryAssist = false;
             ProfileTowCoupling = false;
+            ProfileJobSync = false;
         }
     }
 }

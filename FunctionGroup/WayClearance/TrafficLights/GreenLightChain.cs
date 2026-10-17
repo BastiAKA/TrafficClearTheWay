@@ -86,11 +86,11 @@ namespace ClearTheWay.FunctionGroup.WayClearance.TrafficLights
         public void PetitionRouteAhead(Entity vehicle, Entity currentLane, sbyte priority, int upcomingLanes)
         {
             Petition(vehicle, currentLane, priority);
-            if (!EntityManager.HasBuffer<CarNavigationLane>(vehicle))
+            if (!Lookups.HasBuffer<CarNavigationLane>(vehicle))
             {
                 return;
             }
-            DynamicBuffer<CarNavigationLane> navLanes = EntityManager.GetBuffer<CarNavigationLane>(vehicle, isReadOnly: true);
+            DynamicBuffer<CarNavigationLane> navLanes = Lookups.GetBuffer<CarNavigationLane>(vehicle, isReadOnly: true);
             int upcoming = math.min(upcomingLanes, navLanes.Length);
             for (int i = 0; i < upcoming; i++)
             {
@@ -100,7 +100,7 @@ namespace ClearTheWay.FunctionGroup.WayClearance.TrafficLights
 
         private void Enqueue(Entity vehicle, Entity lane, sbyte priority, bool preempt)
         {
-            if (lane == Entity.Null || !EntityManager.HasComponent<LaneSignal>(lane))
+            if (lane == Entity.Null || !Lookups.HasComponent<LaneSignal>(lane))
             {
                 return;
             }
@@ -127,11 +127,11 @@ namespace ClearTheWay.FunctionGroup.WayClearance.TrafficLights
             {
                 Request request = m_Pending[i];
                 if (!EntityManager.Exists(request.m_Lane) ||
-                    !EntityManager.HasComponent<LaneSignal>(request.m_Lane))
+                    !Lookups.HasComponent<LaneSignal>(request.m_Lane))
                 {
                     continue; // lane went away between the decision and this write
                 }
-                LaneSignal signal = EntityManager.GetComponentData<LaneSignal>(request.m_Lane);
+                LaneSignal signal = Lookups.GetComponentData<LaneSignal>(request.m_Lane);
                 bool write = false;
                 if (signal.m_Priority < request.m_Priority)
                 {
@@ -146,7 +146,7 @@ namespace ClearTheWay.FunctionGroup.WayClearance.TrafficLights
                 }
                 if (write)
                 {
-                    EntityManager.SetComponentData(request.m_Lane, signal);
+                    Lookups.SetComponentData(request.m_Lane, signal);
                 }
             }
             m_Pending.Clear();

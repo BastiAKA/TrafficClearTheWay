@@ -56,8 +56,8 @@ namespace ClearTheWay.FunctionGroup.Accidents
                     Entity e = kv.Key;
                     uint silent = frame - kv.Value.m_Frame;
                     bool exists = EntityManager.Exists(e);
-                    bool deletedNow = exists && EntityManager.HasComponent<Deleted>(e);
-                    bool unspawnedNow = exists && EntityManager.HasComponent<Unspawned>(e);
+                    bool deletedNow = exists && Lookups.HasComponent<Deleted>(e);
+                    bool unspawnedNow = exists && Lookups.HasComponent<Unspawned>(e);
                     if ((!exists || deletedNow) && silent <= 32u)
                     {
                         CarSnapshot s = kv.Value;
@@ -97,7 +97,7 @@ namespace ClearTheWay.FunctionGroup.Accidents
                 foreach (KeyValuePair<Entity, uint> kv in m_WreckSeenInvolvedFrame)
                 {
                     if (!EntityManager.Exists(kv.Key) ||
-                        !EntityManager.HasComponent<Game.Events.InvolvedInAccident>(kv.Key))
+                        !Lookups.HasComponent<Game.Events.InvolvedInAccident>(kv.Key))
                     {
                         m_WreckPruneScratch.Add(kv.Key);
                     }

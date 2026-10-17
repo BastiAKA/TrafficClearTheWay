@@ -79,6 +79,8 @@ namespace ClearTheWay
         {
             // Numbers in the log with '.', whatever the game language - see InvariantCultureScope.
             using InvariantCultureScope culture = InvariantCultureScope.Enter();
+            // New epoch for the shared component lookups: the game's jobs ran since our last system.
+            Lookups.Begin(this);
             Setting setting = Mod.Setting;
             if (setting == null || !setting.Enabled || !setting.PreventAccidentDespawn ||
                 m_WreckQuery.IsEmptyIgnoreFilter)
@@ -129,11 +131,11 @@ namespace ClearTheWay
                     for (int w = 0; w < wrecks.Length; w++)
                     {
                         Entity wreck = wrecks[w];
-                        if (!EntityManager.HasComponent<Transform>(wreck))
+                        if (!Lookups.HasComponent<Transform>(wreck))
                         {
                             continue;
                         }
-                        float3 pos = EntityManager.GetComponentData<Transform>(wreck).m_Position;
+                        float3 pos = Lookups.GetComponentData<Transform>(wreck).m_Position;
                         found.Clear();
                         AreaIterator iterator = new AreaIterator
                         {
@@ -176,7 +178,7 @@ namespace ClearTheWay
         private void GuardCar(Entity other, ref GuardStats stats, bool prefiltered, bool diagnostics)
         {
             // False for an entity that no longer exists, too.
-            if (!EntityManager.HasComponent<CarCurrentLane>(other))
+            if (!Lookups.HasComponent<CarCurrentLane>(other))
             {
                 return;
             }
@@ -184,9 +186,9 @@ namespace ClearTheWay
             // vehicles and recovery/maintenance vehicles have the accident itself
             // as their destination - clearing their path end would strand them.
             if (!prefiltered &&
-                (!EntityManager.HasComponent<Car>(other) ||
-                 (EntityManager.GetComponentData<Car>(other).m_Flags & CarFlags.Emergency) != 0 ||
-                 EntityManager.HasComponent<Game.Vehicles.MaintenanceVehicle>(other)))
+                (!Lookups.HasComponent<Car>(other) ||
+                 (Lookups.GetComponentData<Car>(other).m_Flags & CarFlags.Emergency) != 0 ||
+                 Lookups.HasComponent<Game.Vehicles.MaintenanceVehicle>(other)))
             {
                 return;
             }
@@ -195,13 +197,13 @@ namespace ClearTheWay
             // Clear a truncated path end so the AI leaves the car waiting. Match
             // PathEndReached exactly (EndOfPath|EndReached set, ParkingSpace|Waypoint
             // clear) so real park/waypoint arrivals near a wreck are untouched.
-            CarCurrentLane lane = EntityManager.GetComponentData<CarCurrentLane>(other);
+            CarCurrentLane lane = Lookups.GetComponentData<CarCurrentLane>(other);
             stats.laneOr |= (uint)lane.m_LaneFlags;
             if ((lane.m_LaneFlags & kPathEndMask) == kPathEndValue)
             {
                 stats.nEndReached++;
                 lane.m_LaneFlags &= ~(CarLaneFlags.EndOfPath | CarLaneFlags.EndReached);
-                EntityManager.SetComponentData(other, lane);
+                Lookups.SetComponentData(other, lane);
                 stats.guarded++;
             }
 
@@ -209,9 +211,9 @@ namespace ClearTheWay
             // EndReached nor Failed/Stuck when we scan, yet they despawn).
             if (diagnostics)
             {
-                if (EntityManager.HasComponent<Game.Events.InvolvedInAccident>(other)) stats.nInvolved++;
-                if (EntityManager.HasComponent<Target>(other) &&
-                    !EntityManager.Exists(EntityManager.GetComponentData<Target>(other).m_Target)) stats.nNoTarget++;
+                if (Lookups.HasComponent<Game.Events.InvolvedInAccident>(other)) stats.nInvolved++;
+                if (Lookups.HasComponent<Target>(other) &&
+                    !EntityManager.Exists(Lookups.GetComponentData<Target>(other).m_Target)) stats.nNoTarget++;
             }
 
             // Also drop Stuck|Failed AND the repath triggers (Obsolete|Divert-
@@ -220,9 +222,9 @@ namespace ClearTheWay
             // into a building connection and the car evaporates mid-drive. This
             // guard runs right before the vehicle AIs, closing the same-frame
             // window the main pass (pre-navigation) cannot cover.
-            if (EntityManager.HasComponent<PathOwner>(other))
+            if (Lookups.HasComponent<PathOwner>(other))
             {
-                PathOwner po = EntityManager.GetComponentData<PathOwner>(other);
+                PathOwner po = Lookups.GetComponentData<PathOwner>(other);
                 stats.pathOr |= (uint)po.m_State;
                 if ((po.m_State & PathFlags.Pending) != 0) stats.nPending++;
                 if ((po.m_State & (PathFlags.Stuck | PathFlags.Failed |
@@ -234,7 +236,7 @@ namespace ClearTheWay
                     }
                     po.m_State &= ~(PathFlags.Stuck | PathFlags.Failed |
                         PathFlags.Obsolete | PathFlags.DivertObsolete);
-                    EntityManager.SetComponentData(other, po);
+                    Lookups.SetComponentData(other, po);
                 }
             }
         }

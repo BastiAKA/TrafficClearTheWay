@@ -137,6 +137,8 @@ namespace ClearTheWay
         {
             // Numbers in the log with '.', whatever the game language - see InvariantCultureScope.
             using InvariantCultureScope culture = InvariantCultureScope.Enter();
+            // New epoch for the shared component lookups: the game's jobs ran since our last system.
+            Lookups.Begin(this);
             using (ModProfiler.Sample(Profiling, "Pedestrians"))
             {
                 RunPass();
@@ -190,12 +192,12 @@ namespace ClearTheWay
                 {
                     Entity vehicle = vehicles[i];
                     // Only vehicles actually running with lights and siren.
-                    if ((EntityManager.GetComponentData<Car>(vehicle).m_Flags & CarFlags.Emergency) == 0)
+                    if ((Lookups.GetComponentData<Car>(vehicle).m_Flags & CarFlags.Emergency) == 0)
                     {
                         continue;
                     }
                     // Trailers follow their controller.
-                    if (VehicleTrailerExt.IsTrailer(EntityManager, vehicle))
+                    if (VehicleTrailerExt.IsTrailer(vehicle))
                     {
                         continue;
                     }
@@ -223,7 +225,7 @@ namespace ClearTheWay
                         deps.Complete();
                         treeFetched = true;
                     }
-                    Transform vehicleTransform = EntityManager.GetComponentData<Transform>(vehicle);
+                    Transform vehicleTransform = Lookups.GetComponentData<Transform>(vehicle);
                     float3 forward = math.forward(vehicleTransform.m_Rotation);
                     foundLanes.Clear();
                     // Forward-biased box instead of a cube around the vehicle. The region that
@@ -255,14 +257,14 @@ namespace ClearTheWay
                         // Only foot lanes hold pedestrians we can wait; skip car/track/utility
                         // lanes. The pedestrian about to cross is on the approaching sidewalk
                         // lane (its LaneObject buffer), not yet on the crosswalk itself.
-                        if (!EntityManager.HasComponent<Game.Net.PedestrianLane>(lane) ||
-                            !EntityManager.HasBuffer<Game.Net.LaneObject>(lane))
+                        if (!Lookups.HasComponent<Game.Net.PedestrianLane>(lane) ||
+                            !Lookups.HasBuffer<Game.Net.LaneObject>(lane))
                         {
                             continue;
                         }
                         pedLaneHits++;
                         DynamicBuffer<Game.Net.LaneObject> occupants =
-                            EntityManager.GetBuffer<Game.Net.LaneObject>(lane, isReadOnly: true);
+                            Lookups.GetBuffer<Game.Net.LaneObject>(lane, isReadOnly: true);
                         for (int o = 0; o < occupants.Length; o++)
                         {
                             Entity occupant = occupants[o].m_LaneObject;
@@ -308,36 +310,36 @@ namespace ClearTheWay
             // but Transform, so everything the responder has already driven past now costs one
             // lookup instead of nine. Order only, no behavioural change: every occupant that
             // survived to here before still survives to here now.
-            if (!EntityManager.HasComponent<Transform>(pedestrian))
+            if (!Lookups.HasComponent<Transform>(pedestrian))
             {
                 return false;
             }
-            Transform transform = EntityManager.GetComponentData<Transform>(pedestrian);
+            Transform transform = Lookups.GetComponentData<Transform>(pedestrian);
             if (math.dot(transform.m_Position - vehiclePos, vehicleForward) < kBehindRange)
             {
                 return false;
             }
 
-            if (!EntityManager.HasComponent<Human>(pedestrian) ||
-                !EntityManager.HasComponent<HumanNavigation>(pedestrian) ||
-                !EntityManager.HasComponent<HumanCurrentLane>(pedestrian) ||
-                !EntityManager.HasComponent<PathOwner>(pedestrian) ||
-                !EntityManager.HasBuffer<PathElement>(pedestrian))
+            if (!Lookups.HasComponent<Human>(pedestrian) ||
+                !Lookups.HasComponent<HumanNavigation>(pedestrian) ||
+                !Lookups.HasComponent<HumanCurrentLane>(pedestrian) ||
+                !Lookups.HasComponent<PathOwner>(pedestrian) ||
+                !Lookups.HasBuffer<PathElement>(pedestrian))
             {
                 return false;
             }
             // Riding in a vehicle, or a responder on foot (paramedic/officer) - never held.
-            if (EntityManager.HasComponent<CurrentVehicle>(pedestrian) &&
-                EntityManager.GetComponentData<CurrentVehicle>(pedestrian).m_Vehicle != Entity.Null)
+            if (Lookups.HasComponent<CurrentVehicle>(pedestrian) &&
+                Lookups.GetComponentData<CurrentVehicle>(pedestrian).m_Vehicle != Entity.Null)
             {
                 return false;
             }
-            if ((EntityManager.GetComponentData<Human>(pedestrian).m_Flags & HumanFlags.Emergency) != 0)
+            if ((Lookups.GetComponentData<Human>(pedestrian).m_Flags & HumanFlags.Emergency) != 0)
             {
                 return false;
             }
 
-            HumanCurrentLane currentLane = EntityManager.GetComponentData<HumanCurrentLane>(pedestrian);
+            HumanCurrentLane currentLane = Lookups.GetComponentData<HumanCurrentLane>(pedestrian);
             // Already out on a crosswalk: let it finish. Freezing it in the roadway would
             // block the responder instead of helping it.
             if (IsCrosswalk(currentLane.m_Lane))
@@ -345,8 +347,8 @@ namespace ClearTheWay
                 return false;
             }
             // About to step onto one?
-            PathOwner pathOwner = EntityManager.GetComponentData<PathOwner>(pedestrian);
-            DynamicBuffer<PathElement> path = EntityManager.GetBuffer<PathElement>(pedestrian, isReadOnly: true);
+            PathOwner pathOwner = Lookups.GetComponentData<PathOwner>(pedestrian);
+            DynamicBuffer<PathElement> path = Lookups.GetBuffer<PathElement>(pedestrian, isReadOnly: true);
             if (pathOwner.m_ElementIndex >= path.Length ||
                 !IsCrosswalk(path[pathOwner.m_ElementIndex].m_Target))
             {
@@ -355,12 +357,12 @@ namespace ClearTheWay
 
             // Stand still exactly the way vanilla stands at a red light (HumanNavigationSystem's
             // WaitSignal branch): no speed budget, target on the spot, no heading, no activity.
-            HumanNavigation navigation = EntityManager.GetComponentData<HumanNavigation>(pedestrian);
+            HumanNavigation navigation = Lookups.GetComponentData<HumanNavigation>(pedestrian);
             navigation.m_MaxSpeed = 0f;
             navigation.m_TargetPosition = transform.m_Position;
             navigation.m_TargetDirection = default;
             navigation.m_TargetActivity = 0;
-            EntityManager.SetComponentData(pedestrian, navigation);
+            Lookups.SetComponentData(pedestrian, navigation);
             return true;
         }
 
@@ -370,36 +372,36 @@ namespace ClearTheWay
         private bool ReapplyHold(Entity pedestrian)
         {
             if (!EntityManager.Exists(pedestrian) ||
-                !EntityManager.HasComponent<HumanNavigation>(pedestrian) ||
-                !EntityManager.HasComponent<HumanCurrentLane>(pedestrian) ||
-                !EntityManager.HasComponent<Transform>(pedestrian))
+                !Lookups.HasComponent<HumanNavigation>(pedestrian) ||
+                !Lookups.HasComponent<HumanCurrentLane>(pedestrian) ||
+                !Lookups.HasComponent<Transform>(pedestrian))
             {
                 return false;
             }
-            if (EntityManager.HasComponent<CurrentVehicle>(pedestrian) &&
-                EntityManager.GetComponentData<CurrentVehicle>(pedestrian).m_Vehicle != Entity.Null)
+            if (Lookups.HasComponent<CurrentVehicle>(pedestrian) &&
+                Lookups.GetComponentData<CurrentVehicle>(pedestrian).m_Vehicle != Entity.Null)
             {
                 return false;
             }
-            if (IsCrosswalk(EntityManager.GetComponentData<HumanCurrentLane>(pedestrian).m_Lane))
+            if (IsCrosswalk(Lookups.GetComponentData<HumanCurrentLane>(pedestrian).m_Lane))
             {
                 return false; // on the crossing now - let it finish
             }
-            Transform transform = EntityManager.GetComponentData<Transform>(pedestrian);
-            HumanNavigation navigation = EntityManager.GetComponentData<HumanNavigation>(pedestrian);
+            Transform transform = Lookups.GetComponentData<Transform>(pedestrian);
+            HumanNavigation navigation = Lookups.GetComponentData<HumanNavigation>(pedestrian);
             navigation.m_MaxSpeed = 0f;
             navigation.m_TargetPosition = transform.m_Position;
             navigation.m_TargetDirection = default;
             navigation.m_TargetActivity = 0;
-            EntityManager.SetComponentData(pedestrian, navigation);
+            Lookups.SetComponentData(pedestrian, navigation);
             return true;
         }
 
         private bool IsCrosswalk(Entity lane)
         {
             return lane != Entity.Null &&
-                EntityManager.HasComponent<Game.Net.PedestrianLane>(lane) &&
-                (EntityManager.GetComponentData<Game.Net.PedestrianLane>(lane).m_Flags &
+                Lookups.HasComponent<Game.Net.PedestrianLane>(lane) &&
+                (Lookups.GetComponentData<Game.Net.PedestrianLane>(lane).m_Flags &
                     Game.Net.PedestrianLaneFlags.Crosswalk) != 0;
         }
     }

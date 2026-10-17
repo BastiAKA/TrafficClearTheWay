@@ -20,17 +20,17 @@ namespace ClearTheWay
         /// maintenance request carries a Dispatched handler that still exists.</summary>
         public static bool IsClaimed(EntityManager entityManager, Entity wreck)
         {
-            if (!entityManager.HasComponent<Game.Simulation.MaintenanceConsumer>(wreck))
+            if (!Lookups.HasComponent<Game.Simulation.MaintenanceConsumer>(wreck))
             {
                 return false;
             }
-            Entity request = entityManager.GetComponentData<Game.Simulation.MaintenanceConsumer>(wreck).m_Request;
+            Entity request = Lookups.GetComponentData<Game.Simulation.MaintenanceConsumer>(wreck).m_Request;
             if (request == Entity.Null || !entityManager.Exists(request) ||
-                !entityManager.HasComponent<Game.Simulation.Dispatched>(request))
+                !Lookups.HasComponent<Game.Simulation.Dispatched>(request))
             {
                 return false;
             }
-            Entity handler = entityManager.GetComponentData<Game.Simulation.Dispatched>(request).m_Handler;
+            Entity handler = Lookups.GetComponentData<Game.Simulation.Dispatched>(request).m_Handler;
             return handler != Entity.Null && entityManager.Exists(handler);
         }
     }

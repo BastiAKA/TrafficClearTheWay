@@ -251,11 +251,11 @@ namespace ClearTheWay.FunctionGroup.WayClearance
 
         private bool ComputeParkingBeside(Entity lane, Entity owner)
         {
-            if (!EntityManager.HasBuffer<Game.Net.SubLane>(owner))
+            if (!Lookups.HasBuffer<Game.Net.SubLane>(owner))
             {
                 return false;
             }
-            DynamicBuffer<Game.Net.SubLane> subLanes = EntityManager.GetBuffer<Game.Net.SubLane>(owner, isReadOnly: true);
+            DynamicBuffer<Game.Net.SubLane> subLanes = Lookups.GetBuffer<Game.Net.SubLane>(owner, isReadOnly: true);
             int idx = -1;
             for (int i = 0; i < subLanes.Length; i++)
             {
@@ -274,14 +274,14 @@ namespace ClearTheWay.FunctionGroup.WayClearance
                     {
                         continue;
                     }
-                    if (EntityManager.HasComponent<Game.Net.ParkingLane>(sl))
+                    if (Lookups.HasComponent<Game.Net.ParkingLane>(sl))
                     {
                         return true;
                     }
                     // Another driving lane between us and any parking strip: that strip is no
                     // longer "beside" this lane and does not affect it.
-                    if (EntityManager.HasComponent<Game.Net.CarLane>(sl) &&
-                        !EntityManager.HasComponent<Game.Net.MasterLane>(sl))
+                    if (Lookups.HasComponent<Game.Net.CarLane>(sl) &&
+                        !Lookups.HasComponent<Game.Net.MasterLane>(sl))
                     {
                         break;
                     }
@@ -310,14 +310,14 @@ namespace ClearTheWay.FunctionGroup.WayClearance
         /// </remarks>
         public float FindFreeLaneDir(Entity vehicle, Entity refLane, float curvePosition, bool inverted)
         {
-            if (!EntityManager.HasComponent<Owner>(refLane) ||
-                !EntityManager.HasComponent<Game.Net.CarLane>(refLane))
+            if (!Lookups.HasComponent<Owner>(refLane) ||
+                !Lookups.HasComponent<Game.Net.CarLane>(refLane))
             {
                 ReleaseFreeLane(vehicle); // not a road lane we can reason about - no free lane here
                 return 0f;
             }
-            Entity owner = EntityManager.GetComponentData<Owner>(refLane).m_Owner;
-            bool laneInverted = (EntityManager.GetComponentData<Game.Net.CarLane>(refLane).m_Flags & Game.Net.CarLaneFlags.Invert) != 0;
+            Entity owner = Lookups.GetComponentData<Owner>(refLane).m_Owner;
+            bool laneInverted = (Lookups.GetComponentData<Game.Net.CarLane>(refLane).m_Flags & Game.Net.CarLaneFlags.Invert) != 0;
             ChannelPlan plan = GetChannelPlan(owner, laneInverted);
             // m_Lanes is only ordered physical left->right once the plan is a real channel plan.
             // Definitive, not "cannot judge": this stretch of road has no second lane in our
@@ -341,8 +341,8 @@ namespace ClearTheWay.FunctionGroup.WayClearance
             m_Ctx.States.Stuck.TryGetValue(vehicle, out StuckState freeLatch);
             bool latched = freeLatch.m_FreeLaneDir != 0f &&
                 m_SimulationSystem.frameIndex < freeLatch.m_FreeLaneUntilFrame;
-            CarFlags carFlags = EntityManager.HasComponent<Car>(vehicle)
-                ? EntityManager.GetComponentData<Car>(vehicle).m_Flags
+            CarFlags carFlags = Lookups.HasComponent<Car>(vehicle)
+                ? Lookups.GetComponentData<Car>(vehicle).m_Flags
                 : default;
             // SCAN ORDER IS THE COMMITMENT. Relaxing the acceptance threshold for the held
             // direction (below) does nothing on its own if a lane on the OTHER side is simply
@@ -379,11 +379,11 @@ namespace ClearTheWay.FunctionGroup.WayClearance
                 }
                 Entity candidate = plan.m_Lanes[candidatePos];
                 if (!EntityManager.Exists(candidate) ||
-                    !EntityManager.HasComponent<Game.Net.CarLane>(candidate))
+                    !Lookups.HasComponent<Game.Net.CarLane>(candidate))
                 {
                     continue;
                 }
-                Game.Net.CarLaneFlags flags = EntityManager.GetComponentData<Game.Net.CarLane>(candidate).m_Flags;
+                Game.Net.CarLaneFlags flags = Lookups.GetComponentData<Game.Net.CarLane>(candidate).m_Flags;
                 if ((flags & Game.Net.CarLaneFlags.Forbidden) != 0 ||
                     ((flags & Game.Net.CarLaneFlags.PublicOnly) != 0 && (carFlags & CarFlags.UsePublicTransportLanes) == 0))
                 {
@@ -475,13 +475,13 @@ namespace ClearTheWay.FunctionGroup.WayClearance
         /// </summary>
         public bool AddCentralChannel(Entity refLane, float minPos, bool inverted, float startOffset, bool computeHug)
         {
-            if (!EntityManager.HasComponent<Owner>(refLane) ||
-                !EntityManager.HasComponent<Game.Net.CarLane>(refLane))
+            if (!Lookups.HasComponent<Owner>(refLane) ||
+                !Lookups.HasComponent<Game.Net.CarLane>(refLane))
             {
                 return false;
             }
-            Entity owner = EntityManager.GetComponentData<Owner>(refLane).m_Owner;
-            bool laneInverted = (EntityManager.GetComponentData<Game.Net.CarLane>(refLane).m_Flags & Game.Net.CarLaneFlags.Invert) != 0;
+            Entity owner = Lookups.GetComponentData<Owner>(refLane).m_Owner;
+            bool laneInverted = (Lookups.GetComponentData<Game.Net.CarLane>(refLane).m_Flags & Game.Net.CarLaneFlags.Invert) != 0;
             ChannelPlan plan = m_Ctx.Channel.GetChannelPlan(owner, laneInverted);
             if (plan == null || !plan.m_IsChannel)
             {
@@ -538,19 +538,19 @@ namespace ClearTheWay.FunctionGroup.WayClearance
             plan.m_Lanes.Clear();
             plan.m_PushDir.Clear();
             plan.m_PushMeters.Clear();
-            if (!EntityManager.HasBuffer<Game.Net.SubLane>(owner))
+            if (!Lookups.HasBuffer<Game.Net.SubLane>(owner))
             {
                 return;
             }
-            DynamicBuffer<Game.Net.SubLane> subLanes = EntityManager.GetBuffer<Game.Net.SubLane>(owner, isReadOnly: true);
+            DynamicBuffer<Game.Net.SubLane> subLanes = Lookups.GetBuffer<Game.Net.SubLane>(owner, isReadOnly: true);
             for (int i = 0; i < subLanes.Length; i++)
             {
                 Entity sl = subLanes[i].m_SubLane;
-                if (!EntityManager.HasComponent<Game.Net.CarLane>(sl) || EntityManager.HasComponent<MasterLane>(sl))
+                if (!Lookups.HasComponent<Game.Net.CarLane>(sl) || Lookups.HasComponent<MasterLane>(sl))
                 {
                     continue;
                 }
-                if (((EntityManager.GetComponentData<Game.Net.CarLane>(sl).m_Flags & Game.Net.CarLaneFlags.Invert) != 0) != laneInverted)
+                if (((Lookups.GetComponentData<Game.Net.CarLane>(sl).m_Flags & Game.Net.CarLaneFlags.Invert) != 0) != laneInverted)
                 {
                     continue;
                 }
@@ -620,7 +620,7 @@ namespace ClearTheWay.FunctionGroup.WayClearance
                 {
                     continue;
                 }
-                if (EntityManager.HasComponent<Game.Net.ParkingLane>(sl) && EntityManager.HasComponent<Curve>(sl))
+                if (Lookups.HasComponent<Game.Net.ParkingLane>(sl) && Lookups.HasComponent<Curve>(sl))
                 {
                     // Use half the strip's width - enough to visibly reach onto it without
                     // planting the car on the far kerb - capped.
@@ -628,7 +628,7 @@ namespace ClearTheWay.FunctionGroup.WayClearance
                 }
                 // Stop at the first same-direction car lane: the shoulder must be immediately
                 // outside the outermost car lane, not across another driving lane.
-                if (EntityManager.HasComponent<Game.Net.CarLane>(sl) && !EntityManager.HasComponent<MasterLane>(sl))
+                if (Lookups.HasComponent<Game.Net.CarLane>(sl) && !Lookups.HasComponent<MasterLane>(sl))
                 {
                     break;
                 }

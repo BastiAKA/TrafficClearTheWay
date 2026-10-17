@@ -131,6 +131,8 @@ namespace ClearTheWay
         {
             // Numbers in the log with '.', whatever the game language - see InvariantCultureScope.
             using InvariantCultureScope culture = InvariantCultureScope.Enter();
+            // New epoch for the shared component lookups: the game's jobs ran since our last system.
+            Lookups.Begin(this);
             Setting setting = Mod.Setting;
             if (setting == null || !setting.Enabled || !setting.TowWrecks)
             {
@@ -267,9 +269,9 @@ namespace ClearTheWay
         /// <summary>Set the component if the archetype already has it, otherwise add it.</summary>
         private void SetOrAdd<T>(Entity entity, T value) where T : unmanaged, IComponentData
         {
-            if (EntityManager.HasComponent<T>(entity))
+            if (Lookups.HasComponent<T>(entity))
             {
-                EntityManager.SetComponentData(entity, value);
+                Lookups.SetComponentData(entity, value);
             }
             else
             {

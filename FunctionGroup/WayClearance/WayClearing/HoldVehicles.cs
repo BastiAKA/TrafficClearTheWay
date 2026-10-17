@@ -55,23 +55,23 @@ namespace ClearTheWay.FunctionGroup.WayClearance.WayClearing
         public void HoldStillIfBeingOvertaken(Entity other, bool evadeActive, float aheadDistance, CarCurrentLane otherLane)
         {
             if (!evadeActive || aheadDistance > kHoldRange ||
-                !EntityManager.HasComponent<CarNavigation>(other))
+                !Lookups.HasComponent<CarNavigation>(other))
             {
                 return;
             }
             // We force these cars to stand - protect them from the game's stuck-vehicle
             // detection, which would otherwise despawn held traffic around the corridor.
-            if (EntityManager.HasComponent<PathOwner>(other))
+            if (Lookups.HasComponent<PathOwner>(other))
             {
-                PathOwner pathOwner = EntityManager.GetComponentData<PathOwner>(other);
+                PathOwner pathOwner = Lookups.GetComponentData<PathOwner>(other);
                 if ((pathOwner.m_State & PathFlags.Stuck) != 0)
                 {
                     pathOwner.m_State &= ~PathFlags.Stuck;
-                    EntityManager.SetComponentData(other, pathOwner);
+                    Lookups.SetComponentData(other, pathOwner);
                 }
             }
-            float speed = EntityManager.HasComponent<Moving>(other)
-                ? math.length(EntityManager.GetComponentData<Moving>(other).m_Velocity)
+            float speed = Lookups.HasComponent<Moving>(other)
+                ? math.length(Lookups.GetComponentData<Moving>(other).m_Velocity)
                 : 0f;
             // Standing cars: steer them onto their evade offset at low speed so the corridor
             // physically opens (their own blocked navigation never moves them sideways).
@@ -123,16 +123,16 @@ namespace ClearTheWay.FunctionGroup.WayClearance.WayClearing
             for (int c = 0; c < m_Corridor.CorridorLanes.Count; c++)
             {
                 CorridorLane corridorLane = m_Corridor.CorridorLanes[c];
-                if (!EntityManager.HasBuffer<LaneObject>(corridorLane.m_Lane))
+                if (!Lookups.HasBuffer<LaneObject>(corridorLane.m_Lane))
                 {
                     continue;
                 }
                 float curveLength = 1f;
-                if (EntityManager.HasComponent<Curve>(corridorLane.m_Lane))
+                if (Lookups.HasComponent<Curve>(corridorLane.m_Lane))
                 {
-                    curveLength = math.max(1f, EntityManager.GetComponentData<Curve>(corridorLane.m_Lane).m_Length);
+                    curveLength = math.max(1f, Lookups.GetComponentData<Curve>(corridorLane.m_Lane).m_Length);
                 }
-                DynamicBuffer<LaneObject> laneObjects = EntityManager.GetBuffer<LaneObject>(corridorLane.m_Lane, isReadOnly: true);
+                DynamicBuffer<LaneObject> laneObjects = Lookups.GetBuffer<LaneObject>(corridorLane.m_Lane, isReadOnly: true);
                 for (int i = 0; i < laneObjects.Length; i++)
                 {
                     LaneObject laneObject = laneObjects[i];
@@ -158,24 +158,24 @@ namespace ClearTheWay.FunctionGroup.WayClearance.WayClearing
                     }
                     Entity other = laneObject.m_LaneObject;
                     if (other == vehicle ||
-                        !EntityManager.HasComponent<Car>(other) ||
-                        !EntityManager.HasComponent<CarCurrentLane>(other) ||
-                        EntityManager.HasComponent<ParkedCar>(other) ||
-                        EntityManager.HasComponent<Deleted>(other))
+                        !Lookups.HasComponent<Car>(other) ||
+                        !Lookups.HasComponent<CarCurrentLane>(other) ||
+                        Lookups.HasComponent<ParkedCar>(other) ||
+                        Lookups.HasComponent<Deleted>(other))
                     {
                         continue;
                     }
                     // Never slow another emergency vehicle; trailers follow their controller.
-                    if ((EntityManager.GetComponentData<Car>(other).m_Flags & CarFlags.Emergency) != 0)
+                    if ((Lookups.GetComponentData<Car>(other).m_Flags & CarFlags.Emergency) != 0)
                     {
                         continue;
                     }
-                    if (VehicleTypes.VehicleTrailerExt.IsTrailer(EntityManager, other))
+                    if (VehicleTypes.VehicleTrailerExt.IsTrailer(other))
                     {
                         continue;
                     }
                     // Curve position is only comparable to the EV's on the same lane.
-                    if (EntityManager.GetComponentData<CarCurrentLane>(other).m_Lane != corridorLane.m_Lane)
+                    if (Lookups.GetComponentData<CarCurrentLane>(other).m_Lane != corridorLane.m_Lane)
                     {
                         continue;
                     }
@@ -191,21 +191,21 @@ namespace ClearTheWay.FunctionGroup.WayClearance.WayClearing
         public void NudgeMergeGap(Entity vehicle, CarCurrentLane currentLane)
         {
             Entity lane = currentLane.m_Lane;
-            if (!EntityManager.HasBuffer<LaneObject>(lane) || !EntityManager.HasComponent<Curve>(lane))
+            if (!Lookups.HasBuffer<LaneObject>(lane) || !Lookups.HasComponent<Curve>(lane))
             {
                 return;
             }
-            float length = math.max(1f, EntityManager.GetComponentData<Curve>(lane).m_Length);
+            float length = math.max(1f, Lookups.GetComponentData<Curve>(lane).m_Length);
             bool inverted = currentLane.m_CurvePosition.z < currentLane.m_CurvePosition.x;
-            DynamicBuffer<LaneObject> laneObjects = EntityManager.GetBuffer<LaneObject>(lane, isReadOnly: true);
+            DynamicBuffer<LaneObject> laneObjects = Lookups.GetBuffer<LaneObject>(lane, isReadOnly: true);
             int nudged = 0;
             for (int i = 0; i < laneObjects.Length && nudged < kMergeGapCars; i++)
             {
                 Entity other = laneObjects[i].m_LaneObject;
                 if (other == vehicle || !EntityManager.Exists(other) ||
-                    !EntityManager.HasComponent<CarNavigation>(other) ||
-                    (EntityManager.HasComponent<Car>(other) &&
-                     (EntityManager.GetComponentData<Car>(other).m_Flags & CarFlags.Emergency) != 0))
+                    !Lookups.HasComponent<CarNavigation>(other) ||
+                    (Lookups.HasComponent<Car>(other) &&
+                     (Lookups.GetComponentData<Car>(other).m_Flags & CarFlags.Emergency) != 0))
                 {
                     continue;
                 }
@@ -228,20 +228,20 @@ namespace ClearTheWay.FunctionGroup.WayClearance.WayClearing
         /// </summary>
         public void PushQueueForward(Entity vehicle, CorridorLane corridorLane)
         {
-            if (!EntityManager.HasBuffer<LaneObject>(corridorLane.m_Lane) ||
-                !EntityManager.HasComponent<Curve>(corridorLane.m_Lane))
+            if (!Lookups.HasBuffer<LaneObject>(corridorLane.m_Lane) ||
+                !Lookups.HasComponent<Curve>(corridorLane.m_Lane))
             {
                 return;
             }
-            float curveLength = math.max(1f, EntityManager.GetComponentData<Curve>(corridorLane.m_Lane).m_Length);
-            DynamicBuffer<LaneObject> laneObjects = EntityManager.GetBuffer<LaneObject>(corridorLane.m_Lane, isReadOnly: true);
+            float curveLength = math.max(1f, Lookups.GetComponentData<Curve>(corridorLane.m_Lane).m_Length);
+            DynamicBuffer<LaneObject> laneObjects = Lookups.GetBuffer<LaneObject>(corridorLane.m_Lane, isReadOnly: true);
             for (int i = 0; i < laneObjects.Length; i++)
             {
                 Entity other = laneObjects[i].m_LaneObject;
                 if (other == vehicle || !EntityManager.Exists(other) ||
-                    !EntityManager.HasComponent<CarNavigation>(other) ||
-                    (EntityManager.HasComponent<Car>(other) &&
-                     (EntityManager.GetComponentData<Car>(other).m_Flags & CarFlags.Emergency) != 0))
+                    !Lookups.HasComponent<CarNavigation>(other) ||
+                    (Lookups.HasComponent<Car>(other) &&
+                     (Lookups.GetComponentData<Car>(other).m_Flags & CarFlags.Emergency) != 0))
                 {
                     continue;
                 }
@@ -266,19 +266,19 @@ namespace ClearTheWay.FunctionGroup.WayClearance.WayClearing
         /// </summary>
         public void OpenLaneChangeSlot(Entity vehicle, Entity targetLane, float curvePosition, bool inverted)
         {
-            if (!EntityManager.HasBuffer<LaneObject>(targetLane) || !EntityManager.HasComponent<Curve>(targetLane))
+            if (!Lookups.HasBuffer<LaneObject>(targetLane) || !Lookups.HasComponent<Curve>(targetLane))
             {
                 return;
             }
-            float length = math.max(1f, EntityManager.GetComponentData<Curve>(targetLane).m_Length);
-            DynamicBuffer<LaneObject> laneObjects = EntityManager.GetBuffer<LaneObject>(targetLane, isReadOnly: true);
+            float length = math.max(1f, Lookups.GetComponentData<Curve>(targetLane).m_Length);
+            DynamicBuffer<LaneObject> laneObjects = Lookups.GetBuffer<LaneObject>(targetLane, isReadOnly: true);
             for (int i = 0; i < laneObjects.Length; i++)
             {
                 Entity other = laneObjects[i].m_LaneObject;
                 if (other == vehicle || !EntityManager.Exists(other) ||
-                    !EntityManager.HasComponent<CarNavigation>(other) ||
-                    (EntityManager.HasComponent<Car>(other) &&
-                     (EntityManager.GetComponentData<Car>(other).m_Flags & CarFlags.Emergency) != 0))
+                    !Lookups.HasComponent<CarNavigation>(other) ||
+                    (Lookups.HasComponent<Car>(other) &&
+                     (Lookups.GetComponentData<Car>(other).m_Flags & CarFlags.Emergency) != 0))
                 {
                     continue;
                 }

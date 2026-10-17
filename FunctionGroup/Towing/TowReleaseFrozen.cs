@@ -69,11 +69,11 @@ namespace ClearTheWay
                         m_Seen.Add(car);
                         // A car whose Controller is a LIVE recovery truck is genuinely on a hook
                         // (or mid-hookup) - never touch that, whatever its damage state.
-                        if (EntityManager.HasComponent<Controller>(car))
+                        if (Lookups.HasComponent<Controller>(car))
                         {
-                            Entity ctrl = EntityManager.GetComponentData<Controller>(car).m_Controller;
+                            Entity ctrl = Lookups.GetComponentData<Controller>(car).m_Controller;
                             if (ctrl != car && ctrl != Entity.Null && EntityManager.Exists(ctrl) &&
-                                EntityManager.HasComponent<Game.Vehicles.MaintenanceVehicle>(ctrl))
+                                Lookups.HasComponent<Game.Vehicles.MaintenanceVehicle>(ctrl))
                             {
                                 continue;
                             }
@@ -142,8 +142,8 @@ namespace ClearTheWay
             //  - CarCurrentLane / UpdateFrame: in every vehicle AI query, so without them removing
             //    OutOfControl wakes nothing up and Moving would be added to a car nothing steers.
             //  - PathOwner: the AI needs it to re-path from where the car is standing.
-            bool hasPassenger = EntityManager.HasBuffer<Passenger>(car) &&
-                EntityManager.GetBuffer<Passenger>(car, isReadOnly: true).Length != 0;
+            bool hasPassenger = Lookups.HasBuffer<Passenger>(car) &&
+                Lookups.GetBuffer<Passenger>(car, isReadOnly: true).Length != 0;
             if (!hasPassenger)
             {
                 // Nobody aboard: there is no trip to resume and no driver, so releasing it would
@@ -151,26 +151,26 @@ namespace ClearTheWay
                 Condemn(car, setting);
                 return;
             }
-            if (!EntityManager.HasComponent<CarCurrentLane>(car) ||
+            if (!Lookups.HasComponent<CarCurrentLane>(car) ||
                 !EntityManager.HasComponent<Game.Simulation.UpdateFrame>(car) ||
-                !EntityManager.HasComponent<Game.Pathfind.PathOwner>(car))
+                !Lookups.HasComponent<Game.Pathfind.PathOwner>(car))
             {
                 if (setting.VerboseLogging)
                 {
                     Mod.Log.Info($"[release] car={car.Index} NOT released - occupied but unfit to drive: " +
-                        $"lane={(EntityManager.HasComponent<CarCurrentLane>(car) ? 1 : 0)} " +
+                        $"lane={(Lookups.HasComponent<CarCurrentLane>(car) ? 1 : 0)} " +
                         $"updframe={(EntityManager.HasComponent<Game.Simulation.UpdateFrame>(car) ? 1 : 0)} " +
-                        $"pathowner={(EntityManager.HasComponent<Game.Pathfind.PathOwner>(car) ? 1 : 0)}; " +
+                        $"pathowner={(Lookups.HasComponent<Game.Pathfind.PathOwner>(car) ? 1 : 0)}; " +
                         $"left standing for the stranded sweep");
                 }
                 return;
             }
 
-            if (EntityManager.HasComponent<TowMarker>(car))
+            if (Lookups.HasComponent<TowMarker>(car))
             {
                 EntityManager.RemoveComponent<TowMarker>(car);
             }
-            if (EntityManager.HasComponent<RelicRecovery>(car))
+            if (Lookups.HasComponent<RelicRecovery>(car))
             {
                 EntityManager.RemoveComponent<RelicRecovery>(car);
             }
@@ -181,13 +181,13 @@ namespace ClearTheWay
             // trailer data straight off prefabs an ordinary car does not have, and hard-crashes.
             // Everything here runs on the main thread in one pass, so no job can observe the
             // half-finished state in between.
-            if (EntityManager.HasComponent<Controller>(car))
+            if (Lookups.HasComponent<Controller>(car))
             {
                 EntityManager.RemoveComponent<Controller>(car);
             }
-            if (EntityManager.HasComponent<Game.Simulation.MaintenanceConsumer>(car))
+            if (Lookups.HasComponent<Game.Simulation.MaintenanceConsumer>(car))
             {
-                Entity req = EntityManager.GetComponentData<Game.Simulation.MaintenanceConsumer>(car).m_Request;
+                Entity req = Lookups.GetComponentData<Game.Simulation.MaintenanceConsumer>(car).m_Request;
                 if (req != Entity.Null && EntityManager.Exists(req))
                 {
                     EntityManager.AddComponent<Deleted>(req);
@@ -202,7 +202,7 @@ namespace ClearTheWay
             // ObjectInterpolateSystem reads the ring immediately and an empty one renders the car
             // at the origin for a frame - the same seeding TowCoupling does when it restarts a
             // truck.
-            Transform transform = EntityManager.GetComponentData<Transform>(car);
+            Transform transform = Lookups.GetComponentData<Transform>(car);
             EntityManager.RemoveComponent<Stopped>(car);
             DynamicBuffer<TransformFrame> frames = EntityManager.AddBuffer<TransformFrame>(car);
             for (int i = 0; i < 4; i++)
@@ -245,17 +245,17 @@ namespace ClearTheWay
         {
             // Stale ownership first - a leftover Controller blocks hookup, and a stale request
             // would stop DamagedVehicleSystem raising a fresh one.
-            if (EntityManager.HasComponent<TowMarker>(car))
+            if (Lookups.HasComponent<TowMarker>(car))
             {
                 EntityManager.RemoveComponent<TowMarker>(car);
             }
-            if (EntityManager.HasComponent<Controller>(car))
+            if (Lookups.HasComponent<Controller>(car))
             {
                 EntityManager.RemoveComponent<Controller>(car);
             }
-            if (EntityManager.HasComponent<Game.Simulation.MaintenanceConsumer>(car))
+            if (Lookups.HasComponent<Game.Simulation.MaintenanceConsumer>(car))
             {
-                Entity req = EntityManager.GetComponentData<Game.Simulation.MaintenanceConsumer>(car).m_Request;
+                Entity req = Lookups.GetComponentData<Game.Simulation.MaintenanceConsumer>(car).m_Request;
                 if (req != Entity.Null && EntityManager.Exists(req))
                 {
                     EntityManager.AddComponent<Deleted>(req);
@@ -264,15 +264,15 @@ namespace ClearTheWay
             }
             // Stopped and OutOfControl stay: it is a wreck now, and OutOfControl correctly keeps
             // every vehicle AI off it while it waits for the truck.
-            if (!EntityManager.HasComponent<Damaged>(car))
+            if (!Lookups.HasComponent<Damaged>(car))
             {
                 EntityManager.AddComponentData(car, new Damaged(new float3(1f, 0f, 0f)));
             }
-            if (!EntityManager.HasComponent<Destroyed>(car))
+            if (!Lookups.HasComponent<Destroyed>(car))
             {
                 EntityManager.AddComponentData(car, default(Destroyed));
             }
-            if (!EntityManager.HasComponent<RelicRecovery>(car))
+            if (!Lookups.HasComponent<RelicRecovery>(car))
             {
                 EntityManager.AddComponent<RelicRecovery>(car);
             }
@@ -288,16 +288,16 @@ namespace ClearTheWay
         /// traffic routes through the space it is about to vacate. Same poke StartVehicle does.</summary>
         private void PokeBlockedLanes(Entity car)
         {
-            if (!EntityManager.HasBuffer<BlockedLane>(car))
+            if (!Lookups.HasBuffer<BlockedLane>(car))
             {
                 return;
             }
-            DynamicBuffer<BlockedLane> lanes = EntityManager.GetBuffer<BlockedLane>(car, isReadOnly: true);
+            DynamicBuffer<BlockedLane> lanes = Lookups.GetBuffer<BlockedLane>(car, isReadOnly: true);
             for (int i = 0; i < lanes.Length; i++)
             {
                 Entity lane = lanes[i].m_Lane;
-                if (EntityManager.HasComponent<Game.Net.CarLane>(lane) &&
-                    !EntityManager.HasComponent<PathfindUpdated>(lane))
+                if (Lookups.HasComponent<Game.Net.CarLane>(lane) &&
+                    !Lookups.HasComponent<PathfindUpdated>(lane))
                 {
                     EntityManager.AddComponent<PathfindUpdated>(lane);
                 }

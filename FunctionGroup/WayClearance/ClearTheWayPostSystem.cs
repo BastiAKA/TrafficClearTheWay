@@ -101,18 +101,18 @@ namespace ClearTheWay
                     // Gone or parked: drop it and take the beacon back off. Nothing else ever
                     // clears the flag, so a truck that parked between scans must not keep
                     // flashing on the depot apron until the next one.
-                    if (!EntityManager.Exists(vehicle) || !EntityManager.HasComponent<Car>(vehicle) ||
-                        EntityManager.HasComponent<Game.Vehicles.ParkedCar>(vehicle))
+                    if (!EntityManager.Exists(vehicle) || !Lookups.HasComponent<Car>(vehicle) ||
+                        Lookups.HasComponent<Game.Vehicles.ParkedCar>(vehicle))
                     {
                         m_OnRecoveryDuty.Remove(vehicle);
                         ClearBeacon(vehicle);
                         continue;
                     }
-                    Car onDutyCar = EntityManager.GetComponentData<Car>(vehicle);
+                    Car onDutyCar = Lookups.GetComponentData<Car>(vehicle);
                     if ((onDutyCar.m_Flags & CarFlags.Warning) == 0)
                     {
                         onDutyCar.m_Flags |= CarFlags.Warning;
-                        EntityManager.SetComponentData(vehicle, onDutyCar);
+                        Lookups.SetComponentData(vehicle, onDutyCar);
                     }
                 }
                 return;
@@ -129,7 +129,7 @@ namespace ClearTheWay
                     // skip: we re-assert Warning every tick after the AI has run, so a truck that
                     // parked while its Target still pointed at a wreck kept flashing on the depot
                     // apron forever - nothing else ever takes the flag back off.
-                    if (EntityManager.HasComponent<Game.Vehicles.ParkedCar>(vehicle))
+                    if (Lookups.HasComponent<Game.Vehicles.ParkedCar>(vehicle))
                     {
                         ClearBeacon(vehicle);
                         continue;
@@ -137,21 +137,21 @@ namespace ClearTheWay
                     bool onRecoveryDuty = m_HookupSystem.TrucksWithLoad.Contains(vehicle);
                     if (!onRecoveryDuty)
                     {
-                        Entity target = EntityManager.GetComponentData<Target>(vehicle).m_Target;
+                        Entity target = Lookups.GetComponentData<Target>(vehicle).m_Target;
                         onRecoveryDuty = target != Entity.Null && EntityManager.Exists(target) &&
-                            (EntityManager.HasComponent<Damaged>(target) ||
-                             EntityManager.HasComponent<Game.Events.InvolvedInAccident>(target));
+                            (Lookups.HasComponent<Damaged>(target) ||
+                             Lookups.HasComponent<Game.Events.InvolvedInAccident>(target));
                     }
                     if (!onRecoveryDuty)
                     {
                         continue;
                     }
                     m_OnRecoveryDuty.Add(vehicle);
-                    Car car = EntityManager.GetComponentData<Car>(vehicle);
+                    Car car = Lookups.GetComponentData<Car>(vehicle);
                     if ((car.m_Flags & CarFlags.Warning) == 0)
                     {
                         car.m_Flags |= CarFlags.Warning;
-                        EntityManager.SetComponentData(vehicle, car);
+                        Lookups.SetComponentData(vehicle, car);
                     }
                 }
             }
@@ -166,15 +166,15 @@ namespace ClearTheWay
         /// clears it again.</summary>
         private void ClearBeacon(Entity vehicle)
         {
-            if (!EntityManager.Exists(vehicle) || !EntityManager.HasComponent<Car>(vehicle))
+            if (!EntityManager.Exists(vehicle) || !Lookups.HasComponent<Car>(vehicle))
             {
                 return;
             }
-            Car car = EntityManager.GetComponentData<Car>(vehicle);
+            Car car = Lookups.GetComponentData<Car>(vehicle);
             if ((car.m_Flags & CarFlags.Warning) != 0)
             {
                 car.m_Flags &= ~CarFlags.Warning;
-                EntityManager.SetComponentData(vehicle, car);
+                Lookups.SetComponentData(vehicle, car);
             }
         }
 
@@ -182,6 +182,8 @@ namespace ClearTheWay
         {
             // Numbers in the log with '.', whatever the game language - see InvariantCultureScope.
             using InvariantCultureScope culture = InvariantCultureScope.Enter();
+            // New epoch for the shared component lookups: the game's jobs ran since our last system.
+            Lookups.Begin(this);
             using (ModProfiler.Sample(Profiling, "ClearTheWayPostSystem"))
             {
                 RunPass();
@@ -205,28 +207,28 @@ namespace ClearTheWay
             {
                 Entity entity = entry.Key;
                 // (HasComponent is false for a dead entity, so no separate Exists.)
-                if (!EntityManager.HasComponent<CarNavigation>(entity))
+                if (!Lookups.HasComponent<CarNavigation>(entity))
                 {
                     continue;
                 }
                 SpeedOverride ov = entry.Value;
-                CarNavigation navigation = EntityManager.GetComponentData<CarNavigation>(entity);
+                CarNavigation navigation = Lookups.GetComponentData<CarNavigation>(entity);
                 if (ov.m_Mode == 0)
                 {
                     // Ceiling: hold the car (never speed it up, only cap it down).
                     if (navigation.m_MaxSpeed > ov.m_Speed)
                     {
                         navigation.m_MaxSpeed = ov.m_Speed;
-                        EntityManager.SetComponentData(entity, navigation);
+                        Lookups.SetComponentData(entity, navigation);
                     }
                     // Protect every held car from the game's stuck-vehicle despawn.
-                    if (EntityManager.HasComponent<PathOwner>(entity))
+                    if (Lookups.HasComponent<PathOwner>(entity))
                     {
-                        PathOwner pathOwner = EntityManager.GetComponentData<PathOwner>(entity);
+                        PathOwner pathOwner = Lookups.GetComponentData<PathOwner>(entity);
                         if ((pathOwner.m_State & PathFlags.Stuck) != 0)
                         {
                             pathOwner.m_State &= ~PathFlags.Stuck;
-                            EntityManager.SetComponentData(entity, pathOwner);
+                            Lookups.SetComponentData(entity, pathOwner);
                         }
                     }
                 }
@@ -251,16 +253,16 @@ namespace ClearTheWay
                     }
                     if (write)
                     {
-                        EntityManager.SetComponentData(entity, navigation);
+                        Lookups.SetComponentData(entity, navigation);
                     }
                     // Also protect these from the stuck-despawn while we steer/nudge them.
-                    if (EntityManager.HasComponent<PathOwner>(entity))
+                    if (Lookups.HasComponent<PathOwner>(entity))
                     {
-                        PathOwner pathOwner = EntityManager.GetComponentData<PathOwner>(entity);
+                        PathOwner pathOwner = Lookups.GetComponentData<PathOwner>(entity);
                         if ((pathOwner.m_State & PathFlags.Stuck) != 0)
                         {
                             pathOwner.m_State &= ~PathFlags.Stuck;
-                            EntityManager.SetComponentData(entity, pathOwner);
+                            Lookups.SetComponentData(entity, pathOwner);
                         }
                     }
                 }

@@ -146,30 +146,30 @@ namespace ClearTheWay
         /// </summary>
         private bool IsOnWreckRun(Entity vehicle)
         {
-            if (!EntityManager.HasComponent<Target>(vehicle) ||
-                !EntityManager.HasComponent<Game.Vehicles.MaintenanceVehicle>(vehicle))
+            if (!Lookups.HasComponent<Target>(vehicle) ||
+                !Lookups.HasComponent<Game.Vehicles.MaintenanceVehicle>(vehicle))
             {
                 return false;
             }
-            if ((EntityManager.GetComponentData<Game.Vehicles.MaintenanceVehicle>(vehicle).m_State &
+            if ((Lookups.GetComponentData<Game.Vehicles.MaintenanceVehicle>(vehicle).m_State &
                  MaintenanceVehicleFlags.Returning) != 0)
             {
                 return false;
             }
-            Entity target = EntityManager.GetComponentData<Target>(vehicle).m_Target;
+            Entity target = Lookups.GetComponentData<Target>(vehicle).m_Target;
             if (target == Entity.Null || !EntityManager.Exists(target) ||
-                (!EntityManager.HasComponent<Damaged>(target) &&
-                 !EntityManager.HasComponent<Game.Events.InvolvedInAccident>(target)))
+                (!Lookups.HasComponent<Damaged>(target) &&
+                 !Lookups.HasComponent<Game.Events.InvolvedInAccident>(target)))
             {
                 return false;
             }
             // Already on somebody's hook? Then this vehicle is the redundant second truck.
-            if (EntityManager.HasComponent<Controller>(target))
+            if (Lookups.HasComponent<Controller>(target))
             {
-                Entity carrier = EntityManager.GetComponentData<Controller>(target).m_Controller;
+                Entity carrier = Lookups.GetComponentData<Controller>(target).m_Controller;
                 if (carrier != Entity.Null && carrier != target && carrier != vehicle &&
-                    EntityManager.Exists(carrier) && !EntityManager.HasComponent<Deleted>(carrier) &&
-                    EntityManager.HasComponent<Game.Vehicles.MaintenanceVehicle>(carrier))
+                    EntityManager.Exists(carrier) && !Lookups.HasComponent<Deleted>(carrier) &&
+                    Lookups.HasComponent<Game.Vehicles.MaintenanceVehicle>(carrier))
                 {
                     return false;
                 }
@@ -193,9 +193,9 @@ namespace ClearTheWay
 
         private void ProcessAssistVehicleImpl(Entity vehicle, float side, uint frame)
         {
-            Entity prefab = EntityManager.GetComponentData<PrefabRef>(vehicle).m_Prefab;
-            if (!EntityManager.HasComponent<MaintenanceVehicleData>(prefab) ||
-                (EntityManager.GetComponentData<MaintenanceVehicleData>(prefab).m_MaintenanceType & MaintenanceType.Vehicle) == 0)
+            Entity prefab = Lookups.GetComponentData<PrefabRef>(vehicle).m_Prefab;
+            if (!Lookups.HasComponent<MaintenanceVehicleData>(prefab) ||
+                (Lookups.GetComponentData<MaintenanceVehicleData>(prefab).m_MaintenanceType & MaintenanceType.Vehicle) == 0)
             {
                 return;
             }
@@ -210,18 +210,18 @@ namespace ClearTheWay
                 // either way. Throttled per tick-block rather than per vehicle - the interesting
                 // signal is "a convoy of trucks is being skipped at this wreck", not each one.
                 if (Mod.Setting.VerboseLogging && frame % 300u == 0u &&
-                    EntityManager.HasComponent<Target>(vehicle))
+                    Lookups.HasComponent<Target>(vehicle))
                 {
-                    Entity skipped = EntityManager.GetComponentData<Target>(vehicle).m_Target;
+                    Entity skipped = Lookups.GetComponentData<Target>(vehicle).m_Target;
                     Mod.Log.Info($"[assist] veh={vehicle.Index} skipped: not on a wreck run " +
                         $"(target={skipped.Index}) - redundant second truck, returning, or target no longer a wreck");
                 }
                 m_AssistProgress.Remove(vehicle);
                 return;
             }
-            Entity target = EntityManager.GetComponentData<Target>(vehicle).m_Target;
+            Entity target = Lookups.GetComponentData<Target>(vehicle).m_Target;
 
-            CarCurrentLane currentLane = EntityManager.GetComponentData<CarCurrentLane>(vehicle);
+            CarCurrentLane currentLane = Lookups.GetComponentData<CarCurrentLane>(vehicle);
             if (!EntityManager.Exists(currentLane.m_Lane))
             {
                 return;
@@ -247,7 +247,7 @@ namespace ClearTheWay
                 // as in the responder pass. Without it every decision was thrown away: the kerb
                 // lane change was re-decided on each tick and never started (truck 2738102,
                 // 2026-10-11: "changing onto the kerb lane" 80 times in two seconds).
-                EntityManager.SetComponentData(vehicle, currentLane);
+                Lookups.SetComponentData(vehicle, currentLane);
                 return;
             }
 
@@ -260,7 +260,7 @@ namespace ClearTheWay
             {
                 currentLane.m_LaneFlags &= ~CarLaneFlags.FixedLane;
                 forcedChanges.Remove(vehicle);
-                EntityManager.SetComponentData(vehicle, currentLane);
+                Lookups.SetComponentData(vehicle, currentLane);
             }
 
             // Progress bookkeeping first: once it has failed to get meaningfully CLOSER to
@@ -270,10 +270,10 @@ namespace ClearTheWay
             // stop-and-go jam it inches forward constantly, so a speed-based timer reset
             // on every creep and the escalation never fired.
             bool stuckLong = false;
-            float3 assistPos = EntityManager.GetComponentData<Transform>(vehicle).m_Position;
+            float3 assistPos = Lookups.GetComponentData<Transform>(vehicle).m_Position;
             float targetDistance = math.distance(
                 assistPos.xz,
-                EntityManager.GetComponentData<Transform>(target).m_Position.xz);
+                Lookups.GetComponentData<Transform>(target).m_Position.xz);
             bool known = m_AssistProgress.TryGetValue(vehicle, out AssistProgress progress);
             // A new wreck is a new run. The record is keyed by vehicle, and a vehicle that is
             // re-targeted without a tick off duty in between kept everything from the old job:
@@ -333,7 +333,7 @@ namespace ClearTheWay
             // reaches this branch; only one that has genuinely stood still for half a minute does.
             stuckLong |= motionless;
 
-            float assistSpeed = math.length(EntityManager.GetComponentData<Moving>(vehicle).m_Velocity);
+            float assistSpeed = math.length(Lookups.GetComponentData<Moving>(vehicle).m_Velocity);
 
             // Rolling watch: how long has it been DRIVING without a stall. Any drop below
             // kAssistRollingSpeed re-arms it, so a car length of stop-and-go creep never counts.
@@ -496,7 +496,7 @@ namespace ClearTheWay
             {
                 m_Ctx.Desperate.TryOncomingDisplacement(vehicle, ref currentLane, side, desperate: true, frame,
                     out _, out _, out _);
-                EntityManager.SetComponentData(vehicle, currentLane);
+                Lookups.SetComponentData(vehicle, currentLane);
             }
 
             // Move ITSELF over. This was missing entirely, and it is why nothing else worked: a
@@ -519,16 +519,16 @@ namespace ClearTheWay
             if (!behindColleague && math.abs(hugPos - currentLane.m_LanePosition) > 0.001f)
             {
                 currentLane.m_LanePosition = hugPos;
-                EntityManager.SetComponentData(vehicle, currentLane);
+                Lookups.SetComponentData(vehicle, currentLane);
             }
 
             // Squeeze past a pulled-aside/boxed-in blocker exactly like an emergency
             // vehicle (separation-gated, IgnoreBlocker) ...
-            if (EntityManager.HasComponent<Blocker>(vehicle) &&
+            if (Lookups.HasComponent<Blocker>(vehicle) &&
                 Mod.Setting.SqueezePastBlockers &&
                 m_Ctx.Squeeze.TrySqueezePastBlocker(vehicle, ref currentLane, frame))
             {
-                EntityManager.SetComponentData(vehicle, currentLane);
+                Lookups.SetComponentData(vehicle, currentLane);
             }
             // ... and, when the way past is physically impossible, go AROUND.
             TryGetAround(vehicle, ref currentLane, assistSpeed, targetDistance, frame);
@@ -595,7 +595,7 @@ namespace ClearTheWay
             assistStuck.m_NextOvertakeFrame = frame + kOvertakeCooldown;
             assistStuck.m_LastSeenFrame = frame;
             stuckStates[vehicle] = assistStuck;
-            EntityManager.SetComponentData(vehicle, currentLane);
+            Lookups.SetComponentData(vehicle, currentLane);
             if (Mod.Setting.VerboseLogging)
             {
                 Mod.Log.Info($"[assist] veh={vehicle.Index} changing lane to get around " +
@@ -632,34 +632,34 @@ namespace ClearTheWay
         {
             if (!Mod.Setting.UnblockRecoveryVehicles ||
                 assistSpeed >= kUnblockMaxSpeed ||
-                !EntityManager.HasComponent<Blocker>(vehicle))
+                !Lookups.HasComponent<Blocker>(vehicle))
             {
                 return;
             }
             m_AssistProgress.TryGetValue(vehicle, out AssistProgress progress);
 
-            Entity blocker = EntityManager.GetComponentData<Blocker>(vehicle).m_Blocker;
+            Entity blocker = Lookups.GetComponentData<Blocker>(vehicle).m_Blocker;
             if (blocker == Entity.Null || !EntityManager.Exists(blocker))
             {
                 return;
             }
             // A trailer in the way means the RIG is in the way - work on its tractor.
             Entity head = VehicleTrailerExt.ResolveHead(EntityManager, blocker);
-            if (!EntityManager.Exists(head) || !EntityManager.HasComponent<Car>(head) ||
-                EntityManager.HasComponent<Deleted>(head))
+            if (!EntityManager.Exists(head) || !Lookups.HasComponent<Car>(head) ||
+                Lookups.HasComponent<Deleted>(head))
             {
                 return;
             }
-            if ((EntityManager.GetComponentData<Car>(head).m_Flags & CarFlags.Emergency) != 0 ||
-                EntityManager.HasComponent<Game.Vehicles.MaintenanceVehicle>(head) ||
-                EntityManager.HasComponent<Game.Events.InvolvedInAccident>(head) ||
-                EntityManager.HasComponent<Damaged>(head))
+            if ((Lookups.GetComponentData<Car>(head).m_Flags & CarFlags.Emergency) != 0 ||
+                Lookups.HasComponent<Game.Vehicles.MaintenanceVehicle>(head) ||
+                Lookups.HasComponent<Game.Events.InvolvedInAccident>(head) ||
+                Lookups.HasComponent<Damaged>(head))
             {
                 return;
             }
             // Only a blocker that is truly standing - a rolling one will clear on its own.
-            if (EntityManager.HasComponent<Moving>(head) &&
-                math.lengthsq(EntityManager.GetComponentData<Moving>(head).m_Velocity) > kUnblockMaxSpeed * kUnblockMaxSpeed)
+            if (Lookups.HasComponent<Moving>(head) &&
+                math.lengthsq(Lookups.GetComponentData<Moving>(head).m_Velocity) > kUnblockMaxSpeed * kUnblockMaxSpeed)
             {
                 return;
             }
@@ -697,17 +697,17 @@ namespace ClearTheWay
                 // Skip a rig mid lane-change: forcing Obsolete on a foreign car while m_ChangeLane
                 // is set risks dangling it in the change lane's LaneObject buffer (see
                 // EmergencyEscalation.TryReleaseLeadBlocker for the full reasoning).
-                if (!EntityManager.HasComponent<CarCurrentLane>(head))
+                if (!Lookups.HasComponent<CarCurrentLane>(head))
                 {
                     return;
                 }
-                CarCurrentLane headLane = EntityManager.GetComponentData<CarCurrentLane>(head);
+                CarCurrentLane headLane = Lookups.GetComponentData<CarCurrentLane>(head);
                 if (headLane.m_ChangeLane != Entity.Null)
                 {
                     return;
                 }
                 headLane.m_LaneFlags |= CarLaneFlags.Obsolete;
-                EntityManager.SetComponentData(head, headLane);
+                Lookups.SetComponentData(head, headLane);
                 m_Ctx.States.Sacrifice[head] = frame + kSacrificeShieldWindow;
                 progress.m_SoftFlaggedHead = head;
                 progress.m_SoftFlagFrame = frame;
@@ -728,9 +728,9 @@ namespace ClearTheWay
             }
 
             int parts = 0;
-            if (EntityManager.HasBuffer<LayoutElement>(head))
+            if (Lookups.HasBuffer<LayoutElement>(head))
             {
-                DynamicBuffer<LayoutElement> layout = EntityManager.GetBuffer<LayoutElement>(head, isReadOnly: true);
+                DynamicBuffer<LayoutElement> layout = Lookups.GetBuffer<LayoutElement>(head, isReadOnly: true);
                 for (int i = 0; i < layout.Length; i++)
                 {
                     Entity part = layout[i].m_Vehicle;
@@ -775,26 +775,26 @@ namespace ClearTheWay
         private void LogAssistNoProgress(Entity vehicle, Entity wreck, CarCurrentLane lane,
             float targetDistance, AssistProgress progress, uint frame)
         {
-            float speed = EntityManager.HasComponent<Moving>(vehicle)
-                ? math.length(EntityManager.GetComponentData<Moving>(vehicle).m_Velocity) : 0f;
-            float3 vpos = EntityManager.GetComponentData<Transform>(vehicle).m_Position;
-            float3 wpos = EntityManager.HasComponent<Transform>(wreck)
-                ? EntityManager.GetComponentData<Transform>(wreck).m_Position : default;
+            float speed = Lookups.HasComponent<Moving>(vehicle)
+                ? math.length(Lookups.GetComponentData<Moving>(vehicle).m_Velocity) : 0f;
+            float3 vpos = Lookups.GetComponentData<Transform>(vehicle).m_Position;
+            float3 wpos = Lookups.HasComponent<Transform>(wreck)
+                ? Lookups.GetComponentData<Transform>(wreck).m_Position : default;
             bool ignore = (lane.m_LaneFlags & CarLaneFlags.IgnoreBlocker) != 0;
 
             string blockerInfo = "none";
-            if (EntityManager.HasComponent<Blocker>(vehicle))
+            if (Lookups.HasComponent<Blocker>(vehicle))
             {
-                Blocker b = EntityManager.GetComponentData<Blocker>(vehicle);
+                Blocker b = Lookups.GetComponentData<Blocker>(vehicle);
                 Entity be = b.m_Blocker;
                 if (be != Entity.Null && EntityManager.Exists(be))
                 {
-                    float bspeed = EntityManager.HasComponent<Moving>(be)
-                        ? math.length(EntityManager.GetComponentData<Moving>(be).m_Velocity) : 0f;
-                    bool bEmerg = EntityManager.HasComponent<Car>(be) &&
-                        (EntityManager.GetComponentData<Car>(be).m_Flags & CarFlags.Emergency) != 0;
-                    bool bWreck = EntityManager.HasComponent<Game.Events.InvolvedInAccident>(be);
-                    bool bMaint = EntityManager.HasComponent<Game.Vehicles.MaintenanceVehicle>(be);
+                    float bspeed = Lookups.HasComponent<Moving>(be)
+                        ? math.length(Lookups.GetComponentData<Moving>(be).m_Velocity) : 0f;
+                    bool bEmerg = Lookups.HasComponent<Car>(be) &&
+                        (Lookups.GetComponentData<Car>(be).m_Flags & CarFlags.Emergency) != 0;
+                    bool bWreck = Lookups.HasComponent<Game.Events.InvolvedInAccident>(be);
+                    bool bMaint = Lookups.HasComponent<Game.Vehicles.MaintenanceVehicle>(be);
                     blockerInfo = $"{be.Index} type={b.m_Type} spd={bspeed:F1} emerg={(bEmerg ? 1 : 0)} " +
                         $"wreck={(bWreck ? 1 : 0)} maint={(bMaint ? 1 : 0)}";
                 }

@@ -64,9 +64,9 @@ namespace ClearTheWay
             m_TowingTruckPos.Clear();
             foreach (Entity truck in m_TrucksWithLoad)
             {
-                if (EntityManager.Exists(truck) && EntityManager.HasComponent<Transform>(truck))
+                if (EntityManager.Exists(truck) && Lookups.HasComponent<Transform>(truck))
                 {
-                    m_TowingTruckPos.Add(EntityManager.GetComponentData<Transform>(truck).m_Position);
+                    m_TowingTruckPos.Add(Lookups.GetComponentData<Transform>(truck).m_Position);
                 }
             }
 
@@ -78,17 +78,17 @@ namespace ClearTheWay
                     Entity relic = relics[i];
                     // A wreck whose Controller is a LIVE recovery truck is genuinely on a hook (or
                     // mid-hookup) - never re-arm that, regardless of distance.
-                    if (EntityManager.HasComponent<Controller>(relic))
+                    if (Lookups.HasComponent<Controller>(relic))
                     {
-                        Entity ctrl = EntityManager.GetComponentData<Controller>(relic).m_Controller;
+                        Entity ctrl = Lookups.GetComponentData<Controller>(relic).m_Controller;
                         if (ctrl != relic && ctrl != Entity.Null && EntityManager.Exists(ctrl) &&
-                            EntityManager.HasComponent<MaintenanceVehicle>(ctrl))
+                            Lookups.HasComponent<MaintenanceVehicle>(ctrl))
                         {
                             continue;
                         }
                     }
                     // Any actively-towing truck within range means a live recovery is working here.
-                    float3 pos = EntityManager.GetComponentData<Transform>(relic).m_Position;
+                    float3 pos = Lookups.GetComponentData<Transform>(relic).m_Position;
                     if (AnyTowingTruckWithinRange(pos))
                     {
                         continue;
@@ -125,28 +125,28 @@ namespace ClearTheWay
         /// </summary>
         private void ReArm(Entity relic, uint frame, Setting setting)
         {
-            if (EntityManager.HasComponent<TowMarker>(relic))
+            if (Lookups.HasComponent<TowMarker>(relic))
             {
                 EntityManager.RemoveComponent<TowMarker>(relic);
             }
-            if (EntityManager.HasComponent<Controller>(relic))
+            if (Lookups.HasComponent<Controller>(relic))
             {
                 EntityManager.RemoveComponent<Controller>(relic);
             }
-            if (EntityManager.HasComponent<MaintenanceConsumer>(relic))
+            if (Lookups.HasComponent<MaintenanceConsumer>(relic))
             {
-                Entity req = EntityManager.GetComponentData<MaintenanceConsumer>(relic).m_Request;
+                Entity req = Lookups.GetComponentData<MaintenanceConsumer>(relic).m_Request;
                 if (req != Entity.Null && EntityManager.Exists(req))
                 {
                     EntityManager.AddComponent<Deleted>(req);
                 }
                 EntityManager.RemoveComponent<MaintenanceConsumer>(relic);
             }
-            if (EntityManager.HasComponent<Destroyed>(relic))
+            if (Lookups.HasComponent<Destroyed>(relic))
             {
-                Destroyed d = EntityManager.GetComponentData<Destroyed>(relic);
+                Destroyed d = Lookups.GetComponentData<Destroyed>(relic);
                 d.m_Cleared = 0f;
-                EntityManager.SetComponentData(relic, d);
+                Lookups.SetComponentData(relic, d);
             }
             EntityManager.AddComponent<RelicRecovery>(relic);
             m_RelicArmedFrame[relic] = frame;

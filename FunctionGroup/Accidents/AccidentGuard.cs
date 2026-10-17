@@ -182,7 +182,7 @@ namespace ClearTheWay.FunctionGroup.Accidents
                 for (int w = 0; w < wrecks.Length; w++)
                 {
                     Entity wreck = wrecks[w];
-                    if (!EntityManager.HasComponent<Transform>(wreck))
+                    if (!Lookups.HasComponent<Transform>(wreck))
                     {
                         continue;
                     }
@@ -194,7 +194,7 @@ namespace ClearTheWay.FunctionGroup.Accidents
                         trueAge = modContext.WreckLifetime.Apply(wreck, setting, frame, ref stats);
                     }
 
-                    float3 pos = EntityManager.GetComponentData<Transform>(wreck).m_Position;
+                    float3 pos = Lookups.GetComponentData<Transform>(wreck).m_Position;
 
                     // Consolidate settled wrecks onto the outermost lane of their side so at
                     // least one lane stays pathfind-passable (see kWreckClearDelay comment).
@@ -204,9 +204,9 @@ namespace ClearTheWay.FunctionGroup.Accidents
                     if (setting.ClearWrecksAside &&
                         ((frame + (uint)wreck.Index) & kWreckClearRetryMask) == 0u &&
                         trueAge >= kWreckClearDelay && !m_ClearedWrecks.Contains(wreck) &&
-                        EntityManager.HasComponent<Stopped>(wreck) &&
-                        !EntityManager.HasComponent<Moving>(wreck) &&
-                        !EntityManager.HasComponent<Game.Events.OnFire>(wreck))
+                        Lookups.HasComponent<Stopped>(wreck) &&
+                        !Lookups.HasComponent<Moving>(wreck) &&
+                        !Lookups.HasComponent<Game.Events.OnFire>(wreck))
                     {
                         using (ModProfiler.Sample(Profiling, "AccidentGuard.ClearAside"))
                         {
@@ -301,15 +301,15 @@ namespace ClearTheWay.FunctionGroup.Accidents
                                     // before - the dedupe just happens once per sweep now instead
                                     // of once per tick.
                                     if (!m_NearSeenScratch.Add(other) ||
-                                        !EntityManager.HasComponent<Car>(other) ||
-                                        !EntityManager.HasComponent<PathOwner>(other))
+                                        !Lookups.HasComponent<Car>(other) ||
+                                        !Lookups.HasComponent<PathOwner>(other))
                                     {
                                         continue;
                                     }
                                     slot.Add(new NearWreckCar
                                     {
                                         m_Entity = other,
-                                        m_Maintenance = EntityManager.HasComponent<Game.Vehicles.MaintenanceVehicle>(other)
+                                        m_Maintenance = Lookups.HasComponent<Game.Vehicles.MaintenanceVehicle>(other)
                                     });
                                 }
                                 m_CachedClusterBounds.Add(m_ClusterBounds[c]);

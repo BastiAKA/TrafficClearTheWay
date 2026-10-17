@@ -73,14 +73,14 @@ namespace ClearTheWay.FunctionGroup.WayClearance.WayClearing.LanePathFinding
 
         private bool HasColleagueAhead(Entity vehicle, CarCurrentLane currentLane, float range, bool maintenance)
         {
-            if (!EntityManager.HasBuffer<LaneObject>(currentLane.m_Lane) ||
-                !EntityManager.HasComponent<Curve>(currentLane.m_Lane))
+            if (!Lookups.HasBuffer<LaneObject>(currentLane.m_Lane) ||
+                !Lookups.HasComponent<Curve>(currentLane.m_Lane))
             {
                 return false;
             }
-            float curveLength = math.max(1f, EntityManager.GetComponentData<Curve>(currentLane.m_Lane).m_Length);
+            float curveLength = math.max(1f, Lookups.GetComponentData<Curve>(currentLane.m_Lane).m_Length);
             bool inverted = currentLane.m_CurvePosition.z < currentLane.m_CurvePosition.x;
-            DynamicBuffer<LaneObject> laneObjects = EntityManager.GetBuffer<LaneObject>(currentLane.m_Lane, isReadOnly: true);
+            DynamicBuffer<LaneObject> laneObjects = Lookups.GetBuffer<LaneObject>(currentLane.m_Lane, isReadOnly: true);
             for (int i = 0; i < laneObjects.Length; i++)
             {
                 // Position-gate FIRST (one multiply, from the buffer's own curve position) and
@@ -103,13 +103,13 @@ namespace ClearTheWay.FunctionGroup.WayClearance.WayClearing.LanePathFinding
                 }
                 Entity other = laneObjects[i].m_LaneObject;
                 if (other == vehicle ||
-                    !EntityManager.HasComponent<Car>(other))
+                    !Lookups.HasComponent<Car>(other))
                 {
                     continue;
                 }
                 if (maintenance
-                        ? EntityManager.HasComponent<Game.Vehicles.MaintenanceVehicle>(other)
-                        : (EntityManager.GetComponentData<Car>(other).m_Flags & CarFlags.Emergency) != 0)
+                        ? Lookups.HasComponent<Game.Vehicles.MaintenanceVehicle>(other)
+                        : (Lookups.GetComponentData<Car>(other).m_Flags & CarFlags.Emergency) != 0)
                 {
                     return true;
                 }
@@ -129,19 +129,19 @@ namespace ClearTheWay.FunctionGroup.WayClearance.WayClearing.LanePathFinding
         public bool IsEvadeSideBlocked(Entity vehicle, CarCurrentLane currentLane, float side)
         {
             Entity lane = currentLane.m_Lane;
-            if (!EntityManager.HasComponent<SlaveLane>(lane) ||
-                !EntityManager.HasComponent<Owner>(lane) ||
-                !EntityManager.HasComponent<Game.Net.CarLane>(lane))
+            if (!Lookups.HasComponent<SlaveLane>(lane) ||
+                !Lookups.HasComponent<Owner>(lane) ||
+                !Lookups.HasComponent<Game.Net.CarLane>(lane))
             {
                 return false; // no lane group (single-lane road): leave the normal logic alone
             }
-            SlaveLane slaveLane = EntityManager.GetComponentData<SlaveLane>(lane);
-            Owner owner = EntityManager.GetComponentData<Owner>(lane);
-            if (!EntityManager.HasBuffer<Game.Net.SubLane>(owner.m_Owner))
+            SlaveLane slaveLane = Lookups.GetComponentData<SlaveLane>(lane);
+            Owner owner = Lookups.GetComponentData<Owner>(lane);
+            if (!Lookups.HasBuffer<Game.Net.SubLane>(owner.m_Owner))
             {
                 return false;
             }
-            DynamicBuffer<Game.Net.SubLane> subLanes = EntityManager.GetBuffer<Game.Net.SubLane>(owner.m_Owner, isReadOnly: true);
+            DynamicBuffer<Game.Net.SubLane> subLanes = Lookups.GetBuffer<Game.Net.SubLane>(owner.m_Owner, isReadOnly: true);
             int maxIndex = math.min(slaveLane.m_MaxIndex, subLanes.Length - 1);
             int myIndex = -1;
             for (int i = slaveLane.m_MinIndex; i <= maxIndex; i++)
@@ -156,7 +156,7 @@ namespace ClearTheWay.FunctionGroup.WayClearance.WayClearing.LanePathFinding
             {
                 return false;
             }
-            bool laneInverted = (EntityManager.GetComponentData<Game.Net.CarLane>(lane).m_Flags & Game.Net.CarLaneFlags.Invert) != 0;
+            bool laneInverted = (Lookups.GetComponentData<Game.Net.CarLane>(lane).m_Flags & Game.Net.CarLaneFlags.Invert) != 0;
             // Same index arithmetic as AddCounterEvadeNeighbor: the evade-side neighbour.
             bool towardLower = (side > 0f) != laneInverted;
             int evadeIndex = towardLower ? myIndex - 1 : myIndex + 1;
@@ -167,12 +167,12 @@ namespace ClearTheWay.FunctionGroup.WayClearance.WayClearing.LanePathFinding
             Game.Net.SubLane neighbor = subLanes[evadeIndex];
             Entity neighborLane = neighbor.m_SubLane;
             if ((neighbor.m_PathMethods & PathMethod.Road) == 0 ||
-                !EntityManager.HasComponent<Game.Net.CarLane>(neighborLane) ||
-                EntityManager.HasComponent<MasterLane>(neighborLane))
+                !Lookups.HasComponent<Game.Net.CarLane>(neighborLane) ||
+                Lookups.HasComponent<MasterLane>(neighborLane))
             {
                 return true;
             }
-            Game.Net.CarLaneFlags neighborFlags = EntityManager.GetComponentData<Game.Net.CarLane>(neighborLane).m_Flags;
+            Game.Net.CarLaneFlags neighborFlags = Lookups.GetComponentData<Game.Net.CarLane>(neighborLane).m_Flags;
             // Opposite-direction neighbour = the oncoming carriageway (handled separately by
             // the oncoming logic), not a same-side corridor lane.
             if (((neighborFlags & Game.Net.CarLaneFlags.Invert) != 0) != laneInverted)
@@ -184,7 +184,7 @@ namespace ClearTheWay.FunctionGroup.WayClearance.WayClearing.LanePathFinding
                 return true;
             }
             if ((neighborFlags & Game.Net.CarLaneFlags.PublicOnly) != 0 &&
-                (EntityManager.GetComponentData<Car>(vehicle).m_Flags & CarFlags.UsePublicTransportLanes) == 0)
+                (Lookups.GetComponentData<Car>(vehicle).m_Flags & CarFlags.UsePublicTransportLanes) == 0)
             {
                 return true; // tram / bus-only lane the responder may not use
             }

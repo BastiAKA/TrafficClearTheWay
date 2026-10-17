@@ -59,7 +59,7 @@ namespace ClearTheWay
 
         private void ProcessEmergencyVehicleImpl(Entity vehicle, Setting setting, float side, uint frame)
         {
-            CarCurrentLane currentLane = EntityManager.GetComponentData<CarCurrentLane>(vehicle);
+            CarCurrentLane currentLane = Lookups.GetComponentData<CarCurrentLane>(vehicle);
             if (!EntityManager.Exists(currentLane.m_Lane))
             {
                 return;
@@ -86,7 +86,7 @@ namespace ClearTheWay
             // arrival branch next tick, so the rest of this pass is moot.
             if (m_Ctx.Arrival.TryArrivalAssist(vehicle, ref currentLane, side, frame, out s.m_NearArrivalTarget))
             {
-                EntityManager.SetComponentData(vehicle, currentLane);
+                Lookups.SetComponentData(vehicle, currentLane);
                 return;
             }
 
@@ -107,7 +107,7 @@ namespace ClearTheWay
             // Own speed feeds the escalation gates below AND decides whether to part the whole
             // carriageway (the central channel is for slow clusters, not a free-flowing
             // responder), so compute it before BuildCorridor.
-            s.m_EmergencySpeed = math.length(EntityManager.GetComponentData<Moving>(vehicle).m_Velocity);
+            s.m_EmergencySpeed = math.length(Lookups.GetComponentData<Moving>(vehicle).m_Velocity);
             // The corridor build needs to know whether this responder is DESPERATE before it runs:
             // that is what unlocks a re-plan of a corridor which is currently being maintained
             // (ChannelPlanner.ChooseShape). The spell it is derived from belongs to the previous
@@ -198,7 +198,7 @@ namespace ClearTheWay
 
             s.m_CanManeuver = currentLane.m_ChangeLane == Entity.Null &&
                 (currentLane.m_LaneFlags & (CarLaneFlags.ParkingSpace | CarLaneFlags.Area | CarLaneFlags.TransformTarget | CarLaneFlags.EndReached | CarLaneFlags.Roundabout)) == 0 &&
-                EntityManager.HasComponent<Game.Net.CarLane>(currentLane.m_Lane);
+                Lookups.HasComponent<Game.Net.CarLane>(currentLane.m_Lane);
 
             // Try the oncoming carriageway FIRST. If the vehicle can get fully onto it, the
             // whole queue on its own side does NOT need to form a corridor - it simply zips
@@ -319,37 +319,37 @@ namespace ClearTheWay
         /// </summary>
         private bool TryReleaseLeadBlocker(Entity vehicle, uint frame, Setting setting)
         {
-            if (!EntityManager.HasComponent<Blocker>(vehicle))
+            if (!Lookups.HasComponent<Blocker>(vehicle))
             {
                 return false;
             }
-            Entity lead = EntityManager.GetComponentData<Blocker>(vehicle).m_Blocker;
+            Entity lead = Lookups.GetComponentData<Blocker>(vehicle).m_Blocker;
             if (lead == Entity.Null || lead == vehicle || !EntityManager.Exists(lead) ||
-                !EntityManager.HasComponent<Car>(lead) ||
-                !EntityManager.HasComponent<CarCurrentLane>(lead))
+                !Lookups.HasComponent<Car>(lead) ||
+                !Lookups.HasComponent<CarCurrentLane>(lead))
             {
                 return false;
             }
             // Civilian only: shield every responder and tow truck, and never touch a wreck.
-            if ((EntityManager.GetComponentData<Car>(lead).m_Flags & CarFlags.Emergency) != 0 ||
-                EntityManager.HasComponent<Game.Vehicles.MaintenanceVehicle>(lead) ||
-                EntityManager.HasComponent<Game.Events.InvolvedInAccident>(lead))
+            if ((Lookups.GetComponentData<Car>(lead).m_Flags & CarFlags.Emergency) != 0 ||
+                Lookups.HasComponent<Game.Vehicles.MaintenanceVehicle>(lead) ||
+                Lookups.HasComponent<Game.Events.InvolvedInAccident>(lead))
             {
                 return false;
             }
-            CarCurrentLane leadLane = EntityManager.GetComponentData<CarCurrentLane>(lead);
+            CarCurrentLane leadLane = Lookups.GetComponentData<CarCurrentLane>(lead);
             if (leadLane.m_ChangeLane != Entity.Null)
             {
                 return false;
             }
             // A genuine plug is stopped; a crawling car will clear on its own.
-            if (EntityManager.HasComponent<Moving>(lead) &&
-                math.lengthsq(EntityManager.GetComponentData<Moving>(lead).m_Velocity) > 0.25f)
+            if (Lookups.HasComponent<Moving>(lead) &&
+                math.lengthsq(Lookups.GetComponentData<Moving>(lead).m_Velocity) > 0.25f)
             {
                 return false;
             }
             leadLane.m_LaneFlags |= CarLaneFlags.Obsolete;
-            EntityManager.SetComponentData(lead, leadLane);
+            Lookups.SetComponentData(lead, leadLane);
             m_Ctx.States.Sacrifice[lead] = frame + kSacrificeShieldWindow;
             if (setting.VerboseLogging)
             {
@@ -365,21 +365,21 @@ namespace ClearTheWay
         public void LogVehicleState(Entity vehicle, CarCurrentLane currentLane, int pushed, uint frame, EvadeStage evade, int oncomingState, bool evadeSideBlocked, bool drainAhead, bool noseCreep,
             OncomingReason oncReason, float oncNearestOffset)
         {
-            float speed = math.length(EntityManager.GetComponentData<Moving>(vehicle).m_Velocity);
-            Blocker blocker = EntityManager.GetComponentData<Blocker>(vehicle);
+            float speed = math.length(Lookups.GetComponentData<Moving>(vehicle).m_Velocity);
+            Blocker blocker = Lookups.GetComponentData<Blocker>(vehicle);
             float blockerSpeed = -1f;
             float blockerLanePos = 0f;
             float separation = -1f;
             if (blocker.m_Blocker != Entity.Null && EntityManager.Exists(blocker.m_Blocker))
             {
-                blockerSpeed = EntityManager.HasComponent<Moving>(blocker.m_Blocker)
-                    ? math.length(EntityManager.GetComponentData<Moving>(blocker.m_Blocker).m_Velocity)
+                blockerSpeed = Lookups.HasComponent<Moving>(blocker.m_Blocker)
+                    ? math.length(Lookups.GetComponentData<Moving>(blocker.m_Blocker).m_Velocity)
                     : 0f;
-                if (EntityManager.HasComponent<CarCurrentLane>(blocker.m_Blocker))
+                if (Lookups.HasComponent<CarCurrentLane>(blocker.m_Blocker))
                 {
-                    blockerLanePos = EntityManager.GetComponentData<CarCurrentLane>(blocker.m_Blocker).m_LanePosition;
+                    blockerLanePos = Lookups.GetComponentData<CarCurrentLane>(blocker.m_Blocker).m_LanePosition;
                 }
-                if (EntityManager.HasComponent<Transform>(blocker.m_Blocker))
+                if (Lookups.HasComponent<Transform>(blocker.m_Blocker))
                 {
                     separation = m_Geometry.GetLateralSeparation(vehicle, currentLane, blocker.m_Blocker);
                 }
@@ -389,8 +389,8 @@ namespace ClearTheWay
             // time a save is loaded, so "veh=" cannot identify the same vehicle in a second run of
             // the same diag save - the coordinates can, and they are what makes a before/after
             // comparison of one fix possible at all.
-            float3 logPos = EntityManager.HasComponent<Transform>(vehicle)
-                ? EntityManager.GetComponentData<Transform>(vehicle).m_Position
+            float3 logPos = Lookups.HasComponent<Transform>(vehicle)
+                ? Lookups.GetComponentData<Transform>(vehicle).m_Position
                 : default;
             Mod.Log.Info($"frame={frame} veh={vehicle.Index} pos=({logPos.x:F0},{logPos.z:F0}) speed={speed:F1} lanePos={currentLane.m_LanePosition:F2} " +
                 $"corridorLanes={m_Corridor.CorridorLanes.Count} pushed={pushed} changing={(currentLane.m_ChangeLane != Entity.Null ? 1 : 0)} " +

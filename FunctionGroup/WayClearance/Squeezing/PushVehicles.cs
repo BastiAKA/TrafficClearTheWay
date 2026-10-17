@@ -67,7 +67,7 @@ namespace ClearTheWay.FunctionGroup.WayClearance.Squeezing
 
         private int PullCarsAsideImpl(Entity vehicle, CorridorLane corridorLane, uint frame, bool hardEvade, bool allowHold, bool drainAhead, bool shakeStuck, float evadeMeters)
         {
-            if (!EntityManager.HasBuffer<LaneObject>(corridorLane.m_Lane))
+            if (!Lookups.HasBuffer<LaneObject>(corridorLane.m_Lane))
             {
                 return 0;
             }
@@ -76,9 +76,9 @@ namespace ClearTheWay.FunctionGroup.WayClearance.Squeezing
             // position on it), so evade and hold-still keep working across segment and
             // intersection boundaries instead of ending at the current lane.
             float curveLength = 1f;
-            if (EntityManager.HasComponent<Curve>(corridorLane.m_Lane))
+            if (Lookups.HasComponent<Curve>(corridorLane.m_Lane))
             {
-                curveLength = math.max(1f, EntityManager.GetComponentData<Curve>(corridorLane.m_Lane).m_Length);
+                curveLength = math.max(1f, Lookups.GetComponentData<Curve>(corridorLane.m_Lane).m_Length);
             }
             // Lane width is constant for this corridor lane - compute it ONCE here instead of
             // re-deriving it for every car below (GetLateralSlack used to do it per car).
@@ -99,7 +99,7 @@ namespace ClearTheWay.FunctionGroup.WayClearance.Squeezing
             // entirely. The cap keeps a generous margin past the corridor so no in-range car is
             // dropped despite the front/back curve-position ordering.
             float aheadCap = (Mod.Setting != null ? Mod.Setting.CorridorDistance : 120f) + kEvadeRange;
-            DynamicBuffer<LaneObject> laneObjects = EntityManager.GetBuffer<LaneObject>(corridorLane.m_Lane, isReadOnly: true);
+            DynamicBuffer<LaneObject> laneObjects = Lookups.GetBuffer<LaneObject>(corridorLane.m_Lane, isReadOnly: true);
             int count = 0;
             for (int i = 0; i < laneObjects.Length; i++)
             {
@@ -124,15 +124,15 @@ namespace ClearTheWay.FunctionGroup.WayClearance.Squeezing
                     continue;
                 }
                 // (No separate Exists: HasComponent is already false for a dead entity.)
-                if (!EntityManager.HasComponent<Car>(other) ||
-                    !EntityManager.HasComponent<CarCurrentLane>(other) ||
-                    EntityManager.HasComponent<ParkedCar>(other) ||
-                    EntityManager.HasComponent<Deleted>(other))
+                if (!Lookups.HasComponent<Car>(other) ||
+                    !Lookups.HasComponent<CarCurrentLane>(other) ||
+                    Lookups.HasComponent<ParkedCar>(other) ||
+                    Lookups.HasComponent<Deleted>(other))
                 {
                     continue;
                 }
                 // Other emergency vehicles keep their line.
-                if ((EntityManager.GetComponentData<Car>(other).m_Flags & CarFlags.Emergency) != 0)
+                if ((Lookups.GetComponentData<Car>(other).m_Flags & CarFlags.Emergency) != 0)
                 {
                     continue;
                 }
@@ -145,10 +145,10 @@ namespace ClearTheWay.FunctionGroup.WayClearance.Squeezing
                 // ~2 minutes, no lateral gap for anyone to squeeze through). Easing a standing
                 // one aside costs it nothing - it is not going anywhere - and is what lets the
                 // queue behind it get past.
-                if (EntityManager.HasComponent<Game.Vehicles.MaintenanceVehicle>(other))
+                if (Lookups.HasComponent<Game.Vehicles.MaintenanceVehicle>(other))
                 {
-                    float otherSpeed = EntityManager.HasComponent<Moving>(other)
-                        ? math.length(EntityManager.GetComponentData<Moving>(other).m_Velocity)
+                    float otherSpeed = Lookups.HasComponent<Moving>(other)
+                        ? math.length(Lookups.GetComponentData<Moving>(other).m_Velocity)
                         : 0f;
                     if (otherSpeed >= kMaintenancePushMaxSpeed)
                     {
@@ -156,12 +156,12 @@ namespace ClearTheWay.FunctionGroup.WayClearance.Squeezing
                     }
                 }
                 // Trailers follow their controller.
-                if (VehicleTrailerExt.IsTrailer(EntityManager, other))
+                if (VehicleTrailerExt.IsTrailer(other))
                 {
                     continue;
                 }
                 // (aheadDistance was already computed and window-gated at the top of the loop.)
-                CarCurrentLane otherLane = EntityManager.GetComponentData<CarCurrentLane>(other);
+                CarCurrentLane otherLane = Lookups.GetComponentData<CarCurrentLane>(other);
                 if (otherLane.m_Lane != corridorLane.m_Lane)
                 {
                     continue;
@@ -182,11 +182,11 @@ namespace ClearTheWay.FunctionGroup.WayClearance.Squeezing
                 if (shakeStuck && ((frame + (uint)other.Index) & kShakeMask) == 0u &&
                     otherLane.m_ChangeLane == Entity.Null &&
                     (otherLane.m_LaneFlags & CarLaneFlags.Obsolete) == 0 &&
-                    EntityManager.HasComponent<Moving>(other) &&
-                    math.lengthsq(EntityManager.GetComponentData<Moving>(other).m_Velocity) < 0.25f)
+                    Lookups.HasComponent<Moving>(other) &&
+                    math.lengthsq(Lookups.GetComponentData<Moving>(other).m_Velocity) < 0.25f)
                 {
                     otherLane.m_LaneFlags |= CarLaneFlags.Obsolete;
-                    EntityManager.SetComponentData(other, otherLane);
+                    Lookups.SetComponentData(other, otherLane);
                 }
                 // Gridlock drain: the responder has been fully stopped behind a blocker for a
                 // long time and cannot pass (no oncoming crossover, not squeezing). Holding /
@@ -229,7 +229,7 @@ namespace ClearTheWay.FunctionGroup.WayClearance.Squeezing
                 // Articulated rigs need special handling throughout: the trailer has no lateral
                 // lever and swings out when the tractor is pulled across, actually narrowing the
                 // gap. Their whole make-way behaviour lives in Truck_WithTrailer.
-                bool articulated = VehicleTrailerExt.IsArticulated(EntityManager, other);
+                bool articulated = VehicleTrailerExt.IsArticulated(other);
 
                 // Cars right in front of a stuck emergency vehicle evade harder - partially
                 // onto the sidewalk or parking strip - so a corridor opens even when they
@@ -286,7 +286,7 @@ namespace ClearTheWay.FunctionGroup.WayClearance.Squeezing
                 if (math.abs(newPos - otherLane.m_LanePosition) > 0.0005f)
                 {
                     otherLane.m_LanePosition = newPos;
-                    EntityManager.SetComponentData(other, otherLane);
+                    Lookups.SetComponentData(other, otherLane);
                 }
 
                 m_Ctx.Hold.HoldStillIfBeingOvertaken(other, hardEvade, aheadDistance, otherLane);

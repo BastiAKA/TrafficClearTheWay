@@ -152,7 +152,7 @@ namespace ClearTheWay
             // longitudinal slot on the target lane so the takeover actually completes in packed
             // traffic instead of stalling half-way.
             if (currentLane.m_ChangeLane != Entity.Null && m_ForcedChanges.ContainsKey(vehicle) &&
-                EntityManager.HasComponent<Game.Net.CarLane>(currentLane.m_ChangeLane))
+                Lookups.HasComponent<Game.Net.CarLane>(currentLane.m_ChangeLane))
             {
                 bool changeInverted = currentLane.m_CurvePosition.z < currentLane.m_CurvePosition.x;
                 m_Ctx.Hold.OpenLaneChangeSlot(vehicle, currentLane.m_ChangeLane, currentLane.m_CurvePosition.x, changeInverted);

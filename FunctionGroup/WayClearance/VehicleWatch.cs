@@ -97,13 +97,13 @@ namespace ClearTheWay
             }
 
             Entity e = m_Entity;
-            float speed = EntityManager.HasComponent<Moving>(e)
-                ? math.length(EntityManager.GetComponentData<Moving>(e).m_Velocity) : 0f;
+            float speed = Lookups.HasComponent<Moving>(e)
+                ? math.length(Lookups.GetComponentData<Moving>(e).m_Velocity) : 0f;
 
             string lane = "lane=-";
-            if (EntityManager.HasComponent<CarCurrentLane>(e))
+            if (Lookups.HasComponent<CarCurrentLane>(e))
             {
-                CarCurrentLane cl = EntityManager.GetComponentData<CarCurrentLane>(e);
+                CarCurrentLane cl = Lookups.GetComponentData<CarCurrentLane>(e);
                 lane = $"lane={cl.m_Lane.Index} curve=({cl.m_CurvePosition.x:F2},{cl.m_CurvePosition.y:F2},{cl.m_CurvePosition.z:F2}) " +
                     $"lanePos={cl.m_LanePosition:F2} laneFlags={(uint)cl.m_LaneFlags:X} " +
                     $"obsolete={((cl.m_LaneFlags & CarLaneFlags.Obsolete) != 0 ? 1 : 0)} " +
@@ -112,33 +112,33 @@ namespace ClearTheWay
             }
 
             string path = "path=-";
-            if (EntityManager.HasComponent<PathOwner>(e))
+            if (Lookups.HasComponent<PathOwner>(e))
             {
-                PathFlags st = EntityManager.GetComponentData<PathOwner>(e).m_State;
+                PathFlags st = Lookups.GetComponentData<PathOwner>(e).m_State;
                 // How much route it actually HOLDS, which the state word alone does not say: path
                 // elements left to drive, and the navigation lanes built from them. "A path arrived
                 // but nav stays 0" and "the path itself is emptied again" are different failures.
-                int pathLen = EntityManager.HasBuffer<PathElement>(e)
-                    ? EntityManager.GetBuffer<PathElement>(e, isReadOnly: true).Length : -1;
-                int navLen = EntityManager.HasBuffer<CarNavigationLane>(e)
-                    ? EntityManager.GetBuffer<CarNavigationLane>(e, isReadOnly: true).Length : -1;
-                string motion = EntityManager.HasComponent<Game.Objects.Stopped>(e) ? "STOPPED"
-                    : EntityManager.HasComponent<Moving>(e) ? "moving" : "neither";
-                path = $"{motion} pathElems={pathLen} elemIdx={EntityManager.GetComponentData<PathOwner>(e).m_ElementIndex} nav={navLen} " +
+                int pathLen = Lookups.HasBuffer<PathElement>(e)
+                    ? Lookups.GetBuffer<PathElement>(e, isReadOnly: true).Length : -1;
+                int navLen = Lookups.HasBuffer<CarNavigationLane>(e)
+                    ? Lookups.GetBuffer<CarNavigationLane>(e, isReadOnly: true).Length : -1;
+                string motion = Lookups.HasComponent<Game.Objects.Stopped>(e) ? "STOPPED"
+                    : Lookups.HasComponent<Moving>(e) ? "moving" : "neither";
+                path = $"{motion} pathElems={pathLen} elemIdx={Lookups.GetComponentData<PathOwner>(e).m_ElementIndex} nav={navLen} " +
                     $"pathState={(uint)st:X} pend={((st & PathFlags.Pending) != 0 ? 1 : 0)} " +
                     $"stuck={((st & PathFlags.Stuck) != 0 ? 1 : 0)} fail={((st & PathFlags.Failed) != 0 ? 1 : 0)} " +
                     $"obs={((st & PathFlags.Obsolete) != 0 ? 1 : 0)}";
             }
 
             string blk = "blocker=-";
-            if (EntityManager.HasComponent<Blocker>(e))
+            if (Lookups.HasComponent<Blocker>(e))
             {
-                Blocker b = EntityManager.GetComponentData<Blocker>(e);
+                Blocker b = Lookups.GetComponentData<Blocker>(e);
                 blk = $"blocker={b.m_Blocker.Index} type={b.m_Type}";
             }
 
-            string tgt = EntityManager.HasComponent<Target>(e)
-                ? $"target={EntityManager.GetComponentData<Target>(e).m_Target.Index}" : "target=-";
+            string tgt = Lookups.HasComponent<Target>(e)
+                ? $"target={Lookups.GetComponentData<Target>(e).m_Target.Index}" : "target=-";
 
             // The point of the dump: is the MOD the reason it is stopped?
             string ours = m_Ctx.VehicleControl.SpeedOverrides.TryGetValue(e, out SpeedOverride ov)
@@ -147,10 +147,10 @@ namespace ClearTheWay
             bool nearWreck = m_Ctx.Accidents.NearWreckCarsFrame == frame &&
                 m_Ctx.Accidents.NearWreckCars.Contains(e);
             bool sacrificed = m_Ctx.States.Sacrifice.ContainsKey(e);
-            bool emergency = EntityManager.HasComponent<Car>(e) &&
-                (EntityManager.GetComponentData<Car>(e).m_Flags & CarFlags.Emergency) != 0;
-            bool wreck = EntityManager.HasComponent<Game.Events.InvolvedInAccident>(e) ||
-                EntityManager.HasComponent<Damaged>(e);
+            bool emergency = Lookups.HasComponent<Car>(e) &&
+                (Lookups.GetComponentData<Car>(e).m_Flags & CarFlags.Emergency) != 0;
+            bool wreck = Lookups.HasComponent<Game.Events.InvolvedInAccident>(e) ||
+                Lookups.HasComponent<Damaged>(e);
 
             Mod.Log.Info($"[watch] veh={idx} frame={frame} speed={speed:F1} {lane} | {path} | {blk} {tgt} | " +
                 $"{ours} nearWreck={(nearWreck ? 1 : 0)} sacrificed={(sacrificed ? 1 : 0)} " +

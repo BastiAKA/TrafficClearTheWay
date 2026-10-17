@@ -67,7 +67,7 @@ namespace ClearTheWay.FunctionGroup.Accidents
             {
                 Entity other = cars[i].m_Entity;
                 // False for an entity that has despawned since the sweep, too.
-                if (!EntityManager.HasComponent<PathOwner>(other))
+                if (!Lookups.HasComponent<PathOwner>(other))
                 {
                     continue;
                 }
@@ -82,13 +82,13 @@ namespace ClearTheWay.FunctionGroup.Accidents
                 }
                 m_NearWreckCars.Add(other);
                 protectedCount++;
-                bool isEmergency = (EntityManager.GetComponentData<Car>(other).m_Flags & CarFlags.Emergency) != 0;
+                bool isEmergency = (Lookups.GetComponentData<Car>(other).m_Flags & CarFlags.Emergency) != 0;
                 bool isMaintenance = cars[i].m_Maintenance;
                 if (!isEmergency && !isMaintenance)
                 {
                     m_NearWreckGuardCars.Add(other);
                 }
-                PathFlags state = EntityManager.GetComponentData<PathOwner>(other).m_State;
+                PathFlags state = Lookups.GetComponentData<PathOwner>(other).m_State;
                 if ((state & PathFlags.Pending) != 0) nPending++;
                 if ((state & PathFlags.Failed) != 0) nFailed++;
                 if ((state & PathFlags.Stuck) != 0) nStuck++;
@@ -99,11 +99,11 @@ namespace ClearTheWay.FunctionGroup.Accidents
                 // above stay ungated: they read a state word that has already been fetched.
                 if (setting.VerboseLogging)
                 {
-                    if (EntityManager.HasComponent<Game.Vehicles.PersonalCar>(other) &&
-                        (EntityManager.GetComponentData<Game.Vehicles.PersonalCar>(other).m_State
+                    if (Lookups.HasComponent<Game.Vehicles.PersonalCar>(other) &&
+                        (Lookups.GetComponentData<Game.Vehicles.PersonalCar>(other).m_State
                             & PersonalCarFlags.DummyTraffic) != 0) nDummy++;
-                    if (EntityManager.HasComponent<Moving>(other) &&
-                        math.lengthsq(EntityManager.GetComponentData<Moving>(other).m_Velocity) < 0.25f) nStopped++;
+                    if (Lookups.HasComponent<Moving>(other) &&
+                        math.lengthsq(Lookups.GetComponentData<Moving>(other).m_Velocity) < 0.25f) nStopped++;
                 }
                 if ((state & (PathFlags.Stuck | PathFlags.Failed)) != 0)
                 {
@@ -117,9 +117,9 @@ namespace ClearTheWay.FunctionGroup.Accidents
                 if ((state & (PathFlags.Obsolete | PathFlags.DivertObsolete)) != 0 &&
                     !isEmergency && !isMaintenance)
                 {
-                    PathOwner shieldPo = EntityManager.GetComponentData<PathOwner>(other);
+                    PathOwner shieldPo = Lookups.GetComponentData<PathOwner>(other);
                     shieldPo.m_State &= ~(PathFlags.Obsolete | PathFlags.DivertObsolete);
-                    EntityManager.SetComponentData(other, shieldPo);
+                    Lookups.SetComponentData(other, shieldPo);
                     nObsCleared++;
                 }
 
@@ -133,15 +133,15 @@ namespace ClearTheWay.FunctionGroup.Accidents
                 // rolling: most of a queue behind a wreck is standing still, and for those the
                 // InvolvedInAccident and Transform lookups were paid for nothing.
                 if (!isEmergency && !isMaintenance &&
-                    EntityManager.HasComponent<Moving>(other))
+                    Lookups.HasComponent<Moving>(other))
                 {
-                    float3 vel = EntityManager.GetComponentData<Moving>(other).m_Velocity;
+                    float3 vel = Lookups.GetComponentData<Moving>(other).m_Velocity;
                     if (math.lengthsq(vel) > kBrakeMinSpeed * kBrakeMinSpeed &&
-                        !EntityManager.HasComponent<Game.Events.InvolvedInAccident>(other) &&
-                        EntityManager.HasComponent<Transform>(other))
+                        !Lookups.HasComponent<Game.Events.InvolvedInAccident>(other) &&
+                        Lookups.HasComponent<Transform>(other))
                     {
                         nBrakeCand++;
-                        float3 carPos = EntityManager.GetComponentData<Transform>(other).m_Position;
+                        float3 carPos = Lookups.GetComponentData<Transform>(other).m_Position;
                         float2 fwd = math.normalizesafe(vel.xz);
                         for (int wi = 0; wi < m_WreckPosScratch.Count; wi++)
                         {
@@ -171,25 +171,25 @@ namespace ClearTheWay.FunctionGroup.Accidents
                 // per tick, a large chunk of the post-accident lag when verbose is on.
                 if (kDespawnForensics && setting.VerboseLogging)
                 {
-                    float3 snapPos = EntityManager.HasComponent<Transform>(other)
-                        ? EntityManager.GetComponentData<Transform>(other).m_Position : default;
-                    float snapSpeed = EntityManager.HasComponent<Moving>(other)
-                        ? math.length(EntityManager.GetComponentData<Moving>(other).m_Velocity) : 0f;
-                    bool snapInvolved = EntityManager.HasComponent<Game.Events.InvolvedInAccident>(other);
-                    bool snapDummy = EntityManager.HasComponent<Game.Vehicles.PersonalCar>(other) &&
-                        (EntityManager.GetComponentData<Game.Vehicles.PersonalCar>(other).m_State & PersonalCarFlags.DummyTraffic) != 0;
-                    uint snapLane = EntityManager.HasComponent<CarCurrentLane>(other)
-                        ? (uint)EntityManager.GetComponentData<CarCurrentLane>(other).m_LaneFlags : 0u;
+                    float3 snapPos = Lookups.HasComponent<Transform>(other)
+                        ? Lookups.GetComponentData<Transform>(other).m_Position : default;
+                    float snapSpeed = Lookups.HasComponent<Moving>(other)
+                        ? math.length(Lookups.GetComponentData<Moving>(other).m_Velocity) : 0f;
+                    bool snapInvolved = Lookups.HasComponent<Game.Events.InvolvedInAccident>(other);
+                    bool snapDummy = Lookups.HasComponent<Game.Vehicles.PersonalCar>(other) &&
+                        (Lookups.GetComponentData<Game.Vehicles.PersonalCar>(other).m_State & PersonalCarFlags.DummyTraffic) != 0;
+                    uint snapLane = Lookups.HasComponent<CarCurrentLane>(other)
+                        ? (uint)Lookups.GetComponentData<CarCurrentLane>(other).m_LaneFlags : 0u;
                     if (m_NearWreckSnapshots.TryGetValue(other, out CarSnapshot prev) &&
                         !prev.m_Involved && snapInvolved)
                     {
                         Mod.Log.Info($"[infected] veh={other.Index} speed={snapSpeed:F1} prevSpeed={prev.m_Speed:F1} " +
                             $"y={snapPos.y:F1} dummy={(snapDummy ? 1 : 0)}");
                     }
-                    char snapType = EntityManager.HasComponent<Game.Vehicles.PersonalCar>(other) ? 'P'
-                        : EntityManager.HasComponent<Game.Vehicles.DeliveryTruck>(other) ? 'D'
-                        : EntityManager.HasComponent<Game.Vehicles.GarbageTruck>(other) ? 'G'
-                        : EntityManager.HasComponent<Game.Vehicles.Taxi>(other) ? 'T' : '?';
+                    char snapType = Lookups.HasComponent<Game.Vehicles.PersonalCar>(other) ? 'P'
+                        : Lookups.HasComponent<Game.Vehicles.DeliveryTruck>(other) ? 'D'
+                        : Lookups.HasComponent<Game.Vehicles.GarbageTruck>(other) ? 'G'
+                        : Lookups.HasComponent<Game.Vehicles.Taxi>(other) ? 'T' : '?';
                     // Track the TARGET too: "route deleted right before despawn" (seen
                     // in the UI) is the RemovePath→delete sequence, fired by PathfindFailed
                     // OR by the target entity ceasing to exist. Record which one it is.
@@ -197,20 +197,20 @@ namespace ClearTheWay.FunctionGroup.Accidents
                     bool snapTargetExists = false;
                     char snapTargetType = '-';
                     float3 snapTargetPos = default;
-                    if (EntityManager.HasComponent<Target>(other))
+                    if (Lookups.HasComponent<Target>(other))
                     {
-                        snapTarget = EntityManager.GetComponentData<Target>(other).m_Target;
+                        snapTarget = Lookups.GetComponentData<Target>(other).m_Target;
                         snapTargetExists = snapTarget != Entity.Null && EntityManager.Exists(snapTarget);
                         if (snapTargetExists)
                         {
-                            snapTargetType = EntityManager.HasComponent<Game.Buildings.Building>(snapTarget) ? 'B'
-                                : EntityManager.HasComponent<Game.Objects.OutsideConnection>(snapTarget) ? 'O'
-                                : EntityManager.HasComponent<Vehicle>(snapTarget) ? 'V'
-                                : EntityManager.HasComponent<Game.Creatures.Creature>(snapTarget) ? 'C'
-                                : EntityManager.HasComponent<Game.Net.Lane>(snapTarget) ? 'L' : '?';
-                            if (EntityManager.HasComponent<Transform>(snapTarget))
+                            snapTargetType = Lookups.HasComponent<Game.Buildings.Building>(snapTarget) ? 'B'
+                                : Lookups.HasComponent<Game.Objects.OutsideConnection>(snapTarget) ? 'O'
+                                : Lookups.HasComponent<Vehicle>(snapTarget) ? 'V'
+                                : Lookups.HasComponent<Game.Creatures.Creature>(snapTarget) ? 'C'
+                                : Lookups.HasComponent<Game.Net.Lane>(snapTarget) ? 'L' : '?';
+                            if (Lookups.HasComponent<Transform>(snapTarget))
                             {
-                                snapTargetPos = EntityManager.GetComponentData<Transform>(snapTarget).m_Position;
+                                snapTargetPos = Lookups.GetComponentData<Transform>(snapTarget).m_Position;
                             }
                         }
                     }

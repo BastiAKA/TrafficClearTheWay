@@ -167,6 +167,8 @@ namespace ClearTheWay
         {
             // Numbers in the log with '.', whatever the game language - see InvariantCultureScope.
             using InvariantCultureScope culture = InvariantCultureScope.Enter();
+            // New epoch for the shared component lookups: the game's jobs ran since our last system.
+            Lookups.Begin(this);
             Setting setting = Mod.Setting;
             // The one place the profiling toggles are read: every pass in every system tests
             // the same static mask, so a toggle takes effect within a tick. Before the Enabled
@@ -206,12 +208,12 @@ namespace ClearTheWay
                     for (int i = 0; i < vehicles.Length; i++)
                     {
                         Entity vehicle = vehicles[i];
-                        Car car = EntityManager.GetComponentData<Car>(vehicle);
+                        Car car = Lookups.GetComponentData<Car>(vehicle);
                         if ((car.m_Flags & CarFlags.Emergency) == 0)
                         {
                             continue;
                         }
-                        if (VehicleTrailerExt.IsTrailer(EntityManager, vehicle))
+                        if (VehicleTrailerExt.IsTrailer(vehicle))
                         {
                             continue;
                         }
@@ -244,7 +246,7 @@ namespace ClearTheWay
                     for (int i = 0; i < responders.Length; i++)
                     {
                         Entity responder = responders[i];
-                        PathOwner pathOwner = EntityManager.GetComponentData<PathOwner>(responder);
+                        PathOwner pathOwner = Lookups.GetComponentData<PathOwner>(responder);
                         if ((pathOwner.m_State & (PathFlags.Failed | PathFlags.Stuck)) == 0)
                         {
                             continue;
@@ -256,7 +258,7 @@ namespace ClearTheWay
                         {
                             pathOwner.m_State |= PathFlags.Obsolete;
                         }
-                        EntityManager.SetComponentData(responder, pathOwner);
+                        Lookups.SetComponentData(responder, pathOwner);
                     }
                 }
                 finally
@@ -287,10 +289,10 @@ namespace ClearTheWay
                     {
                         // What the old query guaranteed and the duty set does not: a vehicle that
                         // is actually rolling on a lane. (False for a dead entity as well.)
-                        if (!EntityManager.HasComponent<Game.Objects.Moving>(candidate) ||
-                            !EntityManager.HasComponent<CarCurrentLane>(candidate) ||
-                            !EntityManager.HasComponent<Game.Prefabs.PrefabRef>(candidate) ||
-                            EntityManager.HasComponent<Game.Common.Deleted>(candidate))
+                        if (!Lookups.HasComponent<Game.Objects.Moving>(candidate) ||
+                            !Lookups.HasComponent<CarCurrentLane>(candidate) ||
+                            !Lookups.HasComponent<Game.Prefabs.PrefabRef>(candidate) ||
+                            Lookups.HasComponent<Game.Common.Deleted>(candidate))
                         {
                             continue;
                         }

@@ -48,18 +48,18 @@ namespace ClearTheWay.FunctionGroup.WayClearance.Squeezing.Roundabout
         /// </summary>
         public bool TryAddRing(Entity lane, float minPos, float side, bool inverted, float startOffset)
         {
-            if (!EntityManager.HasComponent<Game.Net.CarLane>(lane) ||
-                !EntityManager.HasComponent<Owner>(lane))
+            if (!Lookups.HasComponent<Game.Net.CarLane>(lane) ||
+                !Lookups.HasComponent<Owner>(lane))
             {
                 return false;
             }
-            Owner owner = EntityManager.GetComponentData<Owner>(lane);
-            if (!EntityManager.HasBuffer<Game.Net.SubLane>(owner.m_Owner))
+            Owner owner = Lookups.GetComponentData<Owner>(lane);
+            if (!Lookups.HasBuffer<Game.Net.SubLane>(owner.m_Owner))
             {
                 return false;
             }
-            DynamicBuffer<Game.Net.SubLane> subLanes = EntityManager.GetBuffer<Game.Net.SubLane>(owner.m_Owner, isReadOnly: true);
-            bool laneInverted = (EntityManager.GetComponentData<Game.Net.CarLane>(lane).m_Flags & Game.Net.CarLaneFlags.Invert) != 0;
+            DynamicBuffer<Game.Net.SubLane> subLanes = Lookups.GetBuffer<Game.Net.SubLane>(owner.m_Owner, isReadOnly: true);
+            bool laneInverted = (Lookups.GetComponentData<Game.Net.CarLane>(lane).m_Flags & Game.Net.CarLaneFlags.Invert) != 0;
 
             // Count the concentric ring car lanes going the same way as the responder. A
             // single-lane ring has nothing to clear inward.
@@ -67,12 +67,12 @@ namespace ClearTheWay.FunctionGroup.WayClearance.Squeezing.Roundabout
             for (int i = 0; i < subLanes.Length; i++)
             {
                 Entity sl = subLanes[i].m_SubLane;
-                if (!EntityManager.HasComponent<Game.Net.CarLane>(sl) ||
-                    EntityManager.HasComponent<MasterLane>(sl))
+                if (!Lookups.HasComponent<Game.Net.CarLane>(sl) ||
+                    Lookups.HasComponent<MasterLane>(sl))
                 {
                     continue;
                 }
-                if (((EntityManager.GetComponentData<Game.Net.CarLane>(sl).m_Flags & Game.Net.CarLaneFlags.Invert) != 0) != laneInverted)
+                if (((Lookups.GetComponentData<Game.Net.CarLane>(sl).m_Flags & Game.Net.CarLaneFlags.Invert) != 0) != laneInverted)
                 {
                     continue;
                 }
@@ -86,12 +86,12 @@ namespace ClearTheWay.FunctionGroup.WayClearance.Squeezing.Roundabout
             for (int i = 0; i < subLanes.Length; i++)
             {
                 Entity sl = subLanes[i].m_SubLane;
-                if (!EntityManager.HasComponent<Game.Net.CarLane>(sl) ||
-                    EntityManager.HasComponent<MasterLane>(sl))
+                if (!Lookups.HasComponent<Game.Net.CarLane>(sl) ||
+                    Lookups.HasComponent<MasterLane>(sl))
                 {
                     continue;
                 }
-                if (((EntityManager.GetComponentData<Game.Net.CarLane>(sl).m_Flags & Game.Net.CarLaneFlags.Invert) != 0) != laneInverted)
+                if (((Lookups.GetComponentData<Game.Net.CarLane>(sl).m_Flags & Game.Net.CarLaneFlags.Invert) != 0) != laneInverted)
                 {
                     continue;
                 }
@@ -114,7 +114,7 @@ namespace ClearTheWay.FunctionGroup.WayClearance.Squeezing.Roundabout
         {
             if (!setting.ClearRoundaboutInner || !IsRing(currentLane.m_LaneFlags) ||
                 s.m_OncomingState != 0 || s.m_Pushed <= 0 || s.m_NearArrivalTarget ||
-                !EntityManager.HasComponent<Game.Net.CarLane>(currentLane.m_Lane))
+                !Lookups.HasComponent<Game.Net.CarLane>(currentLane.m_Lane))
             {
                 return;
             }

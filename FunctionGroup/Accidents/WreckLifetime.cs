@@ -47,7 +47,7 @@ namespace ClearTheWay.FunctionGroup.GeneralImprovements
         {
                 // --- Wreck lifetime: bound-extend so it waits for the responders ---
                 Game.Events.InvolvedInAccident involved =
-                    EntityManager.GetComponentData<Game.Events.InvolvedInAccident>(wreck);
+                    Lookups.GetComponentData<Game.Events.InvolvedInAccident>(wreck);
                 if (!m_WreckSeenInvolvedFrame.TryGetValue(wreck, out uint originalInvolved))
                 {
                     originalInvolved = involved.m_InvolvedFrame;
@@ -55,16 +55,16 @@ namespace ClearTheWay.FunctionGroup.GeneralImprovements
                 }
                 uint trueAge = frame - originalInvolved;
                 stats.m_MaxWreckAge = math.max(stats.m_MaxWreckAge, trueAge);
-                bool destroyed = EntityManager.HasComponent<Destroyed>(wreck);
+                bool destroyed = Lookups.HasComponent<Destroyed>(wreck);
                 if (destroyed) stats.m_Destroyed++;
                 bool cleared = destroyed &&
-                    EntityManager.GetComponentData<Destroyed>(wreck).m_Cleared >= 1f;
+                    Lookups.GetComponentData<Destroyed>(wreck).m_Cleared >= 1f;
                 // Only touch settled (no longer Moving) wrecks so we never disturb the
                 // game's come-to-rest detection; skip already-cleared ones; stop once the
                 // wreck has genuinely waited longer than the cap. Bicycles/motorcycles
                 // have a 300-frame (not 14400) delete deadline once the site is secured,
                 // so they must be held much younger or they dissolve within seconds.
-                uint holdAge = EntityManager.HasComponent<Game.Vehicles.Bicycle>(wreck)
+                uint holdAge = Lookups.HasComponent<Game.Vehicles.Bicycle>(wreck)
                     ? kWreckHoldAgeBike : kWreckHoldAge;
                 // Once a recovery vehicle has been dispatched to this wreck, the despawn is
                 // effectively paused (much longer cap) so it is never deleted out from under
@@ -74,31 +74,31 @@ namespace ClearTheWay.FunctionGroup.GeneralImprovements
                 bool recoveryClaimed = m_Ctx.WreckClearing.IsRecoveryClaimed(wreck);
                 uint giveUpAge = recoveryClaimed ? kWreckClaimedGiveUpAge : kWreckGiveUpAge;
                 if (setting.PreventAccidentDespawn && !cleared &&
-                    !EntityManager.HasComponent<Moving>(wreck) &&
+                    !Lookups.HasComponent<Moving>(wreck) &&
                     trueAge < giveUpAge && frame > holdAge)
                 {
                     uint targetInvolved = frame - holdAge;
                     if (involved.m_InvolvedFrame < targetInvolved)
                     {
                         involved.m_InvolvedFrame = targetInvolved; // push the delete deadline forward
-                        EntityManager.SetComponentData(wreck, involved);
+                        Lookups.SetComponentData(wreck, involved);
                         stats.m_Extended++;
                     }
                 }
                 else if (setting.PreventAccidentDespawn && !cleared &&
-                    !EntityManager.HasComponent<Moving>(wreck) &&
+                    !Lookups.HasComponent<Moving>(wreck) &&
                     trueAge >= giveUpAge && frame > kVanillaDeleteAge)
                 {
                     // Waited long enough and nobody recovered it - give up and let the game
                     // despawn it cleanly by back-dating the accident past its delete deadline
                     // (a towed wreck loses InvolvedInAccident at hookup, so it is never in this
                     // query - we only ever give up on wrecks that are NOT being towed).
-                    uint deleteAge = EntityManager.HasComponent<Game.Vehicles.Bicycle>(wreck) ? 300u : kVanillaDeleteAge;
+                    uint deleteAge = Lookups.HasComponent<Game.Vehicles.Bicycle>(wreck) ? 300u : kVanillaDeleteAge;
                     uint targetInvolved = frame - deleteAge - 1u;
                     if (involved.m_InvolvedFrame > targetInvolved) // only ever move it EARLIER
                     {
                         involved.m_InvolvedFrame = targetInvolved;
-                        EntityManager.SetComponentData(wreck, involved);
+                        Lookups.SetComponentData(wreck, involved);
                         if (setting.VerboseLogging)
                         {
                             Mod.Log.Info($"[wreckgiveup] wreck={wreck.Index} trueAge={trueAge} - no recovery, despawning");
@@ -118,24 +118,24 @@ namespace ClearTheWay.FunctionGroup.GeneralImprovements
                 // wreck is gone and the lane is rebuilt.
                 if (setting.PreventAccidentDespawn)
                 {
-                    bool hasBuf = EntityManager.HasBuffer<Game.Objects.BlockedLane>(wreck);
+                    bool hasBuf = Lookups.HasBuffer<Game.Objects.BlockedLane>(wreck);
                     int bufLen = 0, carLanes = 0, alreadySecured = 0;
                     if (hasBuf)
                     {
                         DynamicBuffer<Game.Objects.BlockedLane> blockedLanes =
-                            EntityManager.GetBuffer<Game.Objects.BlockedLane>(wreck, isReadOnly: true);
+                            Lookups.GetBuffer<Game.Objects.BlockedLane>(wreck, isReadOnly: true);
                         bufLen = blockedLanes.Length;
                         for (int b = 0; b < blockedLanes.Length; b++)
                         {
                             Entity blockedLane = blockedLanes[b].m_Lane;
-                            if (EntityManager.HasComponent<Game.Net.CarLane>(blockedLane))
+                            if (Lookups.HasComponent<Game.Net.CarLane>(blockedLane))
                             {
                                 carLanes++;
-                                Game.Net.CarLane carLane = EntityManager.GetComponentData<Game.Net.CarLane>(blockedLane);
+                                Game.Net.CarLane carLane = Lookups.GetComponentData<Game.Net.CarLane>(blockedLane);
                                 if ((carLane.m_Flags & Game.Net.CarLaneFlags.IsSecured) == 0)
                                 {
                                     carLane.m_Flags |= Game.Net.CarLaneFlags.IsSecured;
-                                    EntityManager.SetComponentData(blockedLane, carLane);
+                                    Lookups.SetComponentData(blockedLane, carLane);
                                     stats.m_SecuredLanes++;
                                 }
                                 else
@@ -154,7 +154,7 @@ namespace ClearTheWay.FunctionGroup.GeneralImprovements
                     // {
                     //     Mod.Log.Info($"[wrecklanes] wreck={wreck.Index} hasBuf={(hasBuf ? 1 : 0)} " +
                     //         $"len={bufLen} carLanes={carLanes} alreadySecured={alreadySecured} " +
-                    //         $"stopped={(EntityManager.HasComponent<Stopped>(wreck) ? 1 : 0)} moving={(EntityManager.HasComponent<Moving>(wreck) ? 1 : 0)}");
+                    //         $"stopped={(Lookups.HasComponent<Stopped>(wreck) ? 1 : 0)} moving={(Lookups.HasComponent<Moving>(wreck) ? 1 : 0)}");
                     // }
                 }
 
@@ -162,16 +162,16 @@ namespace ClearTheWay.FunctionGroup.GeneralImprovements
                 // queue head and "infects" it via collision impacts (see constants). Zero
                 // its velocity so the pile stays where it is and the game settles it.
                 if (setting.PreventAccidentDespawn &&
-                    EntityManager.HasComponent<OutOfControl>(wreck) &&
-                    EntityManager.HasComponent<Moving>(wreck))
+                    Lookups.HasComponent<OutOfControl>(wreck) &&
+                    Lookups.HasComponent<Moving>(wreck))
                 {
-                    Moving wreckMoving = EntityManager.GetComponentData<Moving>(wreck);
+                    Moving wreckMoving = Lookups.GetComponentData<Moving>(wreck);
                     if (math.lengthsq(wreckMoving.m_Velocity) < kWreckFreezeSpeed * kWreckFreezeSpeed &&
                         (math.lengthsq(wreckMoving.m_Velocity) > 0f || math.lengthsq(wreckMoving.m_AngularVelocity) > 0f))
                     {
                         wreckMoving.m_Velocity = float3.zero;
                         wreckMoving.m_AngularVelocity = float3.zero;
-                        EntityManager.SetComponentData(wreck, wreckMoving);
+                        Lookups.SetComponentData(wreck, wreckMoving);
                         stats.m_Frozen++;
                     }
                 }

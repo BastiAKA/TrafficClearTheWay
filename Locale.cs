@@ -110,6 +110,8 @@ namespace ClearTheWay
                 { m_Setting.GetOptionDescLocaleID(nameof(Setting.ProfileRecoveryAssist)), "Time this pass only. Log name: [perf] RecoveryAssist." },
                 { m_Setting.GetOptionLabelLocaleID(nameof(Setting.ProfileTowCoupling)), "Tow coupling" },
                 { m_Setting.GetOptionDescLocaleID(nameof(Setting.ProfileTowCoupling)), "Time this pass only. Log name: [perf] TowCoupling." },
+                { m_Setting.GetOptionLabelLocaleID(nameof(Setting.ProfileJobSync)), "Waiting for game jobs" },
+                { m_Setting.GetOptionDescLocaleID(nameof(Setting.ProfileJobSync)), "Times how long the mod waits for the game's own jobs before it may read or write a component type, one line per type. Log name: [perf] JobSync.<type>. This time is also part of the pass that touched the type first." },
 
                 { "Assets.NAME[Abschleppfahrzeugdepot]", "Tow depot" },
                 { "Assets.DESCRIPTION[Abschleppfahrzeugdepot]", "Dispatches tow trucks that recover crashed vehicles - and nothing else, so they arrive fast. Added by the Clear the Way mod." },
@@ -230,6 +232,8 @@ namespace ClearTheWay
                 { m_Setting.GetOptionDescLocaleID(nameof(Setting.ProfileRecoveryAssist)), "Nur diesen Pass messen. Name im Log: [perf] RecoveryAssist." },
                 { m_Setting.GetOptionLabelLocaleID(nameof(Setting.ProfileTowCoupling)), "Ankuppeln" },
                 { m_Setting.GetOptionDescLocaleID(nameof(Setting.ProfileTowCoupling)), "Nur diesen Pass messen. Name im Log: [perf] TowCoupling." },
+                { m_Setting.GetOptionLabelLocaleID(nameof(Setting.ProfileJobSync)), "Warten auf Spiel-Jobs" },
+                { m_Setting.GetOptionDescLocaleID(nameof(Setting.ProfileJobSync)), "Misst, wie lange der Mod auf die Jobs des Spiels wartet, bevor er einen Komponententyp lesen oder schreiben darf, eine Zeile pro Typ. Name im Log: [perf] JobSync.<Typ>. Diese Zeit steckt auch in dem Pass, der den Typ als Erster angefasst hat." },
 
                 { "Assets.NAME[Abschleppfahrzeugdepot]", "Abschleppfahrzeugdepot" },
                 { "Assets.DESCRIPTION[Abschleppfahrzeugdepot]", "Schickt Abschleppwagen, die verunfallte Fahrzeuge bergen — und sonst nichts tun, deshalb kommen sie schnell. Vom Mod „Clear the Way“ hinzugefügt." },

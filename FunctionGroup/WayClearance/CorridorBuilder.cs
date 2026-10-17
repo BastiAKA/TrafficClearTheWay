@@ -109,8 +109,8 @@ namespace ClearTheWay
             float maxDistance = setting.CorridorDistance;
             float distance = 0f;
 
-            if (EntityManager.HasComponent<Game.Net.CarLane>(currentLane.m_Lane) &&
-                EntityManager.HasComponent<Curve>(currentLane.m_Lane))
+            if (Lookups.HasComponent<Game.Net.CarLane>(currentLane.m_Lane) &&
+                Lookups.HasComponent<Curve>(currentLane.m_Lane))
             {
                 bool inverted = currentLane.m_CurvePosition.z < currentLane.m_CurvePosition.x;
                 if (setting.ClearRoundaboutInner && currentIsRoundabout &&
@@ -135,24 +135,24 @@ namespace ClearTheWay
                     // are held, not pushed - handled inside AddCounterEvadeNeighbor.)
                     m_Ctx.Corridor.AddCounterEvadeNeighbor(currentLane.m_Lane, currentLane.m_CurvePosition.x, shapeSide, inverted, startOffset: 0f, pushDirection: -shapeSide);
                 }
-                Curve curve = EntityManager.GetComponentData<Curve>(currentLane.m_Lane);
+                Curve curve = Lookups.GetComponentData<Curve>(currentLane.m_Lane);
                 distance += curve.m_Length * math.abs(currentLane.m_CurvePosition.z - currentLane.m_CurvePosition.x);
 
                 // While changing lanes, also clear the target lane so the change can finish.
                 if (currentLane.m_ChangeLane != Entity.Null &&
                     EntityManager.Exists(currentLane.m_ChangeLane) &&
-                    EntityManager.HasComponent<Game.Net.CarLane>(currentLane.m_ChangeLane))
+                    Lookups.HasComponent<Game.Net.CarLane>(currentLane.m_ChangeLane))
                 {
                     m_Ctx.Corridor.AddCorridorLane(currentLane.m_ChangeLane, currentLane.m_CurvePosition.x, shapeSide, inverted, startOffset: 0f, onPath: true);
                 }
             }
 
-            if (!EntityManager.HasBuffer<CarNavigationLane>(vehicle))
+            if (!Lookups.HasBuffer<CarNavigationLane>(vehicle))
             {
                 return;
             }
 
-            DynamicBuffer<CarNavigationLane> navLanes = EntityManager.GetBuffer<CarNavigationLane>(vehicle, isReadOnly: true);
+            DynamicBuffer<CarNavigationLane> navLanes = Lookups.GetBuffer<CarNavigationLane>(vehicle, isReadOnly: true);
             for (int i = 0; i < navLanes.Length && distance < maxDistance; i++)
             {
                 CarNavigationLane navLane = navLanes[i];
@@ -168,14 +168,14 @@ namespace ClearTheWay
 
                 bool inverted = navLane.m_CurvePosition.y < navLane.m_CurvePosition.x;
 
-                if (EntityManager.HasComponent<MasterLane>(navLane.m_Lane))
+                if (Lookups.HasComponent<MasterLane>(navLane.m_Lane))
                 {
                     if (setting.ClearParallelLanes)
                     {
                         m_Ctx.LaneGroups.AddMasterLaneGroup(navLane.m_Lane, shapeSide, inverted, navLane.m_CurvePosition.x, distance);
                     }
                 }
-                else if (EntityManager.HasComponent<Game.Net.CarLane>(navLane.m_Lane))
+                else if (Lookups.HasComponent<Game.Net.CarLane>(navLane.m_Lane))
                 {
                     bool navIsRoundabout = RoundaboutExtensions.IsRing(navLane.m_Flags);
                     if (setting.ClearRoundaboutInner && navIsRoundabout &&
@@ -199,9 +199,9 @@ namespace ClearTheWay
                     }
                 }
 
-                if (EntityManager.HasComponent<Curve>(navLane.m_Lane))
+                if (Lookups.HasComponent<Curve>(navLane.m_Lane))
                 {
-                    Curve curve = EntityManager.GetComponentData<Curve>(navLane.m_Lane);
+                    Curve curve = Lookups.GetComponentData<Curve>(navLane.m_Lane);
                     distance += curve.m_Length * math.abs(navLane.m_CurvePosition.y - navLane.m_CurvePosition.x);
                 }
 
@@ -261,19 +261,19 @@ namespace ClearTheWay
         /// </summary>
         public void AddCounterEvadeNeighbor(Entity lane, float minPos, float side, bool inverted, float startOffset, float pushDirection)
         {
-            if (!EntityManager.HasComponent<SlaveLane>(lane) ||
-                !EntityManager.HasComponent<Owner>(lane) ||
-                !EntityManager.HasComponent<Game.Net.CarLane>(lane))
+            if (!Lookups.HasComponent<SlaveLane>(lane) ||
+                !Lookups.HasComponent<Owner>(lane) ||
+                !Lookups.HasComponent<Game.Net.CarLane>(lane))
             {
                 return;
             }
-            SlaveLane slaveLane = EntityManager.GetComponentData<SlaveLane>(lane);
-            Owner owner = EntityManager.GetComponentData<Owner>(lane);
-            if (!EntityManager.HasBuffer<Game.Net.SubLane>(owner.m_Owner))
+            SlaveLane slaveLane = Lookups.GetComponentData<SlaveLane>(lane);
+            Owner owner = Lookups.GetComponentData<Owner>(lane);
+            if (!Lookups.HasBuffer<Game.Net.SubLane>(owner.m_Owner))
             {
                 return;
             }
-            DynamicBuffer<Game.Net.SubLane> subLanes = EntityManager.GetBuffer<Game.Net.SubLane>(owner.m_Owner, isReadOnly: true);
+            DynamicBuffer<Game.Net.SubLane> subLanes = Lookups.GetBuffer<Game.Net.SubLane>(owner.m_Owner, isReadOnly: true);
             int maxIndex = math.min(slaveLane.m_MaxIndex, subLanes.Length - 1);
             int myIndex = -1;
             for (int i = slaveLane.m_MinIndex; i <= maxIndex; i++)
@@ -288,7 +288,7 @@ namespace ClearTheWay
             {
                 return;
             }
-            bool laneInverted = (EntityManager.GetComponentData<Game.Net.CarLane>(lane).m_Flags & Game.Net.CarLaneFlags.Invert) != 0;
+            bool laneInverted = (Lookups.GetComponentData<Game.Net.CarLane>(lane).m_Flags & Game.Net.CarLaneFlags.Invert) != 0;
             // Corridor side: left in right-hand traffic (side=1), right in left-hand traffic.
             bool towardLower = (side > 0f) != laneInverted;
             int neighborIndex = towardLower ? myIndex - 1 : myIndex + 1;
@@ -297,15 +297,15 @@ namespace ClearTheWay
                 return;
             }
             Entity neighbor = subLanes[neighborIndex].m_SubLane;
-            if (!EntityManager.HasComponent<Game.Net.CarLane>(neighbor) ||
-                EntityManager.HasComponent<MasterLane>(neighbor))
+            if (!Lookups.HasComponent<Game.Net.CarLane>(neighbor) ||
+                Lookups.HasComponent<MasterLane>(neighbor))
             {
                 return;
             }
             // Only push a SAME-direction neighbor aside. An opposite-direction neighbour is
             // the oncoming carriageway - its cars are made to yield elsewhere, never shoved
             // sideways into their own traffic.
-            bool neighborInverted = (EntityManager.GetComponentData<Game.Net.CarLane>(neighbor).m_Flags & Game.Net.CarLaneFlags.Invert) != 0;
+            bool neighborInverted = (Lookups.GetComponentData<Game.Net.CarLane>(neighbor).m_Flags & Game.Net.CarLaneFlags.Invert) != 0;
             if (neighborInverted != laneInverted)
             {
                 return;

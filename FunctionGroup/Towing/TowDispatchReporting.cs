@@ -61,14 +61,14 @@ namespace ClearTheWay
                     // (+ Stopped + Car). Break the settled wrecks down by the components that gate the
                     // recovery request: Damaged (is it even a candidate?), Destroyed + m_Cleared>=1
                     // (a cleared totaled wreck has its consumer REMOVED, so no request).
-                    bool hasDamaged = EntityManager.HasComponent<Game.Objects.Damaged>(wreck);
-                    bool hasDestroyed = EntityManager.HasComponent<Destroyed>(wreck);
-                    bool hasConsumer = EntityManager.HasComponent<Game.Simulation.MaintenanceConsumer>(wreck);
+                    bool hasDamaged = Lookups.HasComponent<Game.Objects.Damaged>(wreck);
+                    bool hasDestroyed = Lookups.HasComponent<Destroyed>(wreck);
+                    bool hasConsumer = Lookups.HasComponent<Game.Simulation.MaintenanceConsumer>(wreck);
                     if (hasDamaged) damaged++;
                     if (hasDestroyed)
                     {
                         destroyed++;
-                        if (EntityManager.GetComponentData<Destroyed>(wreck).m_Cleared >= 1f) clearedGe1++;
+                        if (Lookups.GetComponentData<Destroyed>(wreck).m_Cleared >= 1f) clearedGe1++;
                     }
                     if (hasDamaged && !hasConsumer) damagedNoConsumer++;
                     if (!hasConsumer)
@@ -76,9 +76,9 @@ namespace ClearTheWay
                         continue;
                     }
                     consumer++;
-                    Entity req = EntityManager.GetComponentData<Game.Simulation.MaintenanceConsumer>(wreck).m_Request;
+                    Entity req = Lookups.GetComponentData<Game.Simulation.MaintenanceConsumer>(wreck).m_Request;
                     if (req != Entity.Null && EntityManager.Exists(req) &&
-                        EntityManager.HasComponent<MaintenanceRequest>(req))
+                        Lookups.HasComponent<MaintenanceRequest>(req))
                     {
                         openReq++;
                     }
