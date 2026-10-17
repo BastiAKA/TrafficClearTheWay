@@ -53,11 +53,10 @@ namespace ClearTheWay.FunctionGroup.WayClearance.Squeezing.Roundabout
             {
                 return false;
             }
-            if (!Lookups.HasBuffer<Game.Net.SubLane>(owner.m_Owner))
+            if (!Lookups.TryGetBuffer(owner.m_Owner, out DynamicBuffer<Game.Net.SubLane> subLanes, isReadOnly: true))
             {
                 return false;
             }
-            DynamicBuffer<Game.Net.SubLane> subLanes = Lookups.GetBuffer<Game.Net.SubLane>(owner.m_Owner, isReadOnly: true);
             bool laneInverted = (Lookups.GetComponentData<Game.Net.CarLane>(lane).m_Flags & Game.Net.CarLaneFlags.Invert) != 0;
 
             // Count the concentric ring car lanes going the same way as the responder. A

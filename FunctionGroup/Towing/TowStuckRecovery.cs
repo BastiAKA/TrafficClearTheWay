@@ -109,12 +109,10 @@ namespace ClearTheWay
                     Entity edge = nets[i];
                     if (!Lookups.HasComponent<Game.Net.Edge>(edge) ||
                         !Lookups.HasComponent<Game.Net.Road>(edge) ||
-                        !Lookups.HasBuffer<Game.Net.SubLane>(edge))
+                        !Lookups.TryGetBuffer(edge, out DynamicBuffer<Game.Net.SubLane> subLanes, isReadOnly: true))
                     {
                         continue;
                     }
-                    DynamicBuffer<Game.Net.SubLane> subLanes =
-                        Lookups.GetBuffer<Game.Net.SubLane>(edge, isReadOnly: true);
                     for (int j = 0; j < subLanes.Length; j++)
                     {
                         Entity lane = subLanes[j].m_SubLane;

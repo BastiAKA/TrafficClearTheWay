@@ -210,12 +210,10 @@ namespace ClearTheWay.FunctionGroup.GeneralImprovements
         /// be recomputed after it was teleported aside.</summary>
         public void PokeBlockedLanes(Entity obj)
         {
-            if (!Lookups.HasBuffer<Game.Objects.BlockedLane>(obj))
+            if (!Lookups.TryGetBuffer(obj, out DynamicBuffer<Game.Objects.BlockedLane> oldLanes, isReadOnly: true))
             {
                 return;
             }
-            DynamicBuffer<Game.Objects.BlockedLane> oldLanes =
-                Lookups.GetBuffer<Game.Objects.BlockedLane>(obj, isReadOnly: true);
             for (int i = 0; i < oldLanes.Length; i++)
             {
                 Entity lane = oldLanes[i].m_Lane;

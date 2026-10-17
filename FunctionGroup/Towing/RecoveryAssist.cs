@@ -632,13 +632,13 @@ namespace ClearTheWay
         {
             if (!Mod.Setting.UnblockRecoveryVehicles ||
                 assistSpeed >= kUnblockMaxSpeed ||
-                !Lookups.HasComponent<Blocker>(vehicle))
+                !Lookups.TryGetComponent(vehicle, out Blocker vehicleBlocker))
             {
                 return;
             }
             m_AssistProgress.TryGetValue(vehicle, out AssistProgress progress);
 
-            Entity blocker = Lookups.GetComponentData<Blocker>(vehicle).m_Blocker;
+            Entity blocker = vehicleBlocker.m_Blocker;
             if (blocker == Entity.Null || !EntityManager.Exists(blocker))
             {
                 return;

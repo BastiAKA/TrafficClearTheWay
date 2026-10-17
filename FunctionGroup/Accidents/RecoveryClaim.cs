@@ -26,11 +26,11 @@ namespace ClearTheWay
             }
             Entity request = Lookups.GetComponentData<Game.Simulation.MaintenanceConsumer>(wreck).m_Request;
             if (request == Entity.Null || !entityManager.Exists(request) ||
-                !Lookups.HasComponent<Game.Simulation.Dispatched>(request))
+                !Lookups.TryGetComponent(request, out Game.Simulation.Dispatched requestDispatched))
             {
                 return false;
             }
-            Entity handler = Lookups.GetComponentData<Game.Simulation.Dispatched>(request).m_Handler;
+            Entity handler = requestDispatched.m_Handler;
             return handler != Entity.Null && entityManager.Exists(handler);
         }
     }

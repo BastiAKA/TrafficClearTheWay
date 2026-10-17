@@ -251,11 +251,10 @@ namespace ClearTheWay.FunctionGroup.WayClearance
 
         private bool ComputeParkingBeside(Entity lane, Entity owner)
         {
-            if (!Lookups.HasBuffer<Game.Net.SubLane>(owner))
+            if (!Lookups.TryGetBuffer(owner, out DynamicBuffer<Game.Net.SubLane> subLanes, isReadOnly: true))
             {
                 return false;
             }
-            DynamicBuffer<Game.Net.SubLane> subLanes = Lookups.GetBuffer<Game.Net.SubLane>(owner, isReadOnly: true);
             int idx = -1;
             for (int i = 0; i < subLanes.Length; i++)
             {
@@ -310,13 +309,13 @@ namespace ClearTheWay.FunctionGroup.WayClearance
         /// </remarks>
         public float FindFreeLaneDir(Entity vehicle, Entity refLane, float curvePosition, bool inverted)
         {
-            if (!Lookups.HasComponent<Owner>(refLane) ||
+            if (!Lookups.TryGetComponent(refLane, out Owner refLaneOwner) ||
                 !Lookups.HasComponent<Game.Net.CarLane>(refLane))
             {
                 ReleaseFreeLane(vehicle); // not a road lane we can reason about - no free lane here
                 return 0f;
             }
-            Entity owner = Lookups.GetComponentData<Owner>(refLane).m_Owner;
+            Entity owner = refLaneOwner.m_Owner;
             bool laneInverted = (Lookups.GetComponentData<Game.Net.CarLane>(refLane).m_Flags & Game.Net.CarLaneFlags.Invert) != 0;
             ChannelPlan plan = GetChannelPlan(owner, laneInverted);
             // m_Lanes is only ordered physical left->right once the plan is a real channel plan.
@@ -475,12 +474,12 @@ namespace ClearTheWay.FunctionGroup.WayClearance
         /// </summary>
         public bool AddCentralChannel(Entity refLane, float minPos, bool inverted, float startOffset, bool computeHug)
         {
-            if (!Lookups.HasComponent<Owner>(refLane) ||
+            if (!Lookups.TryGetComponent(refLane, out Owner refLaneOwner) ||
                 !Lookups.HasComponent<Game.Net.CarLane>(refLane))
             {
                 return false;
             }
-            Entity owner = Lookups.GetComponentData<Owner>(refLane).m_Owner;
+            Entity owner = refLaneOwner.m_Owner;
             bool laneInverted = (Lookups.GetComponentData<Game.Net.CarLane>(refLane).m_Flags & Game.Net.CarLaneFlags.Invert) != 0;
             ChannelPlan plan = m_Ctx.Channel.GetChannelPlan(owner, laneInverted);
             if (plan == null || !plan.m_IsChannel)
@@ -538,11 +537,10 @@ namespace ClearTheWay.FunctionGroup.WayClearance
             plan.m_Lanes.Clear();
             plan.m_PushDir.Clear();
             plan.m_PushMeters.Clear();
-            if (!Lookups.HasBuffer<Game.Net.SubLane>(owner))
+            if (!Lookups.TryGetBuffer(owner, out DynamicBuffer<Game.Net.SubLane> subLanes, isReadOnly: true))
             {
                 return;
             }
-            DynamicBuffer<Game.Net.SubLane> subLanes = Lookups.GetBuffer<Game.Net.SubLane>(owner, isReadOnly: true);
             for (int i = 0; i < subLanes.Length; i++)
             {
                 Entity sl = subLanes[i].m_SubLane;

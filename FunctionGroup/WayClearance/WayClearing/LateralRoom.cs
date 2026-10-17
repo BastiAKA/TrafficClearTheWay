@@ -103,18 +103,17 @@ namespace ClearTheWay
         /// </summary>
         private float Measure(Entity lane, float pushDirection)
         {
-            if (!Lookups.HasComponent<Game.Common.Owner>(lane))
+            if (!Lookups.TryGetComponent(lane, out Game.Common.Owner laneOwner))
             {
                 return 0f;
             }
-            Entity owner = Lookups.GetComponentData<Game.Common.Owner>(lane).m_Owner;
+            Entity owner = laneOwner.m_Owner;
             if (owner == Entity.Null || !EntityManager.Exists(owner) ||
-                !Lookups.HasBuffer<Game.Net.SubLane>(owner) ||
+                !Lookups.TryGetBuffer(owner, out DynamicBuffer<Game.Net.SubLane> subLanes, isReadOnly: true) ||
                 !Lookups.HasComponent<Game.Net.CarLane>(lane))
             {
                 return 0f;
             }
-            DynamicBuffer<Game.Net.SubLane> subLanes = Lookups.GetBuffer<Game.Net.SubLane>(owner, isReadOnly: true);
             int ownIdx = -1;
             for (int i = 0; i < subLanes.Length; i++)
             {
@@ -218,22 +217,20 @@ namespace ClearTheWay
         /// </summary>
         private float SurfaceMeters(Entity lane, Entity owner, float pushDirection, bool laneInverted)
         {
-            if (!Lookups.HasComponent<Composition>(owner) ||
-                !Lookups.HasComponent<Curve>(owner) ||
-                !Lookups.HasComponent<Curve>(lane))
+            if (!Lookups.TryGetComponent(owner, out Composition ownerComposition) ||
+                !Lookups.TryGetComponent(owner, out Curve edgeCurve) ||
+                !Lookups.TryGetComponent(lane, out Curve laneCurve))
             {
                 return 0f;
             }
-            Entity composition = Lookups.GetComponentData<Composition>(owner).m_Edge;
+            Entity composition = ownerComposition.m_Edge;
             if (composition == Entity.Null || !EntityManager.Exists(composition) ||
-                !Lookups.HasBuffer<Game.Prefabs.NetCompositionPiece>(composition))
+                !Lookups.TryGetBuffer(composition, out DynamicBuffer<Game.Prefabs.NetCompositionPiece> pieces, isReadOnly: true))
             {
                 return 0f;
             }
             // Where our lane sits across the road, in the EDGE's own frame (+ = edge-right). Same
             // idiom WreckClearing uses to keep a wreck on its own side of the road.
-            Curve edgeCurve = Lookups.GetComponentData<Curve>(owner);
-            Curve laneCurve = Lookups.GetComponentData<Curve>(lane);
             float3 edgePos = MathUtils.Position(edgeCurve.m_Bezier, 0.5f);
             float2 tangent = math.normalizesafe(MathUtils.Tangent(edgeCurve.m_Bezier, 0.5f).xz);
             float2 rightDir = MathUtils.Right(tangent);
@@ -246,8 +243,6 @@ namespace ClearTheWay
             // Work in an "outward" coordinate so both sides read the same: bigger = further out.
             float from = ourX * sideSign + m_Ctx.PrefabGeometry.LaneWidth(lane) * 0.5f;
 
-            DynamicBuffer<Game.Prefabs.NetCompositionPiece> pieces =
-                Lookups.GetBuffer<Game.Prefabs.NetCompositionPiece>(composition, isReadOnly: true);
             float blockedAt = float.MaxValue;
             float surfaceEnd = from;
             for (int i = 0; i < pieces.Length; i++)

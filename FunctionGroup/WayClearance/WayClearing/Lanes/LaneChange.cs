@@ -86,9 +86,9 @@ namespace ClearTheWay.FunctionGroup.WayClearance.WayClearing.LanePathFinding
                 {
                     break;
                 }
-                if (Lookups.HasComponent<Curve>(navLane.m_Lane))
+                if (Lookups.TryGetComponent(navLane.m_Lane, out Curve laneCurve))
                 {
-                    float len = Lookups.GetComponentData<Curve>(navLane.m_Lane).m_Length;
+                    float len = laneCurve.m_Length;
                     distance += len * math.abs(navLane.m_CurvePosition.y - navLane.m_CurvePosition.x);
                 }
             }
@@ -110,27 +110,23 @@ namespace ClearTheWay.FunctionGroup.WayClearance.WayClearing.LanePathFinding
             {
                 return false;
             }
-            if (!Lookups.HasComponent<SlaveLane>(currentLane.m_Lane) ||
-                !Lookups.HasComponent<Owner>(currentLane.m_Lane) ||
-                !Lookups.HasComponent<Curve>(currentLane.m_Lane))
+            if (!Lookups.TryGetComponent(currentLane.m_Lane, out SlaveLane slaveLane) ||
+                !Lookups.TryGetComponent(currentLane.m_Lane, out Owner owner) ||
+                !Lookups.TryGetComponent(currentLane.m_Lane, out Curve curve))
             {
                 return false;
             }
 
-            Curve curve = Lookups.GetComponentData<Curve>(currentLane.m_Lane);
             bool inverted = currentLane.m_CurvePosition.z < currentLane.m_CurvePosition.x;
             if (curve.m_Length * math.abs(currentLane.m_CurvePosition.z - currentLane.m_CurvePosition.x) < kOvertakeMinRemaining)
             {
                 return false;
             }
 
-            SlaveLane slaveLane = Lookups.GetComponentData<SlaveLane>(currentLane.m_Lane);
-            Owner owner = Lookups.GetComponentData<Owner>(currentLane.m_Lane);
-            if (!Lookups.HasBuffer<Game.Net.SubLane>(owner.m_Owner))
+            if (!Lookups.TryGetBuffer(owner.m_Owner, out DynamicBuffer<Game.Net.SubLane> subLanes, isReadOnly: true))
             {
                 return false;
             }
-            DynamicBuffer<Game.Net.SubLane> subLanes = Lookups.GetBuffer<Game.Net.SubLane>(owner.m_Owner, isReadOnly: true);
             int maxIndex = math.min(slaveLane.m_MaxIndex, subLanes.Length - 1);
             int myIndex = -1;
             for (int i = slaveLane.m_MinIndex; i <= maxIndex; i++)

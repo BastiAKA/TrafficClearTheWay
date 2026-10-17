@@ -118,12 +118,10 @@ namespace ClearTheWay.FunctionGroup.GeneralImprovements
                 // wreck is gone and the lane is rebuilt.
                 if (setting.PreventAccidentDespawn)
                 {
-                    bool hasBuf = Lookups.HasBuffer<Game.Objects.BlockedLane>(wreck);
+                    bool hasBuf = Lookups.TryGetBuffer(wreck, out DynamicBuffer<Game.Objects.BlockedLane> blockedLanes, isReadOnly: true);
                     int bufLen = 0, carLanes = 0, alreadySecured = 0;
                     if (hasBuf)
                     {
-                        DynamicBuffer<Game.Objects.BlockedLane> blockedLanes =
-                            Lookups.GetBuffer<Game.Objects.BlockedLane>(wreck, isReadOnly: true);
                         bufLen = blockedLanes.Length;
                         for (int b = 0; b < blockedLanes.Length; b++)
                         {

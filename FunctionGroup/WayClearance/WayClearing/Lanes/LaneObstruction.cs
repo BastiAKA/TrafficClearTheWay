@@ -73,14 +73,13 @@ namespace ClearTheWay.FunctionGroup.WayClearance.WayClearing.LanePathFinding
 
         private bool HasColleagueAhead(Entity vehicle, CarCurrentLane currentLane, float range, bool maintenance)
         {
-            if (!Lookups.HasBuffer<LaneObject>(currentLane.m_Lane) ||
-                !Lookups.HasComponent<Curve>(currentLane.m_Lane))
+            if (!Lookups.TryGetBuffer(currentLane.m_Lane, out DynamicBuffer<LaneObject> laneObjects, isReadOnly: true) ||
+                !Lookups.TryGetComponent(currentLane.m_Lane, out Curve laneCurve))
             {
                 return false;
             }
-            float curveLength = math.max(1f, Lookups.GetComponentData<Curve>(currentLane.m_Lane).m_Length);
+            float curveLength = math.max(1f, laneCurve.m_Length);
             bool inverted = currentLane.m_CurvePosition.z < currentLane.m_CurvePosition.x;
-            DynamicBuffer<LaneObject> laneObjects = Lookups.GetBuffer<LaneObject>(currentLane.m_Lane, isReadOnly: true);
             for (int i = 0; i < laneObjects.Length; i++)
             {
                 // Position-gate FIRST (one multiply, from the buffer's own curve position) and
@@ -135,11 +134,10 @@ namespace ClearTheWay.FunctionGroup.WayClearance.WayClearing.LanePathFinding
             {
                 return false; // no lane group (single-lane road): leave the normal logic alone
             }
-            if (!Lookups.HasBuffer<Game.Net.SubLane>(owner.m_Owner))
+            if (!Lookups.TryGetBuffer(owner.m_Owner, out DynamicBuffer<Game.Net.SubLane> subLanes, isReadOnly: true))
             {
                 return false;
             }
-            DynamicBuffer<Game.Net.SubLane> subLanes = Lookups.GetBuffer<Game.Net.SubLane>(owner.m_Owner, isReadOnly: true);
             int maxIndex = math.min(slaveLane.m_MaxIndex, subLanes.Length - 1);
             int myIndex = -1;
             for (int i = slaveLane.m_MinIndex; i <= maxIndex; i++)

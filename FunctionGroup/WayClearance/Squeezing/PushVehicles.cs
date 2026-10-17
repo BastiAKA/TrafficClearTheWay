@@ -67,7 +67,7 @@ namespace ClearTheWay.FunctionGroup.WayClearance.Squeezing
 
         private int PullCarsAsideImpl(Entity vehicle, CorridorLane corridorLane, uint frame, bool hardEvade, bool allowHold, bool drainAhead, bool shakeStuck, float evadeMeters)
         {
-            if (!Lookups.HasBuffer<LaneObject>(corridorLane.m_Lane))
+            if (!Lookups.TryGetBuffer(corridorLane.m_Lane, out DynamicBuffer<LaneObject> laneObjects, isReadOnly: true))
             {
                 return 0;
             }
@@ -76,9 +76,9 @@ namespace ClearTheWay.FunctionGroup.WayClearance.Squeezing
             // position on it), so evade and hold-still keep working across segment and
             // intersection boundaries instead of ending at the current lane.
             float curveLength = 1f;
-            if (Lookups.HasComponent<Curve>(corridorLane.m_Lane))
+            if (Lookups.TryGetComponent(corridorLane.m_Lane, out Curve laneCurve))
             {
-                curveLength = math.max(1f, Lookups.GetComponentData<Curve>(corridorLane.m_Lane).m_Length);
+                curveLength = math.max(1f, laneCurve.m_Length);
             }
             // Lane width is constant for this corridor lane - compute it ONCE here instead of
             // re-deriving it for every car below (GetLateralSlack used to do it per car).
@@ -99,7 +99,6 @@ namespace ClearTheWay.FunctionGroup.WayClearance.Squeezing
             // entirely. The cap keeps a generous margin past the corridor so no in-range car is
             // dropped despite the front/back curve-position ordering.
             float aheadCap = (Mod.Setting != null ? Mod.Setting.CorridorDistance : 120f) + kEvadeRange;
-            DynamicBuffer<LaneObject> laneObjects = Lookups.GetBuffer<LaneObject>(corridorLane.m_Lane, isReadOnly: true);
             int count = 0;
             for (int i = 0; i < laneObjects.Length; i++)
             {
@@ -123,16 +122,18 @@ namespace ClearTheWay.FunctionGroup.WayClearance.Squeezing
                 {
                     continue;
                 }
-                // (No separate Exists: HasComponent is already false for a dead entity.)
-                if (!Lookups.HasComponent<Car>(other) ||
-                    !Lookups.HasComponent<CarCurrentLane>(other) ||
+                // (No separate Exists: TryGetComponent is already false for a dead entity.)
+                // Car and CarCurrentLane are read here, once - nothing below writes them before
+                // their use, so this is the value the old separate reads further down saw.
+                if (!Lookups.TryGetComponent(other, out Car otherCar) ||
+                    !Lookups.TryGetComponent(other, out CarCurrentLane otherLane) ||
                     Lookups.HasComponent<ParkedCar>(other) ||
                     Lookups.HasComponent<Deleted>(other))
                 {
                     continue;
                 }
                 // Other emergency vehicles keep their line.
-                if ((Lookups.GetComponentData<Car>(other).m_Flags & CarFlags.Emergency) != 0)
+                if ((otherCar.m_Flags & CarFlags.Emergency) != 0)
                 {
                     continue;
                 }
@@ -161,7 +162,6 @@ namespace ClearTheWay.FunctionGroup.WayClearance.Squeezing
                     continue;
                 }
                 // (aheadDistance was already computed and window-gated at the top of the loop.)
-                CarCurrentLane otherLane = Lookups.GetComponentData<CarCurrentLane>(other);
                 if (otherLane.m_Lane != corridorLane.m_Lane)
                 {
                     continue;

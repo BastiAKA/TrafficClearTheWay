@@ -82,23 +82,21 @@ namespace ClearTheWay.FunctionGroup.WayClearance.Squeezing
             reason = OncomingReason.NoLane;
             nearestOffset = -1f;
             Entity lane = currentLane.m_Lane;
-            if (!Lookups.HasComponent<Curve>(lane) ||
-                !Lookups.HasComponent<Game.Net.CarLane>(lane) ||
-                !Lookups.HasComponent<Owner>(lane))
+            if (!Lookups.TryGetComponent(lane, out Curve myCurve) ||
+                !Lookups.TryGetComponent(lane, out Game.Net.CarLane myCarLane) ||
+                !Lookups.TryGetComponent(lane, out Owner owner))
             {
                 return 0;
             }
-            bool myInvert = (Lookups.GetComponentData<Game.Net.CarLane>(lane).m_Flags & Game.Net.CarLaneFlags.Invert) != 0;
-            Owner owner = Lookups.GetComponentData<Owner>(lane);
+            bool myInvert = (myCarLane.m_Flags & Game.Net.CarLaneFlags.Invert) != 0;
             // Only on road segments - intersections have their own geometry.
             if (!Lookups.HasComponent<Game.Net.Edge>(owner.m_Owner) ||
-                !Lookups.HasBuffer<Game.Net.SubLane>(owner.m_Owner))
+                !Lookups.TryGetBuffer(owner.m_Owner, out DynamicBuffer<Game.Net.SubLane> subLanes, isReadOnly: true))
             {
                 return 0;
             }
 
             float t = currentLane.m_CurvePosition.x;
-            Curve myCurve = Lookups.GetComponentData<Curve>(lane);
             float3 myPos = MathUtils.Position(myCurve.m_Bezier, t);
             float2 myTangent = math.normalizesafe(MathUtils.Tangent(myCurve.m_Bezier, t).xz);
             bool inverted = currentLane.m_CurvePosition.z < currentLane.m_CurvePosition.x;
@@ -109,20 +107,19 @@ namespace ClearTheWay.FunctionGroup.WayClearance.Squeezing
             // (lags the target offset when merging). Used both for the hysteresis and for
             // deciding how long oncoming traffic must keep waiting.
             float physicalOffset = 0f;
-            if (Lookups.HasComponent<Transform>(vehicle))
+            if (Lookups.TryGetComponent(vehicle, out Transform vehicleTransform))
             {
-                float3 vehiclePos = Lookups.GetComponentData<Transform>(vehicle).m_Position;
+                float3 vehiclePos = vehicleTransform.m_Position;
                 physicalOffset = math.dot(vehiclePos.xz - myPos.xz, corridorDir);
             }
 
             uint myGroup = 0;
-            bool grouped = Lookups.HasComponent<SlaveLane>(lane);
+            bool grouped = Lookups.TryGetComponent(lane, out SlaveLane mySlaveLane);
             if (grouped)
             {
-                myGroup = Lookups.GetComponentData<SlaveLane>(lane).m_Group;
+                myGroup = mySlaveLane.m_Group;
             }
 
-            DynamicBuffer<Game.Net.SubLane> subLanes = Lookups.GetBuffer<Game.Net.SubLane>(owner.m_Owner, isReadOnly: true);
             Entity bestLane = Entity.Null;
             Curve bestCurve = default;
             float bestS = 0f;
@@ -132,9 +129,9 @@ namespace ClearTheWay.FunctionGroup.WayClearance.Squeezing
                 Entity candidate = subLanes[i].m_SubLane;
                 if (candidate == lane ||
                     (subLanes[i].m_PathMethods & PathMethod.Road) == 0 ||
-                    !Lookups.HasComponent<Game.Net.CarLane>(candidate) ||
+                    !Lookups.TryGetComponent(candidate, out Game.Net.CarLane candidateCarLane) ||
                     Lookups.HasComponent<MasterLane>(candidate) ||
-                    !Lookups.HasComponent<Curve>(candidate))
+                    !Lookups.TryGetComponent(candidate, out Curve candidateCurve))
                 {
                     continue;
                 }
@@ -147,11 +144,10 @@ namespace ClearTheWay.FunctionGroup.WayClearance.Squeezing
                 }
                 // Only genuine oncoming lanes (opposite travel direction on the edge) -
                 // not bus lanes or turn pockets of the own direction.
-                if (((Lookups.GetComponentData<Game.Net.CarLane>(candidate).m_Flags & Game.Net.CarLaneFlags.Invert) != 0) == myInvert)
+                if (((candidateCarLane.m_Flags & Game.Net.CarLaneFlags.Invert) != 0) == myInvert)
                 {
                     continue;
                 }
-                Curve candidateCurve = Lookups.GetComponentData<Curve>(candidate);
                 float3 posForward = MathUtils.Position(candidateCurve.m_Bezier, t);
                 float3 posReverse = MathUtils.Position(candidateCurve.m_Bezier, 1f - t);
                 bool useForward = math.distancesq(posForward.xz, myPos.xz) <= math.distancesq(posReverse.xz, myPos.xz);
@@ -336,9 +332,8 @@ namespace ClearTheWay.FunctionGroup.WayClearance.Squeezing
             // they keep waiting until the vehicle is at least halfway back into its own
             // lane, instead of resuming into a vehicle still crossing over.
             if (physicalOffset > kOncomingClearMargin &&
-                Lookups.HasBuffer<LaneObject>(bestLane))
+                Lookups.TryGetBuffer(bestLane, out DynamicBuffer<LaneObject> oncoming, isReadOnly: true))
             {
-                DynamicBuffer<LaneObject> oncoming = Lookups.GetBuffer<LaneObject>(bestLane, isReadOnly: true);
                 for (int i = 0; i < oncoming.Length; i++)
                 {
                     float2 range = oncoming[i].m_CurvePosition;

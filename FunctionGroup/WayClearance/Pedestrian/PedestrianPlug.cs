@@ -183,11 +183,11 @@ namespace ClearTheWay
             Entity current = vehicle;
             for (int hop = 0; hop < kPlugChainHops; hop++)
             {
-                if (!Lookups.HasComponent<Blocker>(current))
+                if (!Lookups.TryGetComponent(current, out Blocker currentBlocker))
                 {
                     return Entity.Null;
                 }
-                Entity next = Lookups.GetComponentData<Blocker>(current).m_Blocker;
+                Entity next = currentBlocker.m_Blocker;
                 if (next == Entity.Null || next == current || next == vehicle || !EntityManager.Exists(next))
                 {
                     return Entity.Null;
@@ -219,7 +219,7 @@ namespace ClearTheWay
         /// </summary>
         private bool TryRepathPedestrian(Entity pedestrian)
         {
-            if (!Lookups.HasComponent<Human>(pedestrian) ||
+            if (!Lookups.TryGetComponent(pedestrian, out Human pedestrianHuman) ||
                 !Lookups.HasComponent<HumanCurrentLane>(pedestrian) ||
                 !Lookups.HasComponent<PathOwner>(pedestrian))
             {
@@ -227,7 +227,7 @@ namespace ClearTheWay
             }
             // Carried (a child being carried, a casualty) - the game skips the whole re-find
             // branch for these, so setting the flag would do nothing but linger.
-            if ((Lookups.GetComponentData<Human>(pedestrian).m_Flags & HumanFlags.Carried) != 0)
+            if ((pedestrianHuman.m_Flags & HumanFlags.Carried) != 0)
             {
                 return false;
             }

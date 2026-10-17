@@ -59,14 +59,12 @@ namespace ClearTheWay.FunctionGroup.WayClearance.Squeezing.AtTarget
                 return math.distance(position,
                     Lookups.GetComponentData<Transform>(target).m_Position);
             }
-            if (Lookups.HasComponent<Game.Events.AccidentSite>(target))
+            if (Lookups.TryGetComponent(target, out Game.Events.AccidentSite targetAccidentSite))
             {
-                Entity accidentEvent = Lookups.GetComponentData<Game.Events.AccidentSite>(target).m_Event;
+                Entity accidentEvent = targetAccidentSite.m_Event;
                 if (accidentEvent != Entity.Null &&
-                    Lookups.HasBuffer<Game.Events.TargetElement>(accidentEvent))
+                    Lookups.TryGetBuffer(accidentEvent, out DynamicBuffer<Game.Events.TargetElement> involved, isReadOnly: true))
                 {
-                    DynamicBuffer<Game.Events.TargetElement> involved =
-                        Lookups.GetBuffer<Game.Events.TargetElement>(accidentEvent, isReadOnly: true);
                     float best = float.MaxValue;
                     for (int i = 0; i < involved.Length; i++)
                     {
@@ -145,8 +143,8 @@ namespace ClearTheWay.FunctionGroup.WayClearance.Squeezing.AtTarget
             {
                 return false;
             }
-            if (!Lookups.HasComponent<SlaveLane>(currentLane.m_Lane) ||
-                !Lookups.HasComponent<Owner>(currentLane.m_Lane) ||
+            if (!Lookups.TryGetComponent(currentLane.m_Lane, out SlaveLane slaveLane) ||
+                !Lookups.TryGetComponent(currentLane.m_Lane, out Owner owner) ||
                 !Lookups.TryGetComponent(currentLane.m_Lane, out Curve curve))
             {
                 return false;
@@ -158,13 +156,10 @@ namespace ClearTheWay.FunctionGroup.WayClearance.Squeezing.AtTarget
             {
                 return false;
             }
-            SlaveLane slaveLane = Lookups.GetComponentData<SlaveLane>(currentLane.m_Lane);
-            Owner owner = Lookups.GetComponentData<Owner>(currentLane.m_Lane);
-            if (!Lookups.HasBuffer<Game.Net.SubLane>(owner.m_Owner))
+            if (!Lookups.TryGetBuffer(owner.m_Owner, out DynamicBuffer<Game.Net.SubLane> subLanes, isReadOnly: true))
             {
                 return false;
             }
-            DynamicBuffer<Game.Net.SubLane> subLanes = Lookups.GetBuffer<Game.Net.SubLane>(owner.m_Owner, isReadOnly: true);
             int maxIndex = math.min(slaveLane.m_MaxIndex, subLanes.Length - 1);
             int myIndex = -1;
             for (int i = slaveLane.m_MinIndex; i <= maxIndex; i++)

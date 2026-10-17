@@ -319,25 +319,24 @@ namespace ClearTheWay
         /// </summary>
         private bool TryReleaseLeadBlocker(Entity vehicle, uint frame, Setting setting)
         {
-            if (!Lookups.HasComponent<Blocker>(vehicle))
+            if (!Lookups.TryGetComponent(vehicle, out Blocker vehicleBlocker))
             {
                 return false;
             }
-            Entity lead = Lookups.GetComponentData<Blocker>(vehicle).m_Blocker;
+            Entity lead = vehicleBlocker.m_Blocker;
             if (lead == Entity.Null || lead == vehicle || !EntityManager.Exists(lead) ||
-                !Lookups.HasComponent<Car>(lead) ||
-                !Lookups.HasComponent<CarCurrentLane>(lead))
+                !Lookups.TryGetComponent(lead, out Car leadCar) ||
+                !Lookups.TryGetComponent(lead, out CarCurrentLane leadLane))
             {
                 return false;
             }
             // Civilian only: shield every responder and tow truck, and never touch a wreck.
-            if ((Lookups.GetComponentData<Car>(lead).m_Flags & CarFlags.Emergency) != 0 ||
+            if ((leadCar.m_Flags & CarFlags.Emergency) != 0 ||
                 Lookups.HasComponent<Game.Vehicles.MaintenanceVehicle>(lead) ||
                 Lookups.HasComponent<Game.Events.InvolvedInAccident>(lead))
             {
                 return false;
             }
-            CarCurrentLane leadLane = Lookups.GetComponentData<CarCurrentLane>(lead);
             if (leadLane.m_ChangeLane != Entity.Null)
             {
                 return false;
@@ -375,9 +374,9 @@ namespace ClearTheWay
                 blockerSpeed = Lookups.TryGetComponent(blocker.m_Blocker, out Moving blockerMoving)
                     ? math.length(blockerMoving.m_Velocity)
                     : 0f;
-                if (Lookups.HasComponent<CarCurrentLane>(blocker.m_Blocker))
+                if (Lookups.TryGetComponent(blocker.m_Blocker, out CarCurrentLane blockerLane))
                 {
-                    blockerLanePos = Lookups.GetComponentData<CarCurrentLane>(blocker.m_Blocker).m_LanePosition;
+                    blockerLanePos = blockerLane.m_LanePosition;
                 }
                 if (Lookups.HasComponent<Transform>(blocker.m_Blocker))
                 {

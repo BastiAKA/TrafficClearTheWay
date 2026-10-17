@@ -82,11 +82,11 @@ namespace ClearTheWay
             {
                 Entity candidate = dispatches[i].m_Request;
                 if (candidate == Entity.Null || !EntityManager.Exists(candidate) ||
-                    !Lookups.HasComponent<MaintenanceRequest>(candidate))
+                    !Lookups.TryGetComponent(candidate, out MaintenanceRequest candidateMaintenanceRequest))
                 {
                     continue;
                 }
-                Entity wreck = Lookups.GetComponentData<MaintenanceRequest>(candidate).m_Target;
+                Entity wreck = candidateMaintenanceRequest.m_Target;
                 if (IsOpenWreck(wreck, out Entity wreckRequest) && wreckRequest == candidate)
                 {
                     request = candidate;

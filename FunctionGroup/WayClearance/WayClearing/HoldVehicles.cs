@@ -122,16 +122,15 @@ namespace ClearTheWay.FunctionGroup.WayClearance.WayClearing
             for (int c = 0; c < m_Corridor.CorridorLanes.Count; c++)
             {
                 CorridorLane corridorLane = m_Corridor.CorridorLanes[c];
-                if (!Lookups.HasBuffer<LaneObject>(corridorLane.m_Lane))
+                if (!Lookups.TryGetBuffer(corridorLane.m_Lane, out DynamicBuffer<LaneObject> laneObjects, isReadOnly: true))
                 {
                     continue;
                 }
                 float curveLength = 1f;
-                if (Lookups.HasComponent<Curve>(corridorLane.m_Lane))
+                if (Lookups.TryGetComponent(corridorLane.m_Lane, out Curve laneCurve))
                 {
-                    curveLength = math.max(1f, Lookups.GetComponentData<Curve>(corridorLane.m_Lane).m_Length);
+                    curveLength = math.max(1f, laneCurve.m_Length);
                 }
-                DynamicBuffer<LaneObject> laneObjects = Lookups.GetBuffer<LaneObject>(corridorLane.m_Lane, isReadOnly: true);
                 for (int i = 0; i < laneObjects.Length; i++)
                 {
                     LaneObject laneObject = laneObjects[i];
@@ -190,13 +189,12 @@ namespace ClearTheWay.FunctionGroup.WayClearance.WayClearing
         public void NudgeMergeGap(Entity vehicle, CarCurrentLane currentLane)
         {
             Entity lane = currentLane.m_Lane;
-            if (!Lookups.HasBuffer<LaneObject>(lane) || !Lookups.HasComponent<Curve>(lane))
+            if (!Lookups.TryGetBuffer(lane, out DynamicBuffer<LaneObject> laneObjects, isReadOnly: true) || !Lookups.TryGetComponent(lane, out Curve laneCurve))
             {
                 return;
             }
-            float length = math.max(1f, Lookups.GetComponentData<Curve>(lane).m_Length);
+            float length = math.max(1f, laneCurve.m_Length);
             bool inverted = currentLane.m_CurvePosition.z < currentLane.m_CurvePosition.x;
-            DynamicBuffer<LaneObject> laneObjects = Lookups.GetBuffer<LaneObject>(lane, isReadOnly: true);
             int nudged = 0;
             for (int i = 0; i < laneObjects.Length && nudged < kMergeGapCars; i++)
             {
@@ -227,13 +225,12 @@ namespace ClearTheWay.FunctionGroup.WayClearance.WayClearing
         /// </summary>
         public void PushQueueForward(Entity vehicle, CorridorLane corridorLane)
         {
-            if (!Lookups.HasBuffer<LaneObject>(corridorLane.m_Lane) ||
-                !Lookups.HasComponent<Curve>(corridorLane.m_Lane))
+            if (!Lookups.TryGetBuffer(corridorLane.m_Lane, out DynamicBuffer<LaneObject> laneObjects, isReadOnly: true) ||
+                !Lookups.TryGetComponent(corridorLane.m_Lane, out Curve laneCurve))
             {
                 return;
             }
-            float curveLength = math.max(1f, Lookups.GetComponentData<Curve>(corridorLane.m_Lane).m_Length);
-            DynamicBuffer<LaneObject> laneObjects = Lookups.GetBuffer<LaneObject>(corridorLane.m_Lane, isReadOnly: true);
+            float curveLength = math.max(1f, laneCurve.m_Length);
             for (int i = 0; i < laneObjects.Length; i++)
             {
                 Entity other = laneObjects[i].m_LaneObject;
@@ -265,12 +262,11 @@ namespace ClearTheWay.FunctionGroup.WayClearance.WayClearing
         /// </summary>
         public void OpenLaneChangeSlot(Entity vehicle, Entity targetLane, float curvePosition, bool inverted)
         {
-            if (!Lookups.HasBuffer<LaneObject>(targetLane) || !Lookups.HasComponent<Curve>(targetLane))
+            if (!Lookups.TryGetBuffer(targetLane, out DynamicBuffer<LaneObject> laneObjects, isReadOnly: true) || !Lookups.TryGetComponent(targetLane, out Curve targetLaneCurve))
             {
                 return;
             }
-            float length = math.max(1f, Lookups.GetComponentData<Curve>(targetLane).m_Length);
-            DynamicBuffer<LaneObject> laneObjects = Lookups.GetBuffer<LaneObject>(targetLane, isReadOnly: true);
+            float length = math.max(1f, targetLaneCurve.m_Length);
             for (int i = 0; i < laneObjects.Length; i++)
             {
                 Entity other = laneObjects[i].m_LaneObject;

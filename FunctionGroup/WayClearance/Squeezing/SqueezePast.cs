@@ -67,8 +67,8 @@ namespace ClearTheWay.FunctionGroup.WayClearance.Squeezing
             {
                 return false;
             }
-            if (!Lookups.HasComponent<SlaveLane>(blockerLane.m_Lane) ||
-                !Lookups.HasComponent<Owner>(blockerLane.m_Lane) ||
+            if (!Lookups.TryGetComponent(blockerLane.m_Lane, out SlaveLane slaveLane) ||
+                !Lookups.TryGetComponent(blockerLane.m_Lane, out Owner owner) ||
                 !Lookups.TryGetComponent(blockerLane.m_Lane, out Curve curve))
             {
                 return false;
@@ -78,13 +78,10 @@ namespace ClearTheWay.FunctionGroup.WayClearance.Squeezing
             {
                 return false; // too little lane left to finish a change
             }
-            SlaveLane slaveLane = Lookups.GetComponentData<SlaveLane>(blockerLane.m_Lane);
-            Owner owner = Lookups.GetComponentData<Owner>(blockerLane.m_Lane);
-            if (!Lookups.HasBuffer<Game.Net.SubLane>(owner.m_Owner))
+            if (!Lookups.TryGetBuffer(owner.m_Owner, out DynamicBuffer<Game.Net.SubLane> subLanes, isReadOnly: true))
             {
                 return false;
             }
-            DynamicBuffer<Game.Net.SubLane> subLanes = Lookups.GetBuffer<Game.Net.SubLane>(owner.m_Owner, isReadOnly: true);
             int maxIndex = math.min(slaveLane.m_MaxIndex, subLanes.Length - 1);
             int myIndex = -1;
             for (int i = slaveLane.m_MinIndex; i <= maxIndex; i++)

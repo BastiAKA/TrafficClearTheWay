@@ -258,13 +258,11 @@ namespace ClearTheWay
                         // lanes. The pedestrian about to cross is on the approaching sidewalk
                         // lane (its LaneObject buffer), not yet on the crosswalk itself.
                         if (!Lookups.HasComponent<Game.Net.PedestrianLane>(lane) ||
-                            !Lookups.HasBuffer<Game.Net.LaneObject>(lane))
+                            !Lookups.TryGetBuffer(lane, out DynamicBuffer<Game.Net.LaneObject> occupants, isReadOnly: true))
                         {
                             continue;
                         }
                         pedLaneHits++;
-                        DynamicBuffer<Game.Net.LaneObject> occupants =
-                            Lookups.GetBuffer<Game.Net.LaneObject>(lane, isReadOnly: true);
                         for (int o = 0; o < occupants.Length; o++)
                         {
                             Entity occupant = occupants[o].m_LaneObject;
@@ -319,7 +317,7 @@ namespace ClearTheWay
                 return false;
             }
 
-            if (!Lookups.HasComponent<Human>(pedestrian) ||
+            if (!Lookups.TryGetComponent(pedestrian, out Human pedestrianHuman) ||
                 !Lookups.HasComponent<HumanNavigation>(pedestrian) ||
                 !Lookups.HasComponent<HumanCurrentLane>(pedestrian) ||
                 !Lookups.HasComponent<PathOwner>(pedestrian) ||
@@ -333,7 +331,7 @@ namespace ClearTheWay
             {
                 return false;
             }
-            if ((Lookups.GetComponentData<Human>(pedestrian).m_Flags & HumanFlags.Emergency) != 0)
+            if ((pedestrianHuman.m_Flags & HumanFlags.Emergency) != 0)
             {
                 return false;
             }

@@ -49,12 +49,11 @@ namespace ClearTheWay.FunctionGroup.WayClearance.WayClearing.LanePathFinding
         /// the plain head-count for the density callers that want exactly that.</param>
         public int LaneVehiclesAhead(Entity lane, float curvePosition, bool inverted, float blockingBelowSpeed = 0f, float windowMeters = kDensityWindow)
         {
-            if (!Lookups.HasComponent<Curve>(lane) || !Lookups.HasBuffer<LaneObject>(lane))
+            if (!Lookups.TryGetComponent(lane, out Curve laneCurve) || !Lookups.TryGetBuffer(lane, out DynamicBuffer<LaneObject> laneObjects, isReadOnly: true))
             {
                 return 0;
             }
-            float length = math.max(1f, Lookups.GetComponentData<Curve>(lane).m_Length);
-            DynamicBuffer<LaneObject> laneObjects = Lookups.GetBuffer<LaneObject>(lane, isReadOnly: true);
+            float length = math.max(1f, laneCurve.m_Length);
             int count = 0;
             for (int i = 0; i < laneObjects.Length; i++)
             {
@@ -80,16 +79,15 @@ namespace ClearTheWay.FunctionGroup.WayClearance.WayClearing.LanePathFinding
         public bool IsLaneClearAround(Entity lane, float curvePosition, bool inverted,
             float clearAhead = kOvertakeClearAhead, float clearBehind = kOvertakeClearBehind)
         {
-            if (!Lookups.HasComponent<Curve>(lane))
+            if (!Lookups.TryGetComponent(lane, out Curve laneCurve))
             {
                 return false;
             }
-            float length = math.max(1f, Lookups.GetComponentData<Curve>(lane).m_Length);
-            if (!Lookups.HasBuffer<LaneObject>(lane))
+            float length = math.max(1f, laneCurve.m_Length);
+            if (!Lookups.TryGetBuffer(lane, out DynamicBuffer<LaneObject> laneObjects, isReadOnly: true))
             {
                 return true;
             }
-            DynamicBuffer<LaneObject> laneObjects = Lookups.GetBuffer<LaneObject>(lane, isReadOnly: true);
             for (int i = 0; i < laneObjects.Length; i++)
             {
                 float2 range = laneObjects[i].m_CurvePosition;

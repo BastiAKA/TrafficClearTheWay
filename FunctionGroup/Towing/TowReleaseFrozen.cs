@@ -288,11 +288,10 @@ namespace ClearTheWay
         /// traffic routes through the space it is about to vacate. Same poke StartVehicle does.</summary>
         private void PokeBlockedLanes(Entity car)
         {
-            if (!Lookups.HasBuffer<BlockedLane>(car))
+            if (!Lookups.TryGetBuffer(car, out DynamicBuffer<BlockedLane> lanes, isReadOnly: true))
             {
                 return;
             }
-            DynamicBuffer<BlockedLane> lanes = Lookups.GetBuffer<BlockedLane>(car, isReadOnly: true);
             for (int i = 0; i < lanes.Length; i++)
             {
                 Entity lane = lanes[i].m_Lane;

@@ -43,17 +43,15 @@ namespace ClearTheWay
 
         public void AddMasterLaneGroup(Entity masterLane, float side, bool inverted, float minPos, float startOffset)
         {
-            if (!Lookups.HasComponent<Owner>(masterLane))
+            if (!Lookups.TryGetComponent(masterLane, out Owner owner))
             {
                 return;
             }
             MasterLane master = Lookups.GetComponentData<MasterLane>(masterLane);
-            Owner owner = Lookups.GetComponentData<Owner>(masterLane);
-            if (!Lookups.HasBuffer<Game.Net.SubLane>(owner.m_Owner))
+            if (!Lookups.TryGetBuffer(owner.m_Owner, out DynamicBuffer<Game.Net.SubLane> subLanes, isReadOnly: true))
             {
                 return;
             }
-            DynamicBuffer<Game.Net.SubLane> subLanes = Lookups.GetBuffer<Game.Net.SubLane>(owner.m_Owner, isReadOnly: true);
             int max = math.min(master.m_MaxIndex, subLanes.Length - 1);
 
             // ONLY THE MASTER LANE'S OWN DIRECTION. The SubLane buffer belongs to the edge and

@@ -231,10 +231,9 @@ namespace ClearTheWay
             // own interpolation from the truck's ring keeps the wreck glued behind the VISIBLE
             // truck at any speed, and works even off-camera (pure sim data, no render state).
             Transform truckVisual = truckTransform;
-            if (Lookups.HasBuffer<TransformFrame>(truck) &&
+            if (Lookups.TryGetBuffer(truck, out DynamicBuffer<TransformFrame> ring, isReadOnly: true) &&
                 EntityManager.HasComponent<Game.Simulation.UpdateFrame>(truck))
             {
-                DynamicBuffer<TransformFrame> ring = Lookups.GetBuffer<TransformFrame>(truck, isReadOnly: true);
                 if (ring.Length == 4)
                 {
                     uint batch = EntityManager.GetSharedComponent<Game.Simulation.UpdateFrame>(truck).m_Index;
@@ -369,10 +368,10 @@ namespace ClearTheWay
                 MaintenanceVehicleFlags.EdgeTarget);
             m.m_State |= MaintenanceVehicleFlags.Returning | MaintenanceVehicleFlags.Full |
                 MaintenanceVehicleFlags.EstimatedFull;
-            if (Lookups.HasComponent<MaintenanceVehicleData>(prefab))
+            if (Lookups.TryGetComponent(prefab, out MaintenanceVehicleData prefabMaintenanceVehicleData))
             {
                 m.m_Maintained = math.max(m.m_Maintained,
-                    Lookups.GetComponentData<MaintenanceVehicleData>(prefab).m_MaintenanceCapacity);
+                    prefabMaintenanceVehicleData.m_MaintenanceCapacity);
             }
             Lookups.SetComponentData(truck, m);
             // Shield its path, every tick, for as long as it carries a load.
@@ -413,9 +412,9 @@ namespace ClearTheWay
                 Lookups.GetBuffer<ServiceDispatch>(truck).Clear();
             }
             // Steer back to the depot only if the game re-targeted the truck elsewhere (avoid churn).
-            if (Lookups.HasComponent<Owner>(truck) && Lookups.HasComponent<Target>(truck))
+            if (Lookups.TryGetComponent(truck, out Owner truckOwner) && Lookups.HasComponent<Target>(truck))
             {
-                Entity depot = Lookups.GetComponentData<Owner>(truck).m_Owner;
+                Entity depot = truckOwner.m_Owner;
                 if (depot != Entity.Null && Lookups.GetComponentData<Target>(truck).m_Target != depot)
                 {
                     Lookups.SetComponentData(truck, new Target(depot));
