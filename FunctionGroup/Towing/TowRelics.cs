@@ -79,6 +79,7 @@ namespace ClearTheWay
                         {
                             EntityManager.RemoveComponent<Controller>(relic);
                         }
+                        m_Ctx.ReattachToLanes(relic); // off the hook = back in the lane registry
                         // Drop any stale recovery request so DamagedVehicleSystem raises a fresh one.
                         if (Lookups.TryGetComponent(relic, out Game.Simulation.MaintenanceConsumer consumer))
                         {

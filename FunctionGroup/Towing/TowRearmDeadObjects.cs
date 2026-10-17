@@ -133,6 +133,7 @@ namespace ClearTheWay
             {
                 EntityManager.RemoveComponent<Controller>(relic);
             }
+            m_Ctx.ReattachToLanes(relic); // off the hook = back in the lane registry
             if (Lookups.TryGetComponent(relic, out MaintenanceConsumer consumer))
             {
                 Entity req = consumer.m_Request;

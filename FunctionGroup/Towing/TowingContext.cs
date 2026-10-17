@@ -44,18 +44,110 @@ namespace ClearTheWay
         public EntityQuery FrozenReleaseQuery;
         public EntityQuery AccidentSiteQuery;
 
-        /// <summary>Deletes a settled wreck safely. A Moving-less entity that still carries a
+        /// <summary>Deletes a vehicle safely. A Moving-less entity that still carries a
         /// Game.Simulation.UpdateFrame null-derefs UpdateGroupSystem ("UpdateFrame added to
-        /// unsupported type" - a hard crash chased down in an earlier towing rework), so strip
-        /// it before adding Deleted.</summary>
-        public void SafeDelete(Entity wreck)
+        /// unsupported type" - a hard crash chased down in an earlier towing rework), so a settled
+        /// wreck loses it before Deleted.
+        ///
+        /// A DRIVING vehicle keeps it: it is a supported type, and the entity lives until the end
+        /// of the frame. If the player has it selected or follows it with the camera,
+        /// SelectedInfoUISystem.GetInterpolatedPosition reads UpdateFrame unguarded for every
+        /// entity with a TransformFrame ring - stripping it from a truck threw the
+        /// "AssertionException ... MarkerIconSystem / CameraUpdateSystem" of 2026-10-17.</summary>
+        public void SafeDelete(Entity vehicle)
         {
-            if (EntityManager.HasComponent<Game.Simulation.UpdateFrame>(wreck))
+            if (!Lookups.HasComponent<Game.Objects.Moving>(vehicle) &&
+                EntityManager.HasComponent<Game.Simulation.UpdateFrame>(vehicle))
             {
-                EntityManager.RemoveComponent<Game.Simulation.UpdateFrame>(wreck);
+                EntityManager.RemoveComponent<Game.Simulation.UpdateFrame>(vehicle);
             }
-            EntityManager.AddComponent<Game.Common.Deleted>(wreck);
+            EntityManager.AddComponent<Game.Common.Deleted>(vehicle);
         }
+
+        /// <summary>
+        /// Takes a hooked wreck out of the lane registry, so it stops being a road blockage -
+        /// THE reason loaded trucks stood still with a free road ahead and were deleted.
+        ///
+        /// A settled wreck keeps OutOfControl, CarCurrentLane and UpdateFrame, so
+        /// CarNavigationSystem's out-of-control branch re-registers it every 16 frames on every
+        /// lane its body touches (BlockedLane buffer + the lanes' LaneObject buffers), wherever we
+        /// teleport it. It has no Moving - the hookup strips it on purpose - and
+        /// LaneDataSystem.CheckBlockage counts every lane object WITHOUT Moving as a blockage
+        /// (m_BlockageStart/End). The pathfinder treats that range as impassable
+        /// (PathfindJobs.IsValidDelta). The wreck hangs right behind the truck, its blocked range
+        /// reaches past its body by radius + 0.4 lane widths, and once the truck's own position
+        /// lies inside it, no route exists in any direction on a two-lane road: Failed, retry,
+        /// Failed - until the give-up released the wreck and deleted the truck (7 of 8 tows on
+        /// 2026-10-17, and the same pattern in every earlier log).
+        ///
+        /// Unregistered the way the game does it (NetUtils.RemoveLaneObject), the lanes are
+        /// flagged PathfindUpdated so their blockage is recomputed, and CarCurrentLane is removed
+        /// so the navigation query no longer picks the wreck up and re-registers it. Idempotent:
+        /// a wreck without CarCurrentLane is already detached. <see cref="ReattachToLanes"/>
+        /// undoes it when the wreck comes off the hook without being deleted.
+        /// </summary>
+        public void DetachFromLanes(Entity wreck)
+        {
+            if (!Lookups.TryGetComponent(wreck, out Game.Vehicles.CarCurrentLane currentLane))
+            {
+                return;
+            }
+            // Buffer work first, structural changes after: a DynamicBuffer is a pointer into the
+            // chunk and a structural change can move it.
+            m_DetachLanes.Clear();
+            if (Lookups.TryGetBuffer(wreck, out DynamicBuffer<Game.Objects.BlockedLane> blockedLanes))
+            {
+                for (int i = 0; i < blockedLanes.Length; i++)
+                {
+                    m_DetachLanes.Add(blockedLanes[i].m_Lane);
+                }
+                blockedLanes.Clear();
+            }
+            if (currentLane.m_Lane != Entity.Null)
+            {
+                m_DetachLanes.Add(currentLane.m_Lane);
+            }
+            if (currentLane.m_ChangeLane != Entity.Null)
+            {
+                m_DetachLanes.Add(currentLane.m_ChangeLane);
+            }
+            for (int i = 0; i < m_DetachLanes.Count; i++)
+            {
+                if (Lookups.TryGetBuffer(m_DetachLanes[i], out DynamicBuffer<Game.Net.LaneObject> laneObjects))
+                {
+                    Game.Net.NetUtils.RemoveLaneObject(laneObjects, wreck);
+                }
+            }
+            for (int i = 0; i < m_DetachLanes.Count; i++)
+            {
+                Entity lane = m_DetachLanes[i];
+                if (EntityManager.Exists(lane) && Lookups.HasComponent<Game.Net.CarLane>(lane) &&
+                    !Lookups.HasComponent<Game.Common.PathfindUpdated>(lane))
+                {
+                    EntityManager.AddComponent<Game.Common.PathfindUpdated>(lane);
+                }
+            }
+            EntityManager.RemoveComponent<Game.Vehicles.CarCurrentLane>(wreck);
+        }
+
+        /// <summary>
+        /// Puts a wreck that comes off the hook WITHOUT being deleted back into the lane registry:
+        /// with CarCurrentLane back, the next navigation tick registers it on the lanes it stands
+        /// on, and it blocks the road like any wreck the recovery pipeline still has to collect.
+        /// No-op for an entity that still has its CarCurrentLane (never detached) or is gone.
+        /// </summary>
+        public void ReattachToLanes(Entity wreck)
+        {
+            if (!EntityManager.Exists(wreck) || Lookups.HasComponent<Game.Common.Deleted>(wreck) ||
+                Lookups.HasComponent<Game.Vehicles.CarCurrentLane>(wreck) ||
+                !Lookups.HasComponent<Game.Vehicles.Car>(wreck))
+            {
+                return;
+            }
+            EntityManager.AddComponentData(wreck, default(Game.Vehicles.CarCurrentLane));
+        }
+
+        private readonly List<Entity> m_DetachLanes = new List<Entity>(8);
 
         // Passes.
         public TowCoupling Coupling;

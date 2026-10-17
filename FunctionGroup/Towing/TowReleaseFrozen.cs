@@ -253,6 +253,7 @@ namespace ClearTheWay
             {
                 EntityManager.RemoveComponent<Controller>(car);
             }
+            m_Ctx.ReattachToLanes(car); // off the hook = back in the lane registry
             if (Lookups.TryGetComponent(car, out Game.Simulation.MaintenanceConsumer consumer))
             {
                 Entity req = consumer.m_Request;
