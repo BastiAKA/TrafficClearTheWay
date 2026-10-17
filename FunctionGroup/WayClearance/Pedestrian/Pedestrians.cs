@@ -135,6 +135,8 @@ namespace ClearTheWay
 
         protected override void OnUpdate()
         {
+            // Numbers in the log with '.', whatever the game language - see InvariantCultureScope.
+            using InvariantCultureScope culture = InvariantCultureScope.Enter();
             using (ModProfiler.Sample(Profiling, "Pedestrians"))
             {
                 RunPass();

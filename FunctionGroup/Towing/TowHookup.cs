@@ -129,6 +129,8 @@ namespace ClearTheWay
 
         protected override void OnUpdate()
         {
+            // Numbers in the log with '.', whatever the game language - see InvariantCultureScope.
+            using InvariantCultureScope culture = InvariantCultureScope.Enter();
             Setting setting = Mod.Setting;
             if (setting == null || !setting.Enabled || !setting.TowWrecks)
             {

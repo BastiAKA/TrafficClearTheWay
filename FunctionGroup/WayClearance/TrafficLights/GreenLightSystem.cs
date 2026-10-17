@@ -33,6 +33,8 @@ namespace ClearTheWay.FunctionGroup.WayClearance.TrafficLights
 
         protected override void OnUpdate()
         {
+            // Numbers in the log with '.', whatever the game language - see InvariantCultureScope.
+            using InvariantCultureScope culture = InvariantCultureScope.Enter();
             m_MainSystem?.Lights?.Flush();
         }
     }

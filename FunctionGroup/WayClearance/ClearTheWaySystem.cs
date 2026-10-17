@@ -165,6 +165,8 @@ namespace ClearTheWay
 
         protected override void OnUpdate()
         {
+            // Numbers in the log with '.', whatever the game language - see InvariantCultureScope.
+            using InvariantCultureScope culture = InvariantCultureScope.Enter();
             Setting setting = Mod.Setting;
             // The one place the profiling toggles are read: every pass in every system tests
             // the same static mask, so a toggle takes effect within a tick. Before the Enabled
