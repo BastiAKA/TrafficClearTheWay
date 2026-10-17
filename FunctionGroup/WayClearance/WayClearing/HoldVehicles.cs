@@ -155,16 +155,17 @@ namespace ClearTheWay.FunctionGroup.WayClearance.WayClearing
                         if (aheadDistance > kPassWindowAhead) break;         // ahead of it; the rest are further ahead
                     }
                     Entity other = laneObject.m_LaneObject;
+                    // Car and CarCurrentLane read once here; nothing below writes them.
                     if (other == vehicle ||
-                        !Lookups.HasComponent<Car>(other) ||
-                        !Lookups.HasComponent<CarCurrentLane>(other) ||
+                        !Lookups.TryGetComponent(other, out Car otherCar) ||
+                        !Lookups.TryGetComponent(other, out CarCurrentLane otherLane) ||
                         Lookups.HasComponent<ParkedCar>(other) ||
                         Lookups.HasComponent<Deleted>(other))
                     {
                         continue;
                     }
                     // Never slow another emergency vehicle; trailers follow their controller.
-                    if ((Lookups.GetComponentData<Car>(other).m_Flags & CarFlags.Emergency) != 0)
+                    if ((otherCar.m_Flags & CarFlags.Emergency) != 0)
                     {
                         continue;
                     }
@@ -173,7 +174,7 @@ namespace ClearTheWay.FunctionGroup.WayClearance.WayClearing
                         continue;
                     }
                     // Curve position is only comparable to the EV's on the same lane.
-                    if (Lookups.GetComponentData<CarCurrentLane>(other).m_Lane != corridorLane.m_Lane)
+                    if (otherLane.m_Lane != corridorLane.m_Lane)
                     {
                         continue;
                     }

@@ -131,11 +131,11 @@ namespace ClearTheWay
                     for (int w = 0; w < wrecks.Length; w++)
                     {
                         Entity wreck = wrecks[w];
-                        if (!Lookups.HasComponent<Transform>(wreck))
+                        if (!Lookups.TryGetComponent(wreck, out Transform wreckTransform))
                         {
                             continue;
                         }
-                        float3 pos = Lookups.GetComponentData<Transform>(wreck).m_Position;
+                        float3 pos = wreckTransform.m_Position;
                         found.Clear();
                         AreaIterator iterator = new AreaIterator
                         {
@@ -177,8 +177,9 @@ namespace ClearTheWay
         /// counters that only the [endguard] line reads are worth their lookups.</summary>
         private void GuardCar(Entity other, ref GuardStats stats, bool prefiltered, bool diagnostics)
         {
-            // False for an entity that no longer exists, too.
-            if (!Lookups.HasComponent<CarCurrentLane>(other))
+            // False for an entity that no longer exists, too. Read here once: the checks below
+            // only read, so this is the value the write further down starts from.
+            if (!Lookups.TryGetComponent(other, out CarCurrentLane lane))
             {
                 return;
             }
@@ -197,7 +198,6 @@ namespace ClearTheWay
             // Clear a truncated path end so the AI leaves the car waiting. Match
             // PathEndReached exactly (EndOfPath|EndReached set, ParkingSpace|Waypoint
             // clear) so real park/waypoint arrivals near a wreck are untouched.
-            CarCurrentLane lane = Lookups.GetComponentData<CarCurrentLane>(other);
             stats.laneOr |= (uint)lane.m_LaneFlags;
             if ((lane.m_LaneFlags & kPathEndMask) == kPathEndValue)
             {

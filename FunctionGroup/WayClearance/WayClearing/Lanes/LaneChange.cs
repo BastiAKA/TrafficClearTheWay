@@ -65,11 +65,10 @@ namespace ClearTheWay.FunctionGroup.WayClearance.WayClearing.LanePathFinding
         public int GetUpcomingTurn(Entity vehicle, out float distance)
         {
             distance = 0f;
-            if (!Lookups.HasBuffer<CarNavigationLane>(vehicle))
+            if (!Lookups.TryGetBuffer(vehicle, out DynamicBuffer<CarNavigationLane> navLanes, isReadOnly: true))
             {
                 return 0;
             }
-            DynamicBuffer<CarNavigationLane> navLanes = Lookups.GetBuffer<CarNavigationLane>(vehicle, isReadOnly: true);
             for (int i = 0; i < navLanes.Length; i++)
             {
                 CarNavigationLane navLane = navLanes[i];

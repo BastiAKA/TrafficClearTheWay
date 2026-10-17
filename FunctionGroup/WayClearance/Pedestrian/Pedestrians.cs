@@ -317,11 +317,13 @@ namespace ClearTheWay
                 return false;
             }
 
+            // Everything this decision needs, read once. Only reads happen until the single
+            // write at the end, so these are the values the old separate reads saw.
             if (!Lookups.TryGetComponent(pedestrian, out Human pedestrianHuman) ||
-                !Lookups.HasComponent<HumanNavigation>(pedestrian) ||
-                !Lookups.HasComponent<HumanCurrentLane>(pedestrian) ||
-                !Lookups.HasComponent<PathOwner>(pedestrian) ||
-                !Lookups.HasBuffer<PathElement>(pedestrian))
+                !Lookups.TryGetComponent(pedestrian, out HumanNavigation navigation) ||
+                !Lookups.TryGetComponent(pedestrian, out HumanCurrentLane currentLane) ||
+                !Lookups.TryGetComponent(pedestrian, out PathOwner pathOwner) ||
+                !Lookups.TryGetBuffer(pedestrian, out DynamicBuffer<PathElement> path, isReadOnly: true))
             {
                 return false;
             }
@@ -336,7 +338,6 @@ namespace ClearTheWay
                 return false;
             }
 
-            HumanCurrentLane currentLane = Lookups.GetComponentData<HumanCurrentLane>(pedestrian);
             // Already out on a crosswalk: let it finish. Freezing it in the roadway would
             // block the responder instead of helping it.
             if (IsCrosswalk(currentLane.m_Lane))
@@ -344,8 +345,6 @@ namespace ClearTheWay
                 return false;
             }
             // About to step onto one?
-            PathOwner pathOwner = Lookups.GetComponentData<PathOwner>(pedestrian);
-            DynamicBuffer<PathElement> path = Lookups.GetBuffer<PathElement>(pedestrian, isReadOnly: true);
             if (pathOwner.m_ElementIndex >= path.Length ||
                 !IsCrosswalk(path[pathOwner.m_ElementIndex].m_Target))
             {
@@ -354,7 +353,6 @@ namespace ClearTheWay
 
             // Stand still exactly the way vanilla stands at a red light (HumanNavigationSystem's
             // WaitSignal branch): no speed budget, target on the spot, no heading, no activity.
-            HumanNavigation navigation = Lookups.GetComponentData<HumanNavigation>(pedestrian);
             navigation.m_MaxSpeed = 0f;
             navigation.m_TargetPosition = transform.m_Position;
             navigation.m_TargetDirection = default;
@@ -369,9 +367,9 @@ namespace ClearTheWay
         private bool ReapplyHold(Entity pedestrian)
         {
             if (!EntityManager.Exists(pedestrian) ||
-                !Lookups.HasComponent<HumanNavigation>(pedestrian) ||
-                !Lookups.HasComponent<HumanCurrentLane>(pedestrian) ||
-                !Lookups.HasComponent<Transform>(pedestrian))
+                !Lookups.TryGetComponent(pedestrian, out HumanNavigation navigation) ||
+                !Lookups.TryGetComponent(pedestrian, out HumanCurrentLane currentLane) ||
+                !Lookups.TryGetComponent(pedestrian, out Transform transform))
             {
                 return false;
             }
@@ -380,12 +378,10 @@ namespace ClearTheWay
             {
                 return false;
             }
-            if (IsCrosswalk(Lookups.GetComponentData<HumanCurrentLane>(pedestrian).m_Lane))
+            if (IsCrosswalk(currentLane.m_Lane))
             {
                 return false; // on the crossing now - let it finish
             }
-            Transform transform = Lookups.GetComponentData<Transform>(pedestrian);
-            HumanNavigation navigation = Lookups.GetComponentData<HumanNavigation>(pedestrian);
             navigation.m_MaxSpeed = 0f;
             navigation.m_TargetPosition = transform.m_Position;
             navigation.m_TargetDirection = default;

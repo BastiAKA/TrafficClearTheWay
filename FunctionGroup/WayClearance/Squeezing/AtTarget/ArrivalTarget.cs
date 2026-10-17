@@ -104,11 +104,9 @@ namespace ClearTheWay.FunctionGroup.WayClearance.Squeezing.AtTarget
                     }
                 }
             }
-            if (Lookups.HasComponent<PathOwner>(vehicle) &&
-                Lookups.HasBuffer<PathElement>(vehicle))
+            if (Lookups.TryGetComponent(vehicle, out PathOwner pathOwner) &&
+                Lookups.TryGetBuffer(vehicle, out DynamicBuffer<PathElement> path, isReadOnly: true))
             {
-                PathOwner pathOwner = Lookups.GetComponentData<PathOwner>(vehicle);
-                DynamicBuffer<PathElement> path = Lookups.GetBuffer<PathElement>(vehicle, isReadOnly: true);
                 for (int i = math.max(pathOwner.m_ElementIndex, path.Length - 8); i < path.Length; i++)
                 {
                     if (modContext.ArrivalTarget.IsOffStreetLane(path[i].m_Target))

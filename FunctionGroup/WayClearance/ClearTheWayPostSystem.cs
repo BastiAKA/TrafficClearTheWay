@@ -204,13 +204,12 @@ namespace ClearTheWay
             foreach (KeyValuePair<Entity, SpeedOverride> entry in overrides)
             {
                 Entity entity = entry.Key;
-                // (HasComponent is false for a dead entity, so no separate Exists.)
-                if (!Lookups.HasComponent<CarNavigation>(entity))
+                // (TryGetComponent is false for a dead entity, so no separate Exists.)
+                if (!Lookups.TryGetComponent(entity, out CarNavigation navigation))
                 {
                     continue;
                 }
                 SpeedOverride ov = entry.Value;
-                CarNavigation navigation = Lookups.GetComponentData<CarNavigation>(entity);
                 if (ov.m_Mode == 0)
                 {
                     // Ceiling: hold the car (never speed it up, only cap it down).

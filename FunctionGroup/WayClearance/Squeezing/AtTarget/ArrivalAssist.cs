@@ -84,7 +84,7 @@ namespace ClearTheWay.FunctionGroup.WayClearance.Squeezing.AtTarget
                     CarLaneFlags.ParkingSpace | CarLaneFlags.Area | CarLaneFlags.TransformTarget)) != 0 ||
                 (!committed && currentLane.m_ChangeLane != Entity.Null) ||
                 !Lookups.HasComponent<Game.Net.CarLane>(currentLane.m_Lane) ||
-                !Lookups.HasComponent<Target>(vehicle))
+                !Lookups.TryGetComponent(vehicle, out Target vehicleTarget))
             {
                 return false;
             }
@@ -117,7 +117,7 @@ namespace ClearTheWay.FunctionGroup.WayClearance.Squeezing.AtTarget
             {
                 return false;
             }
-            Entity target = Lookups.GetComponentData<Target>(vehicle).m_Target;
+            Entity target = vehicleTarget.m_Target;
             float3 position = Lookups.GetComponentData<Transform>(vehicle).m_Position;
             float dist = m_Ctx.ArrivalTarget.DistanceToDispatchTarget(target, position);
             // The tight 30 m ring is the "it has effectively arrived, stop meddling" signal
@@ -284,9 +284,9 @@ namespace ClearTheWay.FunctionGroup.WayClearance.Squeezing.AtTarget
             // route the vehicle away from its forced arrival.
             currentLane.m_CurvePosition.z = currentLane.m_CurvePosition.y;
             currentLane.m_LaneFlags |= CarLaneFlags.EndOfPath;
-            if (Lookups.HasBuffer<CarNavigationLane>(vehicle))
+            if (Lookups.TryGetBuffer(vehicle, out DynamicBuffer<CarNavigationLane> navigationLanes))
             {
-                Lookups.GetBuffer<CarNavigationLane>(vehicle).Clear();
+                navigationLanes.Clear();
             }
             if (Lookups.TryGetComponent(vehicle, out PathOwner pathOwner))
             {
@@ -294,9 +294,9 @@ namespace ClearTheWay.FunctionGroup.WayClearance.Squeezing.AtTarget
                 pathOwner.m_State &= ~(PathFlags.Obsolete | PathFlags.DivertObsolete);
                 Lookups.SetComponentData(vehicle, pathOwner);
             }
-            if (Lookups.HasBuffer<PathElement>(vehicle))
+            if (Lookups.TryGetBuffer(vehicle, out DynamicBuffer<PathElement> pathElements))
             {
-                Lookups.GetBuffer<PathElement>(vehicle).Clear();
+                pathElements.Clear();
             }
             if (Mod.Setting.VerboseLogging)
             {

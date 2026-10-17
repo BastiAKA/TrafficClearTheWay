@@ -102,13 +102,13 @@ namespace ClearTheWay.FunctionGroup.WayClearance.WayClearing.LanePathFinding
                 }
                 Entity other = laneObjects[i].m_LaneObject;
                 if (other == vehicle ||
-                    !Lookups.HasComponent<Car>(other))
+                    !Lookups.TryGetComponent(other, out Car otherCar))
                 {
                     continue;
                 }
                 if (maintenance
                         ? Lookups.HasComponent<Game.Vehicles.MaintenanceVehicle>(other)
-                        : (Lookups.GetComponentData<Car>(other).m_Flags & CarFlags.Emergency) != 0)
+                        : (otherCar.m_Flags & CarFlags.Emergency) != 0)
                 {
                     return true;
                 }

@@ -220,7 +220,7 @@ namespace ClearTheWay
         private bool TryRepathPedestrian(Entity pedestrian)
         {
             if (!Lookups.TryGetComponent(pedestrian, out Human pedestrianHuman) ||
-                !Lookups.HasComponent<HumanCurrentLane>(pedestrian) ||
+                !Lookups.TryGetComponent(pedestrian, out HumanCurrentLane lane) ||
                 !Lookups.HasComponent<PathOwner>(pedestrian))
             {
                 return false;
@@ -246,7 +246,6 @@ namespace ClearTheWay
             {
                 return false;
             }
-            HumanCurrentLane lane = Lookups.GetComponentData<HumanCurrentLane>(pedestrian);
             lane.m_Flags |= CreatureLaneFlags.Obsolete;
             Lookups.SetComponentData(pedestrian, lane);
             return true;

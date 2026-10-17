@@ -111,9 +111,9 @@ namespace ClearTheWay
             }
 
             string path = "path=-";
-            if (Lookups.HasComponent<PathOwner>(e))
+            if (Lookups.TryGetComponent(e, out PathOwner pathOwner))
             {
-                PathFlags st = Lookups.GetComponentData<PathOwner>(e).m_State;
+                PathFlags st = pathOwner.m_State;
                 // How much route it actually HOLDS, which the state word alone does not say: path
                 // elements left to drive, and the navigation lanes built from them. "A path arrived
                 // but nav stays 0" and "the path itself is emptied again" are different failures.
@@ -123,7 +123,7 @@ namespace ClearTheWay
                     ? eCarNavigationLane.Length : -1;
                 string motion = Lookups.HasComponent<Game.Objects.Stopped>(e) ? "STOPPED"
                     : Lookups.HasComponent<Moving>(e) ? "moving" : "neither";
-                path = $"{motion} pathElems={pathLen} elemIdx={Lookups.GetComponentData<PathOwner>(e).m_ElementIndex} nav={navLen} " +
+                path = $"{motion} pathElems={pathLen} elemIdx={pathOwner.m_ElementIndex} nav={navLen} " +
                     $"pathState={(uint)st:X} pend={((st & PathFlags.Pending) != 0 ? 1 : 0)} " +
                     $"stuck={((st & PathFlags.Stuck) != 0 ? 1 : 0)} fail={((st & PathFlags.Failed) != 0 ? 1 : 0)} " +
                     $"obs={((st & PathFlags.Obsolete) != 0 ? 1 : 0)}";

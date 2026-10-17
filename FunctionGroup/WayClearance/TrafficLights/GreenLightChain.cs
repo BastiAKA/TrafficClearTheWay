@@ -86,11 +86,10 @@ namespace ClearTheWay.FunctionGroup.WayClearance.TrafficLights
         public void PetitionRouteAhead(Entity vehicle, Entity currentLane, sbyte priority, int upcomingLanes)
         {
             Petition(vehicle, currentLane, priority);
-            if (!Lookups.HasBuffer<CarNavigationLane>(vehicle))
+            if (!Lookups.TryGetBuffer(vehicle, out DynamicBuffer<CarNavigationLane> navLanes, isReadOnly: true))
             {
                 return;
             }
-            DynamicBuffer<CarNavigationLane> navLanes = Lookups.GetBuffer<CarNavigationLane>(vehicle, isReadOnly: true);
             int upcoming = math.min(upcomingLanes, navLanes.Length);
             for (int i = 0; i < upcoming; i++)
             {

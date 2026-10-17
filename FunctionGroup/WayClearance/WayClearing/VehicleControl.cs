@@ -50,12 +50,11 @@ namespace ClearTheWay.FunctionGroup.WayClearance.WayClearing
         /// </summary>
         private bool IsHaulingHome(Entity entity)
         {
-            if (!Lookups.HasComponent<Game.Vehicles.MaintenanceVehicle>(entity))
+            if (!Lookups.TryGetComponent(entity, out Game.Vehicles.MaintenanceVehicle maintenance))
             {
                 return false;
             }
-            Game.Vehicles.MaintenanceVehicleFlags state =
-                Lookups.GetComponentData<Game.Vehicles.MaintenanceVehicle>(entity).m_State;
+            Game.Vehicles.MaintenanceVehicleFlags state = maintenance.m_State;
             return (state & Game.Vehicles.MaintenanceVehicleFlags.Returning) != 0 &&
                    (state & Game.Vehicles.MaintenanceVehicleFlags.Full) != 0;
         }

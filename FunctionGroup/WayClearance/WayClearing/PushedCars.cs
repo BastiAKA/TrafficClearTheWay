@@ -69,8 +69,9 @@ namespace ClearTheWay.FunctionGroup.WayClearance.WayClearing
                 {
                     continue;
                 }
+                // CarCurrentLane read here once; only Moving is read before its use below.
                 if (!EntityManager.Exists(car) ||
-                    !Lookups.HasComponent<CarCurrentLane>(car) ||
+                    !Lookups.TryGetComponent(car, out CarCurrentLane lane) ||
                     Lookups.HasComponent<ParkedCar>(car) ||
                     Lookups.HasComponent<Deleted>(car))
                 {
@@ -85,7 +86,6 @@ namespace ClearTheWay.FunctionGroup.WayClearance.WayClearing
                     continue;
                 }
 
-                CarCurrentLane lane = Lookups.GetComponentData<CarCurrentLane>(car);
                 if (lane.m_ChangeLane != Entity.Null)
                 {
                     m_ReleaseBuffer.Add(car);
