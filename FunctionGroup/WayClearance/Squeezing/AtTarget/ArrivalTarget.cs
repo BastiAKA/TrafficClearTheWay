@@ -71,9 +71,9 @@ namespace ClearTheWay.FunctionGroup.WayClearance.Squeezing.AtTarget
                     for (int i = 0; i < involved.Length; i++)
                     {
                         Entity entity = involved[i].m_Entity;
-                        if (Lookups.HasComponent<Game.Events.InvolvedInAccident>(entity) &&
+                        if (Lookups.TryGetComponent(entity, out Game.Events.InvolvedInAccident entityInvolvedInAccident) &&
                             Lookups.HasComponent<Transform>(entity) &&
-                            Lookups.GetComponentData<Game.Events.InvolvedInAccident>(entity).m_Event == accidentEvent)
+                            entityInvolvedInAccident.m_Event == accidentEvent)
                         {
                             best = math.min(best, math.distance(position,
                                 Lookups.GetComponentData<Transform>(entity).m_Position));

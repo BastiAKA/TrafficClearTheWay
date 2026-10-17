@@ -397,8 +397,8 @@ namespace ClearTheWay
                 }
             }
             else if (m_Ctx.PathFailingSince.ContainsKey(truck) &&
-                Lookups.HasComponent<PathOwner>(truck) &&
-                (Lookups.GetComponentData<PathOwner>(truck).m_State &
+                Lookups.TryGetComponent(truck, out PathOwner truckPathOwner) &&
+                (truckPathOwner.m_State &
                  (PathFlags.Pending | PathFlags.Obsolete)) == 0)
             {
                 // Has a route again - and only then. "No Failed flag this tick" is not that: the
@@ -454,8 +454,8 @@ namespace ClearTheWay
             {
                 return;
             }
-            float speed = Lookups.HasComponent<Moving>(truck)
-                ? math.length(Lookups.GetComponentData<Moving>(truck).m_Velocity) : 0f;
+            float speed = Lookups.TryGetComponent(truck, out Moving truckMoving)
+                ? math.length(truckMoving.m_Velocity) : 0f;
             if (speed > 0.5f)
             {
                 return; // rolling along - nothing to explain
@@ -466,11 +466,11 @@ namespace ClearTheWay
                 Blocker b = Lookups.GetComponentData<Blocker>(truck);
                 if (b.m_Blocker != Entity.Null && EntityManager.Exists(b.m_Blocker))
                 {
-                    float bspeed = Lookups.HasComponent<Moving>(b.m_Blocker)
-                        ? math.length(Lookups.GetComponentData<Moving>(b.m_Blocker).m_Velocity) : 0f;
+                    float bspeed = Lookups.TryGetComponent(b.m_Blocker, out Moving blockerMoving)
+                        ? math.length(blockerMoving.m_Velocity) : 0f;
                     bool bMaint = Lookups.HasComponent<Game.Vehicles.MaintenanceVehicle>(b.m_Blocker);
-                    bool bEmerg = Lookups.HasComponent<Car>(b.m_Blocker) &&
-                        (Lookups.GetComponentData<Car>(b.m_Blocker).m_Flags & CarFlags.Emergency) != 0;
+                    bool bEmerg = Lookups.TryGetComponent(b.m_Blocker, out Car blockerCar) &&
+                        (blockerCar.m_Flags & CarFlags.Emergency) != 0;
                     blockerInfo = $"{b.m_Blocker.Index} type={b.m_Type} spd={bspeed:F1} " +
                         $"emerg={(bEmerg ? 1 : 0)} maint={(bMaint ? 1 : 0)}";
                 }
@@ -485,13 +485,13 @@ namespace ClearTheWay
             {
                 ourCap = cap.ToString();
             }
-            string pathState = Lookups.HasComponent<Game.Pathfind.PathOwner>(truck)
-                ? Lookups.GetComponentData<Game.Pathfind.PathOwner>(truck).m_State.ToString()
+            string pathState = Lookups.TryGetComponent(truck, out Game.Pathfind.PathOwner truckPathOwner)
+                ? truckPathOwner.m_State.ToString()
                 : "n/a";
-            Entity target = Lookups.HasComponent<Target>(truck)
-                ? Lookups.GetComponentData<Target>(truck).m_Target : Entity.Null;
-            Entity depot = Lookups.HasComponent<Owner>(truck)
-                ? Lookups.GetComponentData<Owner>(truck).m_Owner : Entity.Null;
+            Entity target = Lookups.TryGetComponent(truck, out Target truckTarget)
+                ? truckTarget.m_Target : Entity.Null;
+            Entity depot = Lookups.TryGetComponent(truck, out Owner truckOwner)
+                ? truckOwner.m_Owner : Entity.Null;
             Mod.Log.Info($"[towhaul] truck={truck.Index} wreck={wreck.Index} standing spd={speed:F1} " +
                 $"target={target.Index} depot={depot.Index} targetIsDepot={(target == depot && depot != Entity.Null ? 1 : 0)} " +
                 $"path={pathState} ourCap={ourCap} blockedBy=[{blockerInfo}]");

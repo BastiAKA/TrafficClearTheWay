@@ -341,8 +341,8 @@ namespace ClearTheWay.FunctionGroup.WayClearance
             m_Ctx.States.Stuck.TryGetValue(vehicle, out StuckState freeLatch);
             bool latched = freeLatch.m_FreeLaneDir != 0f &&
                 m_SimulationSystem.frameIndex < freeLatch.m_FreeLaneUntilFrame;
-            CarFlags carFlags = Lookups.HasComponent<Car>(vehicle)
-                ? Lookups.GetComponentData<Car>(vehicle).m_Flags
+            CarFlags carFlags = Lookups.TryGetComponent(vehicle, out Car vehicleCar)
+                ? vehicleCar.m_Flags
                 : default;
             // SCAN ORDER IS THE COMMITMENT. Relaxing the acceptance threshold for the held
             // direction (below) does nothing on its own if a lane on the OTHER side is simply

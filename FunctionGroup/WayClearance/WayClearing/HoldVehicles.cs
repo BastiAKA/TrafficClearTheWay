@@ -70,8 +70,8 @@ namespace ClearTheWay.FunctionGroup.WayClearance.WayClearing
                     Lookups.SetComponentData(other, pathOwner);
                 }
             }
-            float speed = Lookups.HasComponent<Moving>(other)
-                ? math.length(Lookups.GetComponentData<Moving>(other).m_Velocity)
+            float speed = Lookups.TryGetComponent(other, out Moving otherMoving)
+                ? math.length(otherMoving.m_Velocity)
                 : 0f;
             // Standing cars: steer them onto their evade offset at low speed so the corridor
             // physically opens (their own blocked navigation never moves them sideways).
@@ -204,8 +204,8 @@ namespace ClearTheWay.FunctionGroup.WayClearance.WayClearing
                 Entity other = laneObjects[i].m_LaneObject;
                 if (other == vehicle || !EntityManager.Exists(other) ||
                     !Lookups.HasComponent<CarNavigation>(other) ||
-                    (Lookups.HasComponent<Car>(other) &&
-                     (Lookups.GetComponentData<Car>(other).m_Flags & CarFlags.Emergency) != 0))
+                    (Lookups.TryGetComponent(other, out Car otherCar) &&
+                     (otherCar.m_Flags & CarFlags.Emergency) != 0))
                 {
                     continue;
                 }
@@ -240,8 +240,8 @@ namespace ClearTheWay.FunctionGroup.WayClearance.WayClearing
                 Entity other = laneObjects[i].m_LaneObject;
                 if (other == vehicle || !EntityManager.Exists(other) ||
                     !Lookups.HasComponent<CarNavigation>(other) ||
-                    (Lookups.HasComponent<Car>(other) &&
-                     (Lookups.GetComponentData<Car>(other).m_Flags & CarFlags.Emergency) != 0))
+                    (Lookups.TryGetComponent(other, out Car otherCar) &&
+                     (otherCar.m_Flags & CarFlags.Emergency) != 0))
                 {
                     continue;
                 }
@@ -277,8 +277,8 @@ namespace ClearTheWay.FunctionGroup.WayClearance.WayClearing
                 Entity other = laneObjects[i].m_LaneObject;
                 if (other == vehicle || !EntityManager.Exists(other) ||
                     !Lookups.HasComponent<CarNavigation>(other) ||
-                    (Lookups.HasComponent<Car>(other) &&
-                     (Lookups.GetComponentData<Car>(other).m_Flags & CarFlags.Emergency) != 0))
+                    (Lookups.TryGetComponent(other, out Car otherCar) &&
+                     (otherCar.m_Flags & CarFlags.Emergency) != 0))
                 {
                     continue;
                 }

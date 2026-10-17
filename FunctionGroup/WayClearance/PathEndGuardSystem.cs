@@ -186,8 +186,8 @@ namespace ClearTheWay
             // vehicles and recovery/maintenance vehicles have the accident itself
             // as their destination - clearing their path end would strand them.
             if (!prefiltered &&
-                (!Lookups.HasComponent<Car>(other) ||
-                 (Lookups.GetComponentData<Car>(other).m_Flags & CarFlags.Emergency) != 0 ||
+                (!Lookups.TryGetComponent(other, out Car otherCar) ||
+                 (otherCar.m_Flags & CarFlags.Emergency) != 0 ||
                  Lookups.HasComponent<Game.Vehicles.MaintenanceVehicle>(other)))
             {
                 return;
@@ -212,8 +212,8 @@ namespace ClearTheWay
             if (diagnostics)
             {
                 if (Lookups.HasComponent<Game.Events.InvolvedInAccident>(other)) stats.nInvolved++;
-                if (Lookups.HasComponent<Target>(other) &&
-                    !EntityManager.Exists(Lookups.GetComponentData<Target>(other).m_Target)) stats.nNoTarget++;
+                if (Lookups.TryGetComponent(other, out Target otherTarget) &&
+                    !EntityManager.Exists(otherTarget.m_Target)) stats.nNoTarget++;
             }
 
             // Also drop Stuck|Failed AND the repath triggers (Obsolete|Divert-

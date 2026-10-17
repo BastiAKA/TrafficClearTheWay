@@ -329,8 +329,8 @@ namespace ClearTheWay
                 return false;
             }
             // Riding in a vehicle, or a responder on foot (paramedic/officer) - never held.
-            if (Lookups.HasComponent<CurrentVehicle>(pedestrian) &&
-                Lookups.GetComponentData<CurrentVehicle>(pedestrian).m_Vehicle != Entity.Null)
+            if (Lookups.TryGetComponent(pedestrian, out CurrentVehicle pedestrianCurrentVehicle) &&
+                pedestrianCurrentVehicle.m_Vehicle != Entity.Null)
             {
                 return false;
             }
@@ -378,8 +378,8 @@ namespace ClearTheWay
             {
                 return false;
             }
-            if (Lookups.HasComponent<CurrentVehicle>(pedestrian) &&
-                Lookups.GetComponentData<CurrentVehicle>(pedestrian).m_Vehicle != Entity.Null)
+            if (Lookups.TryGetComponent(pedestrian, out CurrentVehicle pedestrianCurrentVehicle) &&
+                pedestrianCurrentVehicle.m_Vehicle != Entity.Null)
             {
                 return false;
             }
@@ -400,8 +400,8 @@ namespace ClearTheWay
         private bool IsCrosswalk(Entity lane)
         {
             return lane != Entity.Null &&
-                Lookups.HasComponent<Game.Net.PedestrianLane>(lane) &&
-                (Lookups.GetComponentData<Game.Net.PedestrianLane>(lane).m_Flags &
+                Lookups.TryGetComponent(lane, out Game.Net.PedestrianLane lanePedestrianLane) &&
+                (lanePedestrianLane.m_Flags &
                     Game.Net.PedestrianLaneFlags.Crosswalk) != 0;
         }
     }

@@ -72,8 +72,8 @@ namespace ClearTheWay
                 // can never brake or arrive: it orbits its target for minutes, riding the wide
                 // pass line at lanePos ~2.8 (observed: veh stuck 25 min, ignore=1 blocker=0).
                 bool ignoreSet = (currentLane.m_LaneFlags & CarLaneFlags.IgnoreBlocker) != 0;
-                bool noBlocker = !Lookups.HasComponent<Blocker>(vehicle) ||
-                    Lookups.GetComponentData<Blocker>(vehicle).m_Blocker == Entity.Null;
+                bool noBlocker = !Lookups.TryGetComponent(vehicle, out Blocker vehicleBlocker) ||
+                    vehicleBlocker.m_Blocker == Entity.Null;
                 if (ignoreSet && noBlocker && frame >= s.m_PreviousStuck.m_SqueezeUntilFrame)
                 {
                     currentLane.m_LaneFlags &= ~CarLaneFlags.IgnoreBlocker;

@@ -210,9 +210,9 @@ namespace ClearTheWay
             // negative means it is already past due and only our hold is keeping it alive.
             bool claimed = RecoveryClaim.IsClaimed(EntityManager, w);
             uint giveUpAge = claimed ? kWreckClaimedGiveUpAge : kWreckGiveUpAge;
-            long vanillaIn = Lookups.HasComponent<Game.Events.InvolvedInAccident>(w)
+            long vanillaIn = Lookups.TryGetComponent(w, out Game.Events.InvolvedInAccident wInvolvedInAccident)
                 ? (long)kVanillaDeleteAge -
-                  (frame - Lookups.GetComponentData<Game.Events.InvolvedInAccident>(w).m_InvolvedFrame)
+                  (frame - wInvolvedInAccident.m_InvolvedFrame)
                 : 0L;
             Mod.Log.Info($"[orphanfind] wreck={w.Index} strandedFor={strandedFor}f " +
                 $"claimed={(claimed ? 1 : 0)} giveUp={giveUpAge}f vanillaIn={vanillaIn}f " +

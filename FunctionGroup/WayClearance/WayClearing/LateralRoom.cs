@@ -88,8 +88,8 @@ namespace ClearTheWay
                 // lanes while looking perfectly correct on the others. Two lanes of the same road
                 // with opposite inv= must report the room on the same physical side; if they
                 // mirror each other instead, the laneInverted factor is the wrong way round.
-                bool inv = Lookups.HasComponent<Game.Net.CarLane>(lane) &&
-                    (Lookups.GetComponentData<Game.Net.CarLane>(lane).m_Flags & Game.Net.CarLaneFlags.Invert) != 0;
+                bool inv = Lookups.TryGetComponent(lane, out Game.Net.CarLane laneCarLane) &&
+                    (laneCarLane.m_Flags & Game.Net.CarLaneFlags.Invert) != 0;
                 Mod.Log.Info($"[room] lane={lane.Index} left={entry.m_Left:F1}m right={entry.m_Right:F1}m inv={(inv ? 1 : 0)}");
             }
             PruneStale(frame);
@@ -280,8 +280,8 @@ namespace ClearTheWay
         /// </summary>
         private bool IsOccupied(Entity lane)
         {
-            return Lookups.HasBuffer<LaneObject>(lane) &&
-                   Lookups.GetBuffer<LaneObject>(lane, isReadOnly: true).Length != 0;
+            return Lookups.TryGetBuffer(lane, out DynamicBuffer<LaneObject> laneLaneObject, isReadOnly: true) &&
+                   laneLaneObject.Length != 0;
         }
 
         /// <summary>Drop entries for lanes nobody has asked about in a while, so a long session

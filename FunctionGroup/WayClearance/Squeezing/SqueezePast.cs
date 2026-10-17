@@ -159,8 +159,8 @@ namespace ClearTheWay.FunctionGroup.WayClearance.Squeezing
             // kAssistProgressMeters for the recovery side ("an instantaneous speed check reset the
             // timer on every creep, so the escalation never fired once") - it belongs here too.
             m_StuckStates.TryGetValue(vehicle, out StuckState stuck);
-            float3 position = Lookups.HasComponent<Transform>(vehicle)
-                ? Lookups.GetComponentData<Transform>(vehicle).m_Position
+            float3 position = Lookups.TryGetComponent(vehicle, out Transform vehicleTransform)
+                ? vehicleTransform.m_Position
                 : default;
             bool spellRunning = stuck.m_Blocker != Entity.Null;
             if (blockingEntity == Entity.Null || (!spellRunning && !vehicleSlow))
@@ -210,13 +210,15 @@ namespace ClearTheWay.FunctionGroup.WayClearance.Squeezing
             // Never drive through another emergency vehicle (check a trailer's controller
             // too) or anything that is still moving too fast.
             Entity blockerHead = VehicleTrailerExt.ResolveHead(EntityManager, blockingEntity);
-            if (Lookups.HasComponent<Car>(blockerHead) &&
-                (Lookups.GetComponentData<Car>(blockerHead).m_Flags & CarFlags.Emergency) != 0)
+            if (Lookups.TryGetComponent(blockerHead, out Car blockerHeadCar) &&
+                (blockerHeadCar.m_Flags & CarFlags.Emergency) != 0)
             {
                 return false;
             }
-            if (Lookups.HasComponent<Moving>(blockingEntity) &&
-                math.lengthsq(Lookups.GetComponentData<Moving>(blockingEntity).m_Velocity) > kMaxBlockerSpeed * kMaxBlockerSpeed)
+            // Read once, used again for the standing-colleague test below.
+            bool blockerHasMoving = Lookups.TryGetComponent(blockingEntity, out Moving blockingEntityMoving);
+            if (blockerHasMoving &&
+                math.lengthsq(blockingEntityMoving.m_Velocity) > kMaxBlockerSpeed * kMaxBlockerSpeed)
             {
                 return false;
             }
@@ -253,8 +255,8 @@ namespace ClearTheWay.FunctionGroup.WayClearance.Squeezing
             // clearance means waiting forever (the deadlocked tow-truck chain). Both vehicles
             // are stationary here, so passing a little closer is safe.
             bool standingColleague = Lookups.HasComponent<Game.Vehicles.MaintenanceVehicle>(blockerHead) &&
-                (!Lookups.HasComponent<Moving>(blockingEntity) ||
-                 math.lengthsq(Lookups.GetComponentData<Moving>(blockingEntity).m_Velocity) < 0.25f);
+                (!blockerHasMoving ||
+                 math.lengthsq(blockingEntityMoving.m_Velocity) < 0.25f);
             float requiredSeparation = standingColleague ? kColleagueSqueezeSeparation : kMinSqueezeSeparation;
             if (m_Geometry.GetLateralSeparation(vehicle, currentLane, blockingEntity) < requiredSeparation)
             {

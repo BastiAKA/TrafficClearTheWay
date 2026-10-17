@@ -99,11 +99,11 @@ namespace ClearTheWay.FunctionGroup.Accidents
                 // above stay ungated: they read a state word that has already been fetched.
                 if (setting.VerboseLogging)
                 {
-                    if (Lookups.HasComponent<Game.Vehicles.PersonalCar>(other) &&
-                        (Lookups.GetComponentData<Game.Vehicles.PersonalCar>(other).m_State
+                    if (Lookups.TryGetComponent(other, out Game.Vehicles.PersonalCar otherPersonalCar) &&
+                        (otherPersonalCar.m_State
                             & PersonalCarFlags.DummyTraffic) != 0) nDummy++;
-                    if (Lookups.HasComponent<Moving>(other) &&
-                        math.lengthsq(Lookups.GetComponentData<Moving>(other).m_Velocity) < 0.25f) nStopped++;
+                    if (Lookups.TryGetComponent(other, out Moving otherMoving) &&
+                        math.lengthsq(otherMoving.m_Velocity) < 0.25f) nStopped++;
                 }
                 if ((state & (PathFlags.Stuck | PathFlags.Failed)) != 0)
                 {
@@ -171,15 +171,15 @@ namespace ClearTheWay.FunctionGroup.Accidents
                 // per tick, a large chunk of the post-accident lag when verbose is on.
                 if (kDespawnForensics && setting.VerboseLogging)
                 {
-                    float3 snapPos = Lookups.HasComponent<Transform>(other)
-                        ? Lookups.GetComponentData<Transform>(other).m_Position : default;
-                    float snapSpeed = Lookups.HasComponent<Moving>(other)
-                        ? math.length(Lookups.GetComponentData<Moving>(other).m_Velocity) : 0f;
+                    float3 snapPos = Lookups.TryGetComponent(other, out Transform otherTransform)
+                        ? otherTransform.m_Position : default;
+                    float snapSpeed = Lookups.TryGetComponent(other, out Moving otherMoving)
+                        ? math.length(otherMoving.m_Velocity) : 0f;
                     bool snapInvolved = Lookups.HasComponent<Game.Events.InvolvedInAccident>(other);
-                    bool snapDummy = Lookups.HasComponent<Game.Vehicles.PersonalCar>(other) &&
-                        (Lookups.GetComponentData<Game.Vehicles.PersonalCar>(other).m_State & PersonalCarFlags.DummyTraffic) != 0;
-                    uint snapLane = Lookups.HasComponent<CarCurrentLane>(other)
-                        ? (uint)Lookups.GetComponentData<CarCurrentLane>(other).m_LaneFlags : 0u;
+                    bool snapDummy = Lookups.TryGetComponent(other, out Game.Vehicles.PersonalCar otherPersonalCar) &&
+                        (otherPersonalCar.m_State & PersonalCarFlags.DummyTraffic) != 0;
+                    uint snapLane = Lookups.TryGetComponent(other, out CarCurrentLane otherCarCurrentLane)
+                        ? (uint)otherCarCurrentLane.m_LaneFlags : 0u;
                     if (m_NearWreckSnapshots.TryGetValue(other, out CarSnapshot prev) &&
                         !prev.m_Involved && snapInvolved)
                     {

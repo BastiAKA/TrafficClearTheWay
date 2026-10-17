@@ -53,8 +53,8 @@ namespace ClearTheWay.FunctionGroup.WayClearance.WayClearing.VehicleTypes
         {
 
             //if the controller is not the entity itself it must be a trailer, as it follows 
-            return Lookups.HasComponent<Controller>(entity) &&
-                Lookups.GetComponentData<Controller>(entity).m_Controller != entity;
+            return Lookups.TryGetComponent(entity, out Controller entityController) &&
+                entityController.m_Controller != entity;
         }
 
         /// <summary>The vehicle a part belongs to: a trailer resolves to its tractor, anything
@@ -76,8 +76,8 @@ namespace ClearTheWay.FunctionGroup.WayClearance.WayClearing.VehicleTypes
         /// <summary>Tractor + trailer(s): more than one part in the vehicle's layout.</summary>
         public static bool IsArticulated(Entity vehicle)
         {
-            return Lookups.HasBuffer<LayoutElement>(vehicle) &&
-                Lookups.GetBuffer<LayoutElement>(vehicle, isReadOnly: true).Length > 1;
+            return Lookups.TryGetBuffer(vehicle, out DynamicBuffer<LayoutElement> vehicleLayoutElement, isReadOnly: true) &&
+                vehicleLayoutElement.Length > 1;
         }
 
         /// <summary>
@@ -90,8 +90,8 @@ namespace ClearTheWay.FunctionGroup.WayClearance.WayClearing.VehicleTypes
         public void MakeWay(Entity rig, ref CarCurrentLane rigLane, CorridorLane corridorLane,
             float corridorLaneWidth, float aheadDistance, uint frame)
         {
-            float rigSpeed = Lookups.HasComponent<Moving>(rig)
-                ? math.length(Lookups.GetComponentData<Moving>(rig).m_Velocity)
+            float rigSpeed = Lookups.TryGetComponent(rig, out Moving rigMoving)
+                ? math.length(rigMoving.m_Velocity)
                 : 0f;
 
 

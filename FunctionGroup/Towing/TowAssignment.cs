@@ -234,8 +234,8 @@ namespace ClearTheWay
             }
             // Still actually heading here? A van whose Target has moved on is not ours any more,
             // whatever we once decided.
-            if (!Lookups.HasComponent<Target>(van) ||
-                Lookups.GetComponentData<Target>(van).m_Target != wreck)
+            if (!Lookups.TryGetComponent(van, out Target vanTarget) ||
+                vanTarget.m_Target != wreck)
             {
                 m_LastAssignedVan.Remove(wreck);
                 return false;
@@ -266,8 +266,8 @@ namespace ClearTheWay
         public bool IsSuitable(Entity van, Entity wreck)
         {
             Entity prefab = Lookups.GetComponentData<PrefabRef>(van).m_Prefab;
-            if (!Lookups.HasComponent<MaintenanceVehicleData>(prefab) ||
-                (Lookups.GetComponentData<MaintenanceVehicleData>(prefab).m_MaintenanceType & MaintenanceType.Vehicle) == 0)
+            if (!Lookups.TryGetComponent(prefab, out MaintenanceVehicleData prefabMaintenanceVehicleData) ||
+                (prefabMaintenanceVehicleData.m_MaintenanceType & MaintenanceType.Vehicle) == 0)
             {
                 return false;
             }
@@ -304,8 +304,8 @@ namespace ClearTheWay
             // Remember OUR decision, so the depot branch does not compete for the same request
             // while this van is on its way (see OwnVanStillComing).
             m_LastAssignedVan[wreck] = van;
-            DynamicBuffer<ServiceDispatch> dispatches = Lookups.HasBuffer<ServiceDispatch>(van)
-                ? Lookups.GetBuffer<ServiceDispatch>(van)
+            DynamicBuffer<ServiceDispatch> dispatches = Lookups.TryGetBuffer(van, out DynamicBuffer<ServiceDispatch> vanServiceDispatch)
+                ? vanServiceDispatch
                 : EntityManager.AddBuffer<ServiceDispatch>(van);
             for (int i = 0; i < dispatches.Length; i++)
             {
@@ -371,8 +371,8 @@ namespace ClearTheWay
                 for (int i = 0; i < depots.Length; i++)
                 {
                     Entity prefab = Lookups.GetComponentData<PrefabRef>(depots[i]).m_Prefab;
-                    if (!Lookups.HasComponent<MaintenanceDepotData>(prefab) ||
-                        Lookups.GetComponentData<MaintenanceDepotData>(prefab).m_MaintenanceType != MaintenanceType.Vehicle)
+                    if (!Lookups.TryGetComponent(prefab, out MaintenanceDepotData prefabMaintenanceDepotData) ||
+                        prefabMaintenanceDepotData.m_MaintenanceType != MaintenanceType.Vehicle)
                     {
                         continue;
                     }
@@ -392,8 +392,8 @@ namespace ClearTheWay
             {
                 return false; // no tow depot built - leave the vanilla assignment alone
             }
-            DynamicBuffer<ServiceDispatch> dispatches = Lookups.HasBuffer<ServiceDispatch>(depot)
-                ? Lookups.GetBuffer<ServiceDispatch>(depot)
+            DynamicBuffer<ServiceDispatch> dispatches = Lookups.TryGetBuffer(depot, out DynamicBuffer<ServiceDispatch> depotServiceDispatch)
+                ? depotServiceDispatch
                 : EntityManager.AddBuffer<ServiceDispatch>(depot);
             for (int i = 0; i < dispatches.Length; i++)
             {

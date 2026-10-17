@@ -194,8 +194,8 @@ namespace ClearTheWay
         private void ProcessAssistVehicleImpl(Entity vehicle, float side, uint frame)
         {
             Entity prefab = Lookups.GetComponentData<PrefabRef>(vehicle).m_Prefab;
-            if (!Lookups.HasComponent<MaintenanceVehicleData>(prefab) ||
-                (Lookups.GetComponentData<MaintenanceVehicleData>(prefab).m_MaintenanceType & MaintenanceType.Vehicle) == 0)
+            if (!Lookups.TryGetComponent(prefab, out MaintenanceVehicleData prefabMaintenanceVehicleData) ||
+                (prefabMaintenanceVehicleData.m_MaintenanceType & MaintenanceType.Vehicle) == 0)
             {
                 return;
             }
@@ -658,8 +658,8 @@ namespace ClearTheWay
                 return;
             }
             // Only a blocker that is truly standing - a rolling one will clear on its own.
-            if (Lookups.HasComponent<Moving>(head) &&
-                math.lengthsq(Lookups.GetComponentData<Moving>(head).m_Velocity) > kUnblockMaxSpeed * kUnblockMaxSpeed)
+            if (Lookups.TryGetComponent(head, out Moving headMoving) &&
+                math.lengthsq(headMoving.m_Velocity) > kUnblockMaxSpeed * kUnblockMaxSpeed)
             {
                 return;
             }
@@ -775,11 +775,11 @@ namespace ClearTheWay
         private void LogAssistNoProgress(Entity vehicle, Entity wreck, CarCurrentLane lane,
             float targetDistance, AssistProgress progress, uint frame)
         {
-            float speed = Lookups.HasComponent<Moving>(vehicle)
-                ? math.length(Lookups.GetComponentData<Moving>(vehicle).m_Velocity) : 0f;
+            float speed = Lookups.TryGetComponent(vehicle, out Moving vehicleMoving)
+                ? math.length(vehicleMoving.m_Velocity) : 0f;
             float3 vpos = Lookups.GetComponentData<Transform>(vehicle).m_Position;
-            float3 wpos = Lookups.HasComponent<Transform>(wreck)
-                ? Lookups.GetComponentData<Transform>(wreck).m_Position : default;
+            float3 wpos = Lookups.TryGetComponent(wreck, out Transform wreckTransform)
+                ? wreckTransform.m_Position : default;
             bool ignore = (lane.m_LaneFlags & CarLaneFlags.IgnoreBlocker) != 0;
 
             string blockerInfo = "none";
@@ -789,10 +789,10 @@ namespace ClearTheWay
                 Entity be = b.m_Blocker;
                 if (be != Entity.Null && EntityManager.Exists(be))
                 {
-                    float bspeed = Lookups.HasComponent<Moving>(be)
-                        ? math.length(Lookups.GetComponentData<Moving>(be).m_Velocity) : 0f;
-                    bool bEmerg = Lookups.HasComponent<Car>(be) &&
-                        (Lookups.GetComponentData<Car>(be).m_Flags & CarFlags.Emergency) != 0;
+                    float bspeed = Lookups.TryGetComponent(be, out Moving beMoving)
+                        ? math.length(beMoving.m_Velocity) : 0f;
+                    bool bEmerg = Lookups.TryGetComponent(be, out Car beCar) &&
+                        (beCar.m_Flags & CarFlags.Emergency) != 0;
                     bool bWreck = Lookups.HasComponent<Game.Events.InvolvedInAccident>(be);
                     bool bMaint = Lookups.HasComponent<Game.Vehicles.MaintenanceVehicle>(be);
                     blockerInfo = $"{be.Index} type={b.m_Type} spd={bspeed:F1} emerg={(bEmerg ? 1 : 0)} " +

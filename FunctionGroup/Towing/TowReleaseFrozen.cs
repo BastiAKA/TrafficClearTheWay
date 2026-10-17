@@ -142,8 +142,8 @@ namespace ClearTheWay
             //  - CarCurrentLane / UpdateFrame: in every vehicle AI query, so without them removing
             //    OutOfControl wakes nothing up and Moving would be added to a car nothing steers.
             //  - PathOwner: the AI needs it to re-path from where the car is standing.
-            bool hasPassenger = Lookups.HasBuffer<Passenger>(car) &&
-                Lookups.GetBuffer<Passenger>(car, isReadOnly: true).Length != 0;
+            bool hasPassenger = Lookups.TryGetBuffer(car, out DynamicBuffer<Passenger> carPassenger, isReadOnly: true) &&
+                carPassenger.Length != 0;
             if (!hasPassenger)
             {
                 // Nobody aboard: there is no trip to resume and no driver, so releasing it would

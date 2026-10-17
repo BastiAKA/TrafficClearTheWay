@@ -65,8 +65,8 @@ namespace ClearTheWay.FunctionGroup.WayClearance.WayClearing.LanePathFinding
                     if (blockingBelowSpeed > 0f)
                     {
                         Entity obj = laneObjects[i].m_LaneObject;
-                        if (Lookups.HasComponent<Moving>(obj) &&
-                            math.length(Lookups.GetComponentData<Moving>(obj).m_Velocity) >= blockingBelowSpeed)
+                        if (Lookups.TryGetComponent(obj, out Moving objMoving) &&
+                            math.length(objMoving.m_Velocity) >= blockingBelowSpeed)
                         {
                             continue; // rolling along - joining this lane is fine
                         }

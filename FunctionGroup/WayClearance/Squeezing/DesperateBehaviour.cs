@@ -140,8 +140,8 @@ namespace ClearTheWay.FunctionGroup.WayClearance.Squeezing
                 }
                 // Skip lanes of the vehicle's own direction group - those are handled by
                 // the overtake lane change, not by crossing the center line.
-                if (grouped && Lookups.HasComponent<SlaveLane>(candidate) &&
-                    Lookups.GetComponentData<SlaveLane>(candidate).m_Group == myGroup)
+                if (grouped && Lookups.TryGetComponent(candidate, out SlaveLane candidateSlaveLane) &&
+                    candidateSlaveLane.m_Group == myGroup)
                 {
                     continue;
                 }

@@ -232,8 +232,8 @@ namespace ClearTheWay
                 return false;
             }
             // Riding in a vehicle: not on the crossing at all, and its lane belongs to the vehicle.
-            if (Lookups.HasComponent<CurrentVehicle>(pedestrian) &&
-                Lookups.GetComponentData<CurrentVehicle>(pedestrian).m_Vehicle != Entity.Null)
+            if (Lookups.TryGetComponent(pedestrian, out CurrentVehicle pedestrianCurrentVehicle) &&
+                pedestrianCurrentVehicle.m_Vehicle != Entity.Null)
             {
                 return false;
             }
@@ -241,8 +241,8 @@ namespace ClearTheWay
             // and the game re-paths a follower by copying the leader's route. Re-pathing a
             // follower would just have it re-find its lane and then fall back in line, so leave
             // groups to the leader - which is itself eligible if it is the one plugging.
-            if (Lookups.HasComponent<GroupMember>(pedestrian) &&
-                Lookups.GetComponentData<GroupMember>(pedestrian).m_Leader != Entity.Null)
+            if (Lookups.TryGetComponent(pedestrian, out GroupMember pedestrianGroupMember) &&
+                pedestrianGroupMember.m_Leader != Entity.Null)
             {
                 return false;
             }

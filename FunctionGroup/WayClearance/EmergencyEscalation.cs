@@ -343,8 +343,8 @@ namespace ClearTheWay
                 return false;
             }
             // A genuine plug is stopped; a crawling car will clear on its own.
-            if (Lookups.HasComponent<Moving>(lead) &&
-                math.lengthsq(Lookups.GetComponentData<Moving>(lead).m_Velocity) > 0.25f)
+            if (Lookups.TryGetComponent(lead, out Moving leadMoving) &&
+                math.lengthsq(leadMoving.m_Velocity) > 0.25f)
             {
                 return false;
             }
@@ -372,8 +372,8 @@ namespace ClearTheWay
             float separation = -1f;
             if (blocker.m_Blocker != Entity.Null && EntityManager.Exists(blocker.m_Blocker))
             {
-                blockerSpeed = Lookups.HasComponent<Moving>(blocker.m_Blocker)
-                    ? math.length(Lookups.GetComponentData<Moving>(blocker.m_Blocker).m_Velocity)
+                blockerSpeed = Lookups.TryGetComponent(blocker.m_Blocker, out Moving blockerMoving)
+                    ? math.length(blockerMoving.m_Velocity)
                     : 0f;
                 if (Lookups.HasComponent<CarCurrentLane>(blocker.m_Blocker))
                 {
@@ -389,8 +389,8 @@ namespace ClearTheWay
             // time a save is loaded, so "veh=" cannot identify the same vehicle in a second run of
             // the same diag save - the coordinates can, and they are what makes a before/after
             // comparison of one fix possible at all.
-            float3 logPos = Lookups.HasComponent<Transform>(vehicle)
-                ? Lookups.GetComponentData<Transform>(vehicle).m_Position
+            float3 logPos = Lookups.TryGetComponent(vehicle, out Transform vehicleTransform)
+                ? vehicleTransform.m_Position
                 : default;
             Mod.Log.Info($"frame={frame} veh={vehicle.Index} pos=({logPos.x:F0},{logPos.z:F0}) speed={speed:F1} lanePos={currentLane.m_LanePosition:F2} " +
                 $"corridorLanes={m_Corridor.CorridorLanes.Count} pushed={pushed} changing={(currentLane.m_ChangeLane != Entity.Null ? 1 : 0)} " +

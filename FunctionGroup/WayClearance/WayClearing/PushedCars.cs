@@ -78,8 +78,8 @@ namespace ClearTheWay.FunctionGroup.WayClearance.WayClearing
                     continue;
                 }
 
-                bool moving = Lookups.HasComponent<Moving>(car) &&
-                              math.lengthsq(Lookups.GetComponentData<Moving>(car).m_Velocity) > 4f;
+                bool moving = Lookups.TryGetComponent(car, out Moving carMoving) &&
+                              math.lengthsq(carMoving.m_Velocity) > 4f;
                 if (!moving && frame != uint.MaxValue)
                 {
                     continue;

@@ -126,8 +126,8 @@ namespace ClearTheWay.FunctionGroup.WayClearance.WayClearing.VehicleTypes.Geomet
             {
                 return width;
             }
-            width = Lookups.HasComponent<NetLaneData>(prefab)
-                ? Lookups.GetComponentData<NetLaneData>(prefab).m_Width
+            width = Lookups.TryGetComponent(prefab, out NetLaneData prefabNetLaneData)
+                ? prefabNetLaneData.m_Width
                 : 4f;
             m_LaneWidths[prefab] = width;
             return width;

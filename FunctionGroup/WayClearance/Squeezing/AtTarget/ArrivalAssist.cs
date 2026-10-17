@@ -91,18 +91,18 @@ namespace ClearTheWay.FunctionGroup.WayClearance.Squeezing.AtTarget
             // Never force an arrival on a RETURNING unit: with EndOfPath set mid-road the
             // AIs' returning branch deletes the vehicle instead of parking it, and its
             // "target" is the station anyway.
-            if (Lookups.HasComponent<Game.Vehicles.PoliceCar>(vehicle) &&
-                (Lookups.GetComponentData<Game.Vehicles.PoliceCar>(vehicle).m_State & PoliceCarFlags.Returning) != 0)
+            if (Lookups.TryGetComponent(vehicle, out Game.Vehicles.PoliceCar vehiclePoliceCar) &&
+                (vehiclePoliceCar.m_State & PoliceCarFlags.Returning) != 0)
             {
                 return false;
             }
-            if (Lookups.HasComponent<Game.Vehicles.Ambulance>(vehicle) &&
-                (Lookups.GetComponentData<Game.Vehicles.Ambulance>(vehicle).m_State & AmbulanceFlags.Returning) != 0)
+            if (Lookups.TryGetComponent(vehicle, out Game.Vehicles.Ambulance vehicleAmbulance) &&
+                (vehicleAmbulance.m_State & AmbulanceFlags.Returning) != 0)
             {
                 return false;
             }
-            if (Lookups.HasComponent<Game.Vehicles.FireEngine>(vehicle) &&
-                (Lookups.GetComponentData<Game.Vehicles.FireEngine>(vehicle).m_State & FireEngineFlags.Returning) != 0)
+            if (Lookups.TryGetComponent(vehicle, out Game.Vehicles.FireEngine vehicleFireEngine) &&
+                (vehicleFireEngine.m_State & FireEngineFlags.Returning) != 0)
             {
                 return false;
             }
@@ -111,8 +111,8 @@ namespace ClearTheWay.FunctionGroup.WayClearance.Squeezing.AtTarget
             // EndOfPath forced mid-road runs its returning branch, and that branch does not park
             // it where it stands. Its "target" while returning is the depot, so there is nothing
             // to assist there anyway.
-            if (Lookups.HasComponent<Game.Vehicles.MaintenanceVehicle>(vehicle) &&
-                (Lookups.GetComponentData<Game.Vehicles.MaintenanceVehicle>(vehicle).m_State
+            if (Lookups.TryGetComponent(vehicle, out Game.Vehicles.MaintenanceVehicle vehicleMaintenanceVehicle) &&
+                (vehicleMaintenanceVehicle.m_State
                     & MaintenanceVehicleFlags.Returning) != 0)
             {
                 return false;
@@ -230,9 +230,9 @@ namespace ClearTheWay.FunctionGroup.WayClearance.Squeezing.AtTarget
             // the-corner shot): those lanes are curved and any lateral offset plants the
             // vehicle across the corner. Roll on at a creep until a straight edge lane is
             // under the wheels, then stop there.
-            if (!Lookups.HasComponent<Owner>(currentLane.m_Lane) ||
+            if (!Lookups.TryGetComponent(currentLane.m_Lane, out Owner laneOwner) ||
                 !Lookups.HasComponent<Game.Net.Edge>(
-                    Lookups.GetComponentData<Owner>(currentLane.m_Lane).m_Owner))
+                    laneOwner.m_Owner))
             {
                 m_Control.SetCeiling(vehicle, kArriveRollSpeed);
                 m_StuckStates[vehicle] = stuck;

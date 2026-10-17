@@ -147,8 +147,8 @@ namespace ClearTheWay.FunctionGroup.WayClearance.Squeezing
                 // queue behind it get past.
                 if (Lookups.HasComponent<Game.Vehicles.MaintenanceVehicle>(other))
                 {
-                    float otherSpeed = Lookups.HasComponent<Moving>(other)
-                        ? math.length(Lookups.GetComponentData<Moving>(other).m_Velocity)
+                    float otherSpeed = Lookups.TryGetComponent(other, out Moving otherMoving)
+                        ? math.length(otherMoving.m_Velocity)
                         : 0f;
                     if (otherSpeed >= kMaintenancePushMaxSpeed)
                     {
@@ -182,8 +182,8 @@ namespace ClearTheWay.FunctionGroup.WayClearance.Squeezing
                 if (shakeStuck && ((frame + (uint)other.Index) & kShakeMask) == 0u &&
                     otherLane.m_ChangeLane == Entity.Null &&
                     (otherLane.m_LaneFlags & CarLaneFlags.Obsolete) == 0 &&
-                    Lookups.HasComponent<Moving>(other) &&
-                    math.lengthsq(Lookups.GetComponentData<Moving>(other).m_Velocity) < 0.25f)
+                    Lookups.TryGetComponent(other, out Moving shakeMoving) &&
+                    math.lengthsq(shakeMoving.m_Velocity) < 0.25f)
                 {
                     otherLane.m_LaneFlags |= CarLaneFlags.Obsolete;
                     Lookups.SetComponentData(other, otherLane);

@@ -205,8 +205,8 @@ namespace ClearTheWay
             {
                 Lookups.SetComponentData(van, maintenance);
             }
-            if (Lookups.HasComponent<Target>(van) &&
-                Lookups.GetComponentData<Target>(van).m_Target != wreck)
+            if (Lookups.TryGetComponent(van, out Target vanTarget) &&
+                vanTarget.m_Target != wreck)
             {
                 Lookups.SetComponentData(van, new Target(wreck));
                 Repath(van);

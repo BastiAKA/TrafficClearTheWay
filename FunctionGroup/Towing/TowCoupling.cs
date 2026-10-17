@@ -77,8 +77,8 @@ namespace ClearTheWay
             bool diag = Mod.Setting.VerboseLogging && frame % 120u == 0u;
             // Only vehicle-recovery capable trucks, one load at a time.
             Entity prefab = Lookups.GetComponentData<PrefabRef>(truck).m_Prefab;
-            if (!Lookups.HasComponent<MaintenanceVehicleData>(prefab) ||
-                (Lookups.GetComponentData<MaintenanceVehicleData>(prefab).m_MaintenanceType & MaintenanceType.Vehicle) == 0 ||
+            if (!Lookups.TryGetComponent(prefab, out MaintenanceVehicleData prefabMaintenanceVehicleData) ||
+                (prefabMaintenanceVehicleData.m_MaintenanceType & MaintenanceType.Vehicle) == 0 ||
                 m_TrucksWithLoad.Contains(truck))
             {
                 return;
@@ -155,7 +155,7 @@ namespace ClearTheWay
             if (!Lookups.HasComponent<Transform>(wreck) ||
                 !Lookups.HasComponent<Stopped>(wreck) ||
                 Lookups.HasComponent<Game.Events.OnFire>(wreck) ||
-                Lookups.HasComponent<Controller>(wreck) && Lookups.GetComponentData<Controller>(wreck).m_Controller != wreck)
+                Lookups.TryGetComponent(wreck, out Controller wreckController) && wreckController.m_Controller != wreck)
             {
                 if (diag)
                 {
@@ -170,8 +170,8 @@ namespace ClearTheWay
             float3 truckPos = Lookups.GetComponentData<Transform>(truck).m_Position;
             float3 wreckPos = Lookups.GetComponentData<Transform>(wreck).m_Position;
             float dist = math.distance(truckPos.xz, wreckPos.xz);
-            float speed = Lookups.HasComponent<Moving>(truck)
-                ? math.length(Lookups.GetComponentData<Moving>(truck).m_Velocity) : 0f;
+            float speed = Lookups.TryGetComponent(truck, out Moving truckMoving)
+                ? math.length(truckMoving.m_Velocity) : 0f;
             if (dist > kHookupRange || speed > kHookupMaxSpeed)
             {
                 if (diag && dist < 100f)
