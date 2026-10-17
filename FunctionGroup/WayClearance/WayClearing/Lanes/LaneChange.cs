@@ -188,12 +188,12 @@ namespace ClearTheWay.FunctionGroup.WayClearance.WayClearing.LanePathFinding
                 Entity candidateLane = candidate.m_SubLane;
                 if ((candidate.m_PathMethods & PathMethod.Road) == 0 ||
                     candidateLane == currentLane.m_Lane ||
-                    !Lookups.HasComponent<Game.Net.CarLane>(candidateLane) ||
+                    !Lookups.TryGetComponent(candidateLane, out Game.Net.CarLane candidateLaneCarLane) ||
                     Lookups.HasComponent<MasterLane>(candidateLane))
                 {
                     continue;
                 }
-                Game.Net.CarLaneFlags candidateFlags = Lookups.GetComponentData<Game.Net.CarLane>(candidateLane).m_Flags;
+                Game.Net.CarLaneFlags candidateFlags = candidateLaneCarLane.m_Flags;
                 if ((candidateFlags & Game.Net.CarLaneFlags.Forbidden) != 0)
                 {
                     continue;

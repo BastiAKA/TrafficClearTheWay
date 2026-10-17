@@ -48,7 +48,7 @@ namespace ClearTheWay.FunctionGroup.WayClearance.Squeezing.Roundabout
         /// </summary>
         public bool TryAddRing(Entity lane, float minPos, float side, bool inverted, float startOffset)
         {
-            if (!Lookups.HasComponent<Game.Net.CarLane>(lane) ||
+            if (!Lookups.TryGetComponent(lane, out Game.Net.CarLane laneCarLane) ||
                 !Lookups.TryGetComponent(lane, out Owner owner))
             {
                 return false;
@@ -57,7 +57,7 @@ namespace ClearTheWay.FunctionGroup.WayClearance.Squeezing.Roundabout
             {
                 return false;
             }
-            bool laneInverted = (Lookups.GetComponentData<Game.Net.CarLane>(lane).m_Flags & Game.Net.CarLaneFlags.Invert) != 0;
+            bool laneInverted = (laneCarLane.m_Flags & Game.Net.CarLaneFlags.Invert) != 0;
 
             // Count the concentric ring car lanes going the same way as the responder. A
             // single-lane ring has nothing to clear inward.
@@ -65,12 +65,12 @@ namespace ClearTheWay.FunctionGroup.WayClearance.Squeezing.Roundabout
             for (int i = 0; i < subLanes.Length; i++)
             {
                 Entity sl = subLanes[i].m_SubLane;
-                if (!Lookups.HasComponent<Game.Net.CarLane>(sl) ||
+                if (!Lookups.TryGetComponent(sl, out Game.Net.CarLane slCarLane) ||
                     Lookups.HasComponent<MasterLane>(sl))
                 {
                     continue;
                 }
-                if (((Lookups.GetComponentData<Game.Net.CarLane>(sl).m_Flags & Game.Net.CarLaneFlags.Invert) != 0) != laneInverted)
+                if (((slCarLane.m_Flags & Game.Net.CarLaneFlags.Invert) != 0) != laneInverted)
                 {
                     continue;
                 }
@@ -84,12 +84,12 @@ namespace ClearTheWay.FunctionGroup.WayClearance.Squeezing.Roundabout
             for (int i = 0; i < subLanes.Length; i++)
             {
                 Entity sl = subLanes[i].m_SubLane;
-                if (!Lookups.HasComponent<Game.Net.CarLane>(sl) ||
+                if (!Lookups.TryGetComponent(sl, out Game.Net.CarLane slCarLane) ||
                     Lookups.HasComponent<MasterLane>(sl))
                 {
                     continue;
                 }
-                if (((Lookups.GetComponentData<Game.Net.CarLane>(sl).m_Flags & Game.Net.CarLaneFlags.Invert) != 0) != laneInverted)
+                if (((slCarLane.m_Flags & Game.Net.CarLaneFlags.Invert) != 0) != laneInverted)
                 {
                     continue;
                 }

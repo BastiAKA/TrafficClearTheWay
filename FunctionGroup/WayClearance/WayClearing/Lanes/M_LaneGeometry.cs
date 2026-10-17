@@ -116,8 +116,8 @@ namespace ClearTheWay.FunctionGroup.WayClearance.WayClearing.LanePathFinding
         /// </summary>
         public float GetLateralSeparation(Entity vehicle, CarCurrentLane currentLane, Entity blockingEntity)
         {
-            if (!Lookups.HasComponent<Transform>(vehicle) ||
-                !Lookups.HasComponent<Transform>(blockingEntity))
+            if (!Lookups.TryGetComponent(vehicle, out Transform vehicleTransform) ||
+                !Lookups.TryGetComponent(blockingEntity, out Transform blockingEntityTransform))
             {
                 return 0f;
             }
@@ -137,8 +137,8 @@ namespace ClearTheWay.FunctionGroup.WayClearance.WayClearing.LanePathFinding
             }
             float2 tangent = math.normalizesafe(MathUtils.Tangent(curve.m_Bezier, axisPosition).xz);
             float2 right = MathUtils.Right(tangent);
-            float3 vehiclePos = Lookups.GetComponentData<Transform>(vehicle).m_Position;
-            float3 blockerPos = Lookups.GetComponentData<Transform>(blockingEntity).m_Position;
+            float3 vehiclePos = vehicleTransform.m_Position;
+            float3 blockerPos = blockingEntityTransform.m_Position;
             return math.abs(math.dot(blockerPos.xz - vehiclePos.xz, right));
         }
 

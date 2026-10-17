@@ -130,7 +130,7 @@ namespace ClearTheWay.FunctionGroup.WayClearance.WayClearing.LanePathFinding
             Entity lane = currentLane.m_Lane;
             if (!Lookups.TryGetComponent(lane, out SlaveLane slaveLane) ||
                 !Lookups.TryGetComponent(lane, out Owner owner) ||
-                !Lookups.HasComponent<Game.Net.CarLane>(lane))
+                !Lookups.TryGetComponent(lane, out Game.Net.CarLane laneCarLane))
             {
                 return false; // no lane group (single-lane road): leave the normal logic alone
             }
@@ -152,7 +152,7 @@ namespace ClearTheWay.FunctionGroup.WayClearance.WayClearing.LanePathFinding
             {
                 return false;
             }
-            bool laneInverted = (Lookups.GetComponentData<Game.Net.CarLane>(lane).m_Flags & Game.Net.CarLaneFlags.Invert) != 0;
+            bool laneInverted = (laneCarLane.m_Flags & Game.Net.CarLaneFlags.Invert) != 0;
             // Same index arithmetic as AddCounterEvadeNeighbor: the evade-side neighbour.
             bool towardLower = (side > 0f) != laneInverted;
             int evadeIndex = towardLower ? myIndex - 1 : myIndex + 1;
@@ -163,12 +163,12 @@ namespace ClearTheWay.FunctionGroup.WayClearance.WayClearing.LanePathFinding
             Game.Net.SubLane neighbor = subLanes[evadeIndex];
             Entity neighborLane = neighbor.m_SubLane;
             if ((neighbor.m_PathMethods & PathMethod.Road) == 0 ||
-                !Lookups.HasComponent<Game.Net.CarLane>(neighborLane) ||
+                !Lookups.TryGetComponent(neighborLane, out Game.Net.CarLane neighborLaneCarLane) ||
                 Lookups.HasComponent<MasterLane>(neighborLane))
             {
                 return true;
             }
-            Game.Net.CarLaneFlags neighborFlags = Lookups.GetComponentData<Game.Net.CarLane>(neighborLane).m_Flags;
+            Game.Net.CarLaneFlags neighborFlags = neighborLaneCarLane.m_Flags;
             // Opposite-direction neighbour = the oncoming carriageway (handled separately by
             // the oncoming logic), not a same-side corridor lane.
             if (((neighborFlags & Game.Net.CarLaneFlags.Invert) != 0) != laneInverted)

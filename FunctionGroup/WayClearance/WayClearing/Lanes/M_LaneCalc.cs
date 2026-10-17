@@ -46,7 +46,7 @@ namespace ClearTheWay.FunctionGroup.WayClearance.WayClearing.LanePathFinding
             target = default;
             rotation = quaternion.identity;
             if (!Lookups.TryGetComponent(lane.m_Lane, out Curve curve) ||
-                !Lookups.HasComponent<Transform>(entity))
+                !Lookups.TryGetComponent(entity, out Transform entityTransform))
             {
                 return false;
             }
@@ -76,7 +76,7 @@ namespace ClearTheWay.FunctionGroup.WayClearance.WayClearing.LanePathFinding
             float2 right = MathUtils.Right(tangent);
             target = center;
             target.xz += right * curveFrameOffset;
-            float3 current = Lookups.GetComponentData<Transform>(entity).m_Position;
+            float3 current = entityTransform.m_Position;
             float2 direction = math.normalizesafe(target.xz - current.xz);
             if (math.lengthsq(direction) < 0.01f)
             {

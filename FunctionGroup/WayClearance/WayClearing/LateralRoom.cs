@@ -110,7 +110,7 @@ namespace ClearTheWay
             Entity owner = laneOwner.m_Owner;
             if (owner == Entity.Null || !EntityManager.Exists(owner) ||
                 !Lookups.TryGetBuffer(owner, out DynamicBuffer<Game.Net.SubLane> subLanes, isReadOnly: true) ||
-                !Lookups.HasComponent<Game.Net.CarLane>(lane))
+                !Lookups.TryGetComponent(lane, out Game.Net.CarLane laneCarLane))
             {
                 return 0f;
             }
@@ -141,7 +141,7 @@ namespace ClearTheWay
             // at lanePos 6.22, roughly twelve times the offset that already puts it on the
             // pavement.)
             bool laneInverted =
-                (Lookups.GetComponentData<Game.Net.CarLane>(lane).m_Flags & Game.Net.CarLaneFlags.Invert) != 0;
+                (laneCarLane.m_Flags & Game.Net.CarLaneFlags.Invert) != 0;
             bool physicalLeftSide = (pushDirection < 0f) != laneInverted;
             int step = physicalLeftSide ? -1 : 1;
 

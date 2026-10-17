@@ -62,9 +62,9 @@ namespace ClearTheWay.FunctionGroup.WayClearance.WayClearing.VehicleTypes
         /// property of the whole rig, not of the box that happens to be in the way.</summary>
         public static Entity ResolveHead(EntityManager entityManager, Entity entity)
         {
-            if (Lookups.HasComponent<Controller>(entity))
+            if (Lookups.TryGetComponent(entity, out Controller entityController))
             {
-                Entity controller = Lookups.GetComponentData<Controller>(entity).m_Controller;
+                Entity controller = entityController.m_Controller;
                 if (controller != Entity.Null && entityManager.Exists(controller))
                 {
                     return controller;

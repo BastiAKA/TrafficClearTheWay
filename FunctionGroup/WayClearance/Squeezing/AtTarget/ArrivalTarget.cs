@@ -54,10 +54,10 @@ namespace ClearTheWay.FunctionGroup.WayClearance.Squeezing.AtTarget
             {
                 return float.MaxValue;
             }
-            if (Lookups.HasComponent<Transform>(target))
+            if (Lookups.TryGetComponent(target, out Transform targetTransform))
             {
                 return math.distance(position,
-                    Lookups.GetComponentData<Transform>(target).m_Position);
+                    targetTransform.m_Position);
             }
             if (Lookups.TryGetComponent(target, out Game.Events.AccidentSite targetAccidentSite))
             {
@@ -70,11 +70,11 @@ namespace ClearTheWay.FunctionGroup.WayClearance.Squeezing.AtTarget
                     {
                         Entity entity = involved[i].m_Entity;
                         if (Lookups.TryGetComponent(entity, out Game.Events.InvolvedInAccident entityInvolvedInAccident) &&
-                            Lookups.HasComponent<Transform>(entity) &&
+                            Lookups.TryGetComponent(entity, out Transform entityTransform) &&
                             entityInvolvedInAccident.m_Event == accidentEvent)
                         {
                             best = math.min(best, math.distance(position,
-                                Lookups.GetComponentData<Transform>(entity).m_Position));
+                                entityTransform.m_Position));
                         }
                     }
                     return best;
@@ -188,12 +188,12 @@ namespace ClearTheWay.FunctionGroup.WayClearance.Squeezing.AtTarget
             Entity candidateLane = candidate.m_SubLane;
             if ((candidate.m_PathMethods & PathMethod.Road) == 0 ||
                 candidateLane == currentLane.m_Lane ||
-                !Lookups.HasComponent<Game.Net.CarLane>(candidateLane) ||
+                !Lookups.TryGetComponent(candidateLane, out Game.Net.CarLane candidateLaneCarLane) ||
                 Lookups.HasComponent<MasterLane>(candidateLane))
             {
                 return false;
             }
-            Game.Net.CarLaneFlags candidateFlags = Lookups.GetComponentData<Game.Net.CarLane>(candidateLane).m_Flags;
+            Game.Net.CarLaneFlags candidateFlags = candidateLaneCarLane.m_Flags;
             if ((candidateFlags & Game.Net.CarLaneFlags.Forbidden) != 0)
             {
                 return false;

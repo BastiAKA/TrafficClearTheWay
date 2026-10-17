@@ -310,13 +310,13 @@ namespace ClearTheWay.FunctionGroup.WayClearance
         public float FindFreeLaneDir(Entity vehicle, Entity refLane, float curvePosition, bool inverted)
         {
             if (!Lookups.TryGetComponent(refLane, out Owner refLaneOwner) ||
-                !Lookups.HasComponent<Game.Net.CarLane>(refLane))
+                !Lookups.TryGetComponent(refLane, out Game.Net.CarLane refLaneCarLane))
             {
                 ReleaseFreeLane(vehicle); // not a road lane we can reason about - no free lane here
                 return 0f;
             }
             Entity owner = refLaneOwner.m_Owner;
-            bool laneInverted = (Lookups.GetComponentData<Game.Net.CarLane>(refLane).m_Flags & Game.Net.CarLaneFlags.Invert) != 0;
+            bool laneInverted = (refLaneCarLane.m_Flags & Game.Net.CarLaneFlags.Invert) != 0;
             ChannelPlan plan = GetChannelPlan(owner, laneInverted);
             // m_Lanes is only ordered physical left->right once the plan is a real channel plan.
             // Definitive, not "cannot judge": this stretch of road has no second lane in our
@@ -378,11 +378,11 @@ namespace ClearTheWay.FunctionGroup.WayClearance
                 }
                 Entity candidate = plan.m_Lanes[candidatePos];
                 if (!EntityManager.Exists(candidate) ||
-                    !Lookups.HasComponent<Game.Net.CarLane>(candidate))
+                    !Lookups.TryGetComponent(candidate, out Game.Net.CarLane candidateCarLane))
                 {
                     continue;
                 }
-                Game.Net.CarLaneFlags flags = Lookups.GetComponentData<Game.Net.CarLane>(candidate).m_Flags;
+                Game.Net.CarLaneFlags flags = candidateCarLane.m_Flags;
                 if ((flags & Game.Net.CarLaneFlags.Forbidden) != 0 ||
                     ((flags & Game.Net.CarLaneFlags.PublicOnly) != 0 && (carFlags & CarFlags.UsePublicTransportLanes) == 0))
                 {
@@ -475,12 +475,12 @@ namespace ClearTheWay.FunctionGroup.WayClearance
         public bool AddCentralChannel(Entity refLane, float minPos, bool inverted, float startOffset, bool computeHug)
         {
             if (!Lookups.TryGetComponent(refLane, out Owner refLaneOwner) ||
-                !Lookups.HasComponent<Game.Net.CarLane>(refLane))
+                !Lookups.TryGetComponent(refLane, out Game.Net.CarLane refLaneCarLane))
             {
                 return false;
             }
             Entity owner = refLaneOwner.m_Owner;
-            bool laneInverted = (Lookups.GetComponentData<Game.Net.CarLane>(refLane).m_Flags & Game.Net.CarLaneFlags.Invert) != 0;
+            bool laneInverted = (refLaneCarLane.m_Flags & Game.Net.CarLaneFlags.Invert) != 0;
             ChannelPlan plan = m_Ctx.Channel.GetChannelPlan(owner, laneInverted);
             if (plan == null || !plan.m_IsChannel)
             {
@@ -544,11 +544,11 @@ namespace ClearTheWay.FunctionGroup.WayClearance
             for (int i = 0; i < subLanes.Length; i++)
             {
                 Entity sl = subLanes[i].m_SubLane;
-                if (!Lookups.HasComponent<Game.Net.CarLane>(sl) || Lookups.HasComponent<MasterLane>(sl))
+                if (!Lookups.TryGetComponent(sl, out Game.Net.CarLane slCarLane) || Lookups.HasComponent<MasterLane>(sl))
                 {
                     continue;
                 }
-                if (((Lookups.GetComponentData<Game.Net.CarLane>(sl).m_Flags & Game.Net.CarLaneFlags.Invert) != 0) != laneInverted)
+                if (((slCarLane.m_Flags & Game.Net.CarLaneFlags.Invert) != 0) != laneInverted)
                 {
                     continue;
                 }

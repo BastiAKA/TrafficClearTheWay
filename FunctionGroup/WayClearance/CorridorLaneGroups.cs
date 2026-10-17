@@ -71,9 +71,9 @@ namespace ClearTheWay
             // Where the master carries no CarLane we fall back to the first usable sub-lane, which
             // is what the old code did implicitly; the filter below then still keeps the group
             // internally consistent instead of mixing two carriageways.
-            bool haveReference = Lookups.HasComponent<Game.Net.CarLane>(masterLane);
+            bool haveReference = Lookups.TryGetComponent(masterLane, out Game.Net.CarLane masterLaneCarLane);
             bool groupInverted = haveReference &&
-                (Lookups.GetComponentData<Game.Net.CarLane>(masterLane).m_Flags & Game.Net.CarLaneFlags.Invert) != 0;
+                (masterLaneCarLane.m_Flags & Game.Net.CarLaneFlags.Invert) != 0;
 
             // German-style corridor on an undecided lane group: the corridor-side edge
             // lane (leftmost in right-hand traffic) evades outward, all others the other
@@ -84,12 +84,12 @@ namespace ClearTheWay
             {
                 Entity subLane = subLanes[i].m_SubLane;
                 if (subLane == masterLane ||
-                    !Lookups.HasComponent<Game.Net.CarLane>(subLane) ||
+                    !Lookups.TryGetComponent(subLane, out Game.Net.CarLane subLaneCarLane) ||
                     Lookups.HasComponent<MasterLane>(subLane))
                 {
                     continue;
                 }
-                bool subInverted = (Lookups.GetComponentData<Game.Net.CarLane>(subLane).m_Flags & Game.Net.CarLaneFlags.Invert) != 0;
+                bool subInverted = (subLaneCarLane.m_Flags & Game.Net.CarLaneFlags.Invert) != 0;
                 if (!haveReference)
                 {
                     groupInverted = subInverted; // first usable lane defines the group
@@ -114,12 +114,12 @@ namespace ClearTheWay
             {
                 Entity subLane = subLanes[i].m_SubLane;
                 if (subLane == masterLane ||
-                    !Lookups.HasComponent<Game.Net.CarLane>(subLane) ||
+                    !Lookups.TryGetComponent(subLane, out Game.Net.CarLane subLaneCarLane) ||
                     Lookups.HasComponent<MasterLane>(subLane))
                 {
                     continue;
                 }
-                if (((Lookups.GetComponentData<Game.Net.CarLane>(subLane).m_Flags & Game.Net.CarLaneFlags.Invert) != 0) != groupInverted)
+                if (((subLaneCarLane.m_Flags & Game.Net.CarLaneFlags.Invert) != 0) != groupInverted)
                 {
                     continue; // same filter as the pass above - both loops must agree
                 }
