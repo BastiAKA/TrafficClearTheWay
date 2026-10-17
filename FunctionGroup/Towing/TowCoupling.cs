@@ -206,10 +206,10 @@ namespace ClearTheWay
             // moves, no vanilla trailer machinery, no Burst crash. The retired flatbed path is
             // parked in TowFlatbed.cs.
             EntityManager.AddComponentData(wreck, new Controller(truck));
-            // Off the lanes while it hangs on the hook: a registered, Moving-less wreck right
-            // behind the truck makes the truck's own lane impassable for the pathfinder - see
-            // TowingContext.DetachFromLanes.
-            m_Ctx.DetachFromLanes(wreck);
+            // The accident site stays "blocked" on its lanes after the wreck is dragged away, and
+            // the truck stands right behind it - remember the lanes and have them recomputed once
+            // the wreck has moved (TowingContext.ScheduleSitePoke).
+            m_Ctx.ScheduleSitePoke(wreck, frame);
             // Persistent ownership tag: survives our stripping AND save/load, so this wreck is
             // always recognisable as ours even after a load empties m_OurTows (see TowMarker).
             if (!Lookups.HasComponent<TowMarker>(wreck))

@@ -89,6 +89,7 @@ namespace ClearTheWay
                     return; // never on our hook - leave it alone
                 }
                 m_Ctx.SafeDelete(wreck);
+                m_Ctx.ForgetSitePoke(wreck);
                 m_TowTravelDir.Remove(carrier);
                 m_LastTruckPos.Remove(carrier);
                 if (setting.VerboseLogging)
@@ -144,10 +145,18 @@ namespace ClearTheWay
             {
                 EntityManager.AddComponent<Stopped>(wreck);
             }
-            // Re-asserted every tick, like the strips above: covers tows coupled by an older build
-            // or loaded from a save, whose wreck still blocks the truck's lane. No-op once done.
-            m_Ctx.DetachFromLanes(wreck);
             Entity truck = carrier; // already confirmed to be a live recovery truck above
+            // Two navigation cycles after the hookup the wreck has left the accident site: drop
+            // the site's stale lane blockage, and ask for a route home right now - the first
+            // request was made while the site still counted as blocked and failed.
+            if (m_Ctx.RunSitePokeIfDue(wreck, frame) &&
+                Lookups.TryGetComponent(truck, out PathOwner haulPath))
+            {
+                haulPath.m_State &= ~(PathFlags.Failed | PathFlags.Stuck);
+                haulPath.m_State |= PathFlags.Obsolete;
+                Lookups.SetComponentData(truck, haulPath);
+                m_Ctx.PathRetry[truck] = frame;
+            }
             // Let go of a tow whose truck has been routeless too long. The path shield keeps the
             // truck alive, but a vehicle with no route drives dead straight - and it drags the
             // teleported wreck with it, which is how tow trucks and their loads ended up scattered
@@ -491,9 +500,8 @@ namespace ClearTheWay
             Entity depot = Lookups.TryGetComponent(truck, out Owner truckOwner)
                 ? truckOwner.m_Owner : Entity.Null;
             // Lane blockage under the truck: the pathfinder cannot route through
-            // [BlockageStart..BlockageEnd] (PathfindJobs.IsValidDelta), so a truck standing inside
-            // that range has no route at all. wreckOnLanes=1 means the hooked wreck is still
-            // registered as an obstacle (see TowingContext.DetachFromLanes).
+            // [BlockageStart..BlockageEnd] (PathfindJobs.IsValidDelta), so a truck standing just
+            // before that range has no route forward (see TowingContext.ScheduleSitePoke).
             string laneBlock = "n/a";
             if (Lookups.TryGetComponent(truck, out CarCurrentLane truckLane))
             {
@@ -505,7 +513,7 @@ namespace ClearTheWay
             Mod.Log.Info($"[towhaul] truck={truck.Index} wreck={wreck.Index} standing spd={speed:F1} " +
                 $"target={target.Index} depot={depot.Index} targetIsDepot={(target == depot && depot != Entity.Null ? 1 : 0)} " +
                 $"path={pathState} ourCap={ourCap} blockedBy=[{blockerInfo}] " +
-                $"laneBlock={laneBlock} wreckOnLanes={(Lookups.HasComponent<CarCurrentLane>(wreck) ? 1 : 0)}");
+                $"laneBlock={laneBlock}");
         }
 
         private void ReleaseTow(Entity wreck, Entity truck, uint frame, Setting setting, string reason)
@@ -514,8 +522,7 @@ namespace ClearTheWay
             {
                 EntityManager.RemoveComponent<Controller>(wreck);
             }
-            // Back on the road as an obstacle: it stays where it is until somebody collects it.
-            m_Ctx.ReattachToLanes(wreck);
+            m_Ctx.ForgetSitePoke(wreck);
             if (Lookups.HasComponent<TowMarker>(wreck))
             {
                 EntityManager.RemoveComponent<TowMarker>(wreck);

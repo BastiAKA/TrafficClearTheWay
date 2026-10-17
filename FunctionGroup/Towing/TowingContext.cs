@@ -65,89 +65,82 @@ namespace ClearTheWay
         }
 
         /// <summary>
-        /// Takes a hooked wreck out of the lane registry, so it stops being a road blockage -
-        /// THE reason loaded trucks stood still with a free road ahead and were deleted.
+        /// Remembers the lanes a wreck blocked at the moment it is hooked, so their blockage can
+        /// be recomputed once it has been dragged away - THE reason loaded trucks stood still on a
+        /// free road, failed every pathfind and were deleted (7 of 8 tows on 2026-10-17, 2 of 2 that
+        /// morning on 0.1.13.3, 5 of 15 on 2026-10-11).
         ///
-        /// A settled wreck keeps OutOfControl, CarCurrentLane and UpdateFrame, so
-        /// CarNavigationSystem's out-of-control branch re-registers it every 16 frames on every
-        /// lane its body touches (BlockedLane buffer + the lanes' LaneObject buffers), wherever we
-        /// teleport it. It has no Moving - the hookup strips it on purpose - and
-        /// LaneDataSystem.CheckBlockage counts every lane object WITHOUT Moving as a blockage
-        /// (m_BlockageStart/End). The pathfinder treats that range as impassable
-        /// (PathfindJobs.IsValidDelta). The wreck hangs right behind the truck, its blocked range
-        /// reaches past its body by radius + 0.4 lane widths, and once the truck's own position
-        /// lies inside it, no route exists in any direction on a two-lane road: Failed, retry,
-        /// Failed - until the give-up released the wreck and deleted the truck (7 of 8 tows on
-        /// 2026-10-17, and the same pattern in every earlier log).
+        /// The blockage is LANE data: CarLane.m_BlockageStart/End, computed by LaneDataSystem
+        /// (CheckBlockage: every lane object without Moving) and only when the lane carries
+        /// Updated or PathfindUpdated. AccidentVehicleSystem flags the lanes when the car comes
+        /// to rest; dragging the wreck away moves its lane objects (LaneObjectUpdater), but
+        /// nothing flags the lanes again - so the accident site stays "blocked" after the wreck
+        /// is gone. PathfindJobs.IsValidDelta lets no route through that range, and the truck
+        /// stands right behind it: no way forward, and cars cannot turn mid-segment. The same
+        /// gap WreckClearing.PokeBlockedLanes closes after moving a wreck aside.
         ///
-        /// Unregistered the way the game does it (NetUtils.RemoveLaneObject), the lanes are
-        /// flagged PathfindUpdated so their blockage is recomputed, and CarCurrentLane is removed
-        /// so the navigation query no longer picks the wreck up and re-registers it. Idempotent:
-        /// a wreck without CarCurrentLane is already detached. <see cref="ReattachToLanes"/>
-        /// undoes it when the wreck comes off the hook without being deleted.
+        /// The wreck must NOT be taken out of the lane registry instead: a Car without
+        /// CarCurrentLane is an invalid state (PathfindTargetSeeker.GetCarLane and
+        /// ImpactSystem read it unguarded) and crashed the game at the next hookup.
         /// </summary>
-        public void DetachFromLanes(Entity wreck)
+        public void ScheduleSitePoke(Entity wreck, uint frame)
         {
-            if (!Lookups.TryGetComponent(wreck, out Game.Vehicles.CarCurrentLane currentLane))
+            if (!Lookups.TryGetBuffer(wreck, out DynamicBuffer<Game.Objects.BlockedLane> blockedLanes, isReadOnly: true) ||
+                blockedLanes.Length == 0)
             {
                 return;
             }
-            // Buffer work first, structural changes after: a DynamicBuffer is a pointer into the
-            // chunk and a structural change can move it.
-            m_DetachLanes.Clear();
-            if (Lookups.TryGetBuffer(wreck, out DynamicBuffer<Game.Objects.BlockedLane> blockedLanes))
+            var lanes = new List<Entity>(blockedLanes.Length);
+            for (int i = 0; i < blockedLanes.Length; i++)
             {
-                for (int i = 0; i < blockedLanes.Length; i++)
-                {
-                    m_DetachLanes.Add(blockedLanes[i].m_Lane);
-                }
-                blockedLanes.Clear();
+                lanes.Add(blockedLanes[i].m_Lane);
             }
-            if (currentLane.m_Lane != Entity.Null)
+            m_SitePokes[wreck] = new SitePoke { m_DueFrame = frame + kSitePokeDelayFrames, m_Lanes = lanes };
+        }
+
+        /// <summary>
+        /// Flags the remembered accident-site lanes PathfindUpdated once the wreck's lane objects
+        /// have moved with it (two navigation cycles after the hookup), so LaneDataSystem drops
+        /// the stale blockage. Returns true on the tick it fired, so the caller can ask the truck
+        /// for a fresh route right away instead of waiting for the next retry.
+        /// </summary>
+        public bool RunSitePokeIfDue(Entity wreck, uint frame)
+        {
+            if (!m_SitePokes.TryGetValue(wreck, out SitePoke poke) || frame < poke.m_DueFrame)
             {
-                m_DetachLanes.Add(currentLane.m_Lane);
+                return false;
             }
-            if (currentLane.m_ChangeLane != Entity.Null)
+            m_SitePokes.Remove(wreck);
+            for (int i = 0; i < poke.m_Lanes.Count; i++)
             {
-                m_DetachLanes.Add(currentLane.m_ChangeLane);
-            }
-            for (int i = 0; i < m_DetachLanes.Count; i++)
-            {
-                if (Lookups.TryGetBuffer(m_DetachLanes[i], out DynamicBuffer<Game.Net.LaneObject> laneObjects))
-                {
-                    Game.Net.NetUtils.RemoveLaneObject(laneObjects, wreck);
-                }
-            }
-            for (int i = 0; i < m_DetachLanes.Count; i++)
-            {
-                Entity lane = m_DetachLanes[i];
+                Entity lane = poke.m_Lanes[i];
                 if (EntityManager.Exists(lane) && Lookups.HasComponent<Game.Net.CarLane>(lane) &&
                     !Lookups.HasComponent<Game.Common.PathfindUpdated>(lane))
                 {
                     EntityManager.AddComponent<Game.Common.PathfindUpdated>(lane);
                 }
             }
-            EntityManager.RemoveComponent<Game.Vehicles.CarCurrentLane>(wreck);
+            return true;
         }
 
-        /// <summary>
-        /// Puts a wreck that comes off the hook WITHOUT being deleted back into the lane registry:
-        /// with CarCurrentLane back, the next navigation tick registers it on the lanes it stands
-        /// on, and it blocks the road like any wreck the recovery pipeline still has to collect.
-        /// No-op for an entity that still has its CarCurrentLane (never detached) or is gone.
-        /// </summary>
-        public void ReattachToLanes(Entity wreck)
+        /// <summary>Drops a pending poke for a wreck that leaves the tow early (released, deleted).</summary>
+        public void ForgetSitePoke(Entity wreck)
         {
-            if (!EntityManager.Exists(wreck) || Lookups.HasComponent<Game.Common.Deleted>(wreck) ||
-                Lookups.HasComponent<Game.Vehicles.CarCurrentLane>(wreck) ||
-                !Lookups.HasComponent<Game.Vehicles.Car>(wreck))
-            {
-                return;
-            }
-            EntityManager.AddComponentData(wreck, default(Game.Vehicles.CarCurrentLane));
+            m_SitePokes.Remove(wreck);
         }
 
-        private readonly List<Entity> m_DetachLanes = new List<Entity>(8);
+        /// <summary>Two CarNavigationSystem cycles (it updates each vehicle every 16 frames): by
+        /// then the wreck's lane objects have moved off the accident site, so the recompute sees
+        /// the site empty.</summary>
+        private const uint kSitePokeDelayFrames = 32u;
+
+        private struct SitePoke
+        {
+            public uint m_DueFrame;
+            public List<Entity> m_Lanes;
+        }
+
+        private readonly Dictionary<Entity, SitePoke> m_SitePokes = new Dictionary<Entity, SitePoke>();
 
         // Passes.
         public TowCoupling Coupling;
