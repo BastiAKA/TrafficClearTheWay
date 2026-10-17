@@ -242,6 +242,10 @@ namespace ClearTheWay
             return LocalizedString.Value(string.Format(format, ModProfiler.CountOn(this), ModProfiler.kPassCount));
         }
 
+        /// <summary>Default of every profiling switch. TRUE only for dev-channel builds - flip to
+        /// false before a release-page upload.</summary>
+        private const bool kDevPerfDefaults = true;
+
         public sealed override void SetDefaults()
         {
             Enabled = true;
@@ -263,21 +267,24 @@ namespace ClearTheWay
             TowTruckPrefab = true; // dedicated tow-truck prefab + flatbed towing (on by default per Sebastian)
             VerboseLogging = false;
             WatchVehicle = "";
-            ShowProfiledPasses = false;
-            ProfileMainSystem = false;
-            ProfilePostSystem = false;
-            ProfilePathEndGuard = false;
-            ProfilePedestrians = false;
-            ProfileEmergencyEscalation = false;
-            ProfileCorridorBuilder = false;
-            ProfileLaneChange = false;
-            ProfilePushVehicles = false;
-            ProfileDesperateBehaviour = false;
-            ProfileArrivalAssist = false;
-            ProfileAccidentGuard = false;
-            ProfileRecoveryAssist = false;
-            ProfileTowCoupling = false;
-            ProfileJobSync = false;
+            // DEV BUILD DEFAULTS (0.1.14.0 dev channel): every timer on, so testers' logs carry the
+            // [perf] lines without them having to find the tab. Costs a little frame time.
+            // MUST go back to false before the release-page upload (kDevPerfDefaults below).
+            ShowProfiledPasses = kDevPerfDefaults;
+            ProfileMainSystem = kDevPerfDefaults;
+            ProfilePostSystem = kDevPerfDefaults;
+            ProfilePathEndGuard = kDevPerfDefaults;
+            ProfilePedestrians = kDevPerfDefaults;
+            ProfileEmergencyEscalation = kDevPerfDefaults;
+            ProfileCorridorBuilder = kDevPerfDefaults;
+            ProfileLaneChange = kDevPerfDefaults;
+            ProfilePushVehicles = kDevPerfDefaults;
+            ProfileDesperateBehaviour = kDevPerfDefaults;
+            ProfileArrivalAssist = kDevPerfDefaults;
+            ProfileAccidentGuard = kDevPerfDefaults;
+            ProfileRecoveryAssist = kDevPerfDefaults;
+            ProfileTowCoupling = kDevPerfDefaults;
+            ProfileJobSync = kDevPerfDefaults;
         }
     }
 }
