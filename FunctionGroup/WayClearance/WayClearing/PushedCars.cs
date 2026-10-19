@@ -69,23 +69,23 @@ namespace ClearTheWay.FunctionGroup.WayClearance.WayClearing
                 {
                     continue;
                 }
+                // CarCurrentLane read here once; only Moving is read before its use below.
                 if (!EntityManager.Exists(car) ||
-                    !EntityManager.HasComponent<CarCurrentLane>(car) ||
-                    EntityManager.HasComponent<ParkedCar>(car) ||
-                    EntityManager.HasComponent<Deleted>(car))
+                    !Lookups.TryGetComponent(car, out CarCurrentLane lane) ||
+                    Lookups.HasComponent<ParkedCar>(car) ||
+                    Lookups.HasComponent<Deleted>(car))
                 {
                     m_ReleaseBuffer.Add(car);
                     continue;
                 }
 
-                bool moving = EntityManager.HasComponent<Moving>(car) &&
-                              math.lengthsq(EntityManager.GetComponentData<Moving>(car).m_Velocity) > 4f;
+                bool moving = Lookups.TryGetComponent(car, out Moving carMoving) &&
+                              math.lengthsq(carMoving.m_Velocity) > 4f;
                 if (!moving && frame != uint.MaxValue)
                 {
                     continue;
                 }
 
-                CarCurrentLane lane = EntityManager.GetComponentData<CarCurrentLane>(car);
                 if (lane.m_ChangeLane != Entity.Null)
                 {
                     m_ReleaseBuffer.Add(car);
@@ -97,7 +97,7 @@ namespace ClearTheWay.FunctionGroup.WayClearance.WayClearing
                     lane.m_LanePosition = 0f;
                     m_ReleaseBuffer.Add(car);
                 }
-                EntityManager.SetComponentData(car, lane);
+                Lookups.SetComponentData(car, lane);
             }
 
             for (int i = 0; i < m_ReleaseBuffer.Count; i++)

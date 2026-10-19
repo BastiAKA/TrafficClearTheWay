@@ -45,8 +45,8 @@ namespace ClearTheWay
             CarLaneFlags.ParkingSpace | CarLaneFlags.Waypoint | CarLaneFlags.Connection | CarLaneFlags.Area;
         private const CarLaneFlags kPathEndValue = CarLaneFlags.EndOfPath | CarLaneFlags.EndReached;
 
-        // Main-thread profiling switch for this pass - see ModProfiler.
-        private static readonly bool kProfile = false;
+        // Main-thread profiling switch for this pass, set from the Performance options tab - see ModProfiler.
+        private static bool Profiling => ModProfiler.IsOn(ProfiledPass.PathEndGuard);
 
         private SimulationSystem m_SimulationSystem;
         private Game.Objects.SearchSystem m_ObjectSearchSystem;
@@ -77,6 +77,10 @@ namespace ClearTheWay
 
         protected override void OnUpdate()
         {
+            // Numbers in the log with '.', whatever the game language - see InvariantCultureScope.
+            using InvariantCultureScope culture = InvariantCultureScope.Enter();
+            // New epoch for the shared component lookups: the game's jobs ran since our last system.
+            Lookups.Begin(this);
             Setting setting = Mod.Setting;
             if (setting == null || !setting.Enabled || !setting.PreventAccidentDespawn ||
                 m_WreckQuery.IsEmptyIgnoreFilter)
@@ -84,11 +88,11 @@ namespace ClearTheWay
                 return;
             }
 
-            using (ModProfiler.Sample(kProfile, "PathEndGuardSystem"))
+            using (ModProfiler.Sample(Profiling, "PathEndGuardSystem"))
             {
                 RunGuard(setting);
             }
-            ModProfiler.EndTick(kProfile, "PathEndGuardSystem");
+            ModProfiler.EndTick(Profiling, "PathEndGuardSystem");
         }
 
         private void RunGuard(Setting setting)
@@ -127,11 +131,11 @@ namespace ClearTheWay
                     for (int w = 0; w < wrecks.Length; w++)
                     {
                         Entity wreck = wrecks[w];
-                        if (!EntityManager.HasComponent<Transform>(wreck))
+                        if (!Lookups.TryGetComponent(wreck, out Transform wreckTransform))
                         {
                             continue;
                         }
-                        float3 pos = EntityManager.GetComponentData<Transform>(wreck).m_Position;
+                        float3 pos = wreckTransform.m_Position;
                         found.Clear();
                         AreaIterator iterator = new AreaIterator
                         {
@@ -173,8 +177,9 @@ namespace ClearTheWay
         /// counters that only the [endguard] line reads are worth their lookups.</summary>
         private void GuardCar(Entity other, ref GuardStats stats, bool prefiltered, bool diagnostics)
         {
-            // False for an entity that no longer exists, too.
-            if (!EntityManager.HasComponent<CarCurrentLane>(other))
+            // False for an entity that no longer exists, too. Read here once: the checks below
+            // only read, so this is the value the write further down starts from.
+            if (!Lookups.TryGetComponent(other, out CarCurrentLane lane))
             {
                 return;
             }
@@ -182,9 +187,9 @@ namespace ClearTheWay
             // vehicles and recovery/maintenance vehicles have the accident itself
             // as their destination - clearing their path end would strand them.
             if (!prefiltered &&
-                (!EntityManager.HasComponent<Car>(other) ||
-                 (EntityManager.GetComponentData<Car>(other).m_Flags & CarFlags.Emergency) != 0 ||
-                 EntityManager.HasComponent<Game.Vehicles.MaintenanceVehicle>(other)))
+                (!Lookups.TryGetComponent(other, out Car otherCar) ||
+                 (otherCar.m_Flags & CarFlags.Emergency) != 0 ||
+                 Lookups.HasComponent<Game.Vehicles.MaintenanceVehicle>(other)))
             {
                 return;
             }
@@ -193,13 +198,12 @@ namespace ClearTheWay
             // Clear a truncated path end so the AI leaves the car waiting. Match
             // PathEndReached exactly (EndOfPath|EndReached set, ParkingSpace|Waypoint
             // clear) so real park/waypoint arrivals near a wreck are untouched.
-            CarCurrentLane lane = EntityManager.GetComponentData<CarCurrentLane>(other);
             stats.laneOr |= (uint)lane.m_LaneFlags;
             if ((lane.m_LaneFlags & kPathEndMask) == kPathEndValue)
             {
                 stats.nEndReached++;
                 lane.m_LaneFlags &= ~(CarLaneFlags.EndOfPath | CarLaneFlags.EndReached);
-                EntityManager.SetComponentData(other, lane);
+                Lookups.SetComponentData(other, lane);
                 stats.guarded++;
             }
 
@@ -207,9 +211,9 @@ namespace ClearTheWay
             // EndReached nor Failed/Stuck when we scan, yet they despawn).
             if (diagnostics)
             {
-                if (EntityManager.HasComponent<Game.Events.InvolvedInAccident>(other)) stats.nInvolved++;
-                if (EntityManager.HasComponent<Target>(other) &&
-                    !EntityManager.Exists(EntityManager.GetComponentData<Target>(other).m_Target)) stats.nNoTarget++;
+                if (Lookups.HasComponent<Game.Events.InvolvedInAccident>(other)) stats.nInvolved++;
+                if (Lookups.TryGetComponent(other, out Target otherTarget) &&
+                    !EntityManager.Exists(otherTarget.m_Target)) stats.nNoTarget++;
             }
 
             // Also drop Stuck|Failed AND the repath triggers (Obsolete|Divert-
@@ -218,9 +222,8 @@ namespace ClearTheWay
             // into a building connection and the car evaporates mid-drive. This
             // guard runs right before the vehicle AIs, closing the same-frame
             // window the main pass (pre-navigation) cannot cover.
-            if (EntityManager.HasComponent<PathOwner>(other))
+            if (Lookups.TryGetComponent(other, out PathOwner po))
             {
-                PathOwner po = EntityManager.GetComponentData<PathOwner>(other);
                 stats.pathOr |= (uint)po.m_State;
                 if ((po.m_State & PathFlags.Pending) != 0) stats.nPending++;
                 if ((po.m_State & (PathFlags.Stuck | PathFlags.Failed |
@@ -232,7 +235,7 @@ namespace ClearTheWay
                     }
                     po.m_State &= ~(PathFlags.Stuck | PathFlags.Failed |
                         PathFlags.Obsolete | PathFlags.DivertObsolete);
-                    EntityManager.SetComponentData(other, po);
+                    Lookups.SetComponentData(other, po);
                 }
             }
         }

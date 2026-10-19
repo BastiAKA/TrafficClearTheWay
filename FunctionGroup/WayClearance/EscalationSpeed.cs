@@ -72,8 +72,8 @@ namespace ClearTheWay
                 // can never brake or arrive: it orbits its target for minutes, riding the wide
                 // pass line at lanePos ~2.8 (observed: veh stuck 25 min, ignore=1 blocker=0).
                 bool ignoreSet = (currentLane.m_LaneFlags & CarLaneFlags.IgnoreBlocker) != 0;
-                bool noBlocker = !EntityManager.HasComponent<Blocker>(vehicle) ||
-                    EntityManager.GetComponentData<Blocker>(vehicle).m_Blocker == Entity.Null;
+                bool noBlocker = !Lookups.TryGetComponent(vehicle, out Blocker vehicleBlocker) ||
+                    vehicleBlocker.m_Blocker == Entity.Null;
                 if (ignoreSet && noBlocker && frame >= s.m_PreviousStuck.m_SqueezeUntilFrame)
                 {
                     currentLane.m_LaneFlags &= ~CarLaneFlags.IgnoreBlocker;
@@ -133,8 +133,8 @@ namespace ClearTheWay
             else if (!s.m_NearArrivalTarget && !s.m_FullCrossover && !s.m_Merging &&
                      currentLane.m_ChangeLane == Entity.Null &&
                      s.m_EmergencySpeed < kAdvanceClearSpeed &&
-                     EntityManager.GetComponentData<Blocker>(vehicle).m_Blocker == Entity.Null &&
-                     EntityManager.HasComponent<Game.Net.CarLane>(currentLane.m_Lane) &&
+                     Lookups.GetComponentData<Blocker>(vehicle).m_Blocker == Entity.Null &&
+                     Lookups.HasComponent<Game.Net.CarLane>(currentLane.m_Lane) &&
                      m_Geometry.LaneVehiclesAhead(currentLane.m_Lane, currentLane.m_CurvePosition.x,
                          currentLane.m_CurvePosition.z < currentLane.m_CurvePosition.x) == 0)
             {
@@ -193,7 +193,7 @@ namespace ClearTheWay
 
             if (s.m_Changed)
             {
-                EntityManager.SetComponentData(vehicle, currentLane);
+                Lookups.SetComponentData(vehicle, currentLane);
             }
 
             if (setting.VerboseLogging && frame % kLogIntervalFrames == (uint)(vehicle.Index % (int)kLogIntervalFrames))

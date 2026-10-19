@@ -45,22 +45,22 @@ namespace ClearTheWay.FunctionGroup.WayClearance.WayClearing.VehicleTypes.Geomet
         /// </summary>
         public VehicleGeometry GetGeometry(Entity vehicle)
         {
-            if (!EntityManager.HasComponent<PrefabRef>(vehicle))
+            if (!Lookups.TryGetComponent(vehicle, out PrefabRef vehiclePrefabRef))
             {
                 // Nothing to measure and nothing to cache it under: hand back a fresh set of
                 // car defaults. A shared instance would be cheaper, but these are settable
                 // properties - one caller writing to it would poison every later fallback.
                 return new VehicleGeometry(vehicle);
             }
-            Entity prefab = EntityManager.GetComponentData<PrefabRef>(vehicle).m_Prefab;
+            Entity prefab = vehiclePrefabRef.m_Prefab;
             if (m_Geometries.TryGetValue(prefab, out VehicleGeometry geometry))
             {
                 return geometry;
             }
             geometry = new VehicleGeometry(prefab);
-            if (EntityManager.HasComponent<ObjectGeometryData>(prefab))
+            if (Lookups.TryGetComponent(prefab, out ObjectGeometryData prefabObjectGeometryData))
             {
-                float3 size = EntityManager.GetComponentData<ObjectGeometryData>(prefab).m_Size;
+                float3 size = prefabObjectGeometryData.m_Size;
                 geometry.width = size.x;
                 geometry.height = size.y;
                 geometry.length = size.z;
@@ -117,17 +117,17 @@ namespace ClearTheWay.FunctionGroup.WayClearance.WayClearing.VehicleTypes.Geomet
         /// <summary>Width (m) of the lane itself, 4 m when the lane prefab says nothing.</summary>
         public float LaneWidth(Entity lane)
         {
-            if (!EntityManager.HasComponent<PrefabRef>(lane))
+            if (!Lookups.TryGetComponent(lane, out PrefabRef lanePrefabRef))
             {
                 return 4f;
             }
-            Entity prefab = EntityManager.GetComponentData<PrefabRef>(lane).m_Prefab;
+            Entity prefab = lanePrefabRef.m_Prefab;
             if (m_LaneWidths.TryGetValue(prefab, out float width))
             {
                 return width;
             }
-            width = EntityManager.HasComponent<NetLaneData>(prefab)
-                ? EntityManager.GetComponentData<NetLaneData>(prefab).m_Width
+            width = Lookups.TryGetComponent(prefab, out NetLaneData prefabNetLaneData)
+                ? prefabNetLaneData.m_Width
                 : 4f;
             m_LaneWidths[prefab] = width;
             return width;

@@ -62,7 +62,7 @@ namespace ClearTheWay
                     {
                         Entity w = cars[i];
                         m_Seen.Add(w);
-                        float3 pos = EntityManager.GetComponentData<Transform>(w).m_Position;
+                        float3 pos = Lookups.GetComponentData<Transform>(w).m_Position;
                         // Moved (or first seen) -> it is progressing / being hauled; reset the timer.
                         if (!m_Rest.TryGetValue(w, out WreckRest rest) ||
                             math.distancesq(rest.m_Pos.xz, pos.xz) > kOrphanMoveEpsilon * kOrphanMoveEpsilon)
@@ -131,25 +131,24 @@ namespace ClearTheWay
         /// </summary>
         private void DeleteStranded(Entity w, uint strandedFor, Setting setting)
         {
-            if (EntityManager.HasComponent<Controller>(w))
+            if (Lookups.TryGetComponent(w, out Controller wController))
             {
-                Entity carrier = EntityManager.GetComponentData<Controller>(w).m_Controller;
+                Entity carrier = wController.m_Controller;
                 if (carrier != w && carrier != Entity.Null && EntityManager.Exists(carrier) &&
-                    !EntityManager.HasComponent<Deleted>(carrier) &&
-                    EntityManager.HasComponent<MaintenanceVehicle>(carrier))
+                    !Lookups.HasComponent<Deleted>(carrier) &&
+                    Lookups.HasComponent<MaintenanceVehicle>(carrier))
                 {
                     return;
                 }
             }
             int members = 0;
-            if (EntityManager.HasBuffer<LayoutElement>(w))
+            if (Lookups.TryGetBuffer(w, out DynamicBuffer<LayoutElement> layout, isReadOnly: true))
             {
-                DynamicBuffer<LayoutElement> layout = EntityManager.GetBuffer<LayoutElement>(w, isReadOnly: true);
                 for (int i = 0; i < layout.Length; i++)
                 {
                     Entity member = layout[i].m_Vehicle;
                     if (member == Entity.Null || member == w || !EntityManager.Exists(member) ||
-                        EntityManager.HasComponent<Deleted>(member))
+                        Lookups.HasComponent<Deleted>(member))
                     {
                         continue;
                     }
@@ -175,9 +174,9 @@ namespace ClearTheWay
             string ctrlDesc = "none";
             int carrierIdx = 0;
             bool carrierLoad = false;
-            if (EntityManager.HasComponent<Controller>(w))
+            if (Lookups.TryGetComponent(w, out Controller wController))
             {
-                Entity carrier = EntityManager.GetComponentData<Controller>(w).m_Controller;
+                Entity carrier = wController.m_Controller;
                 carrierIdx = carrier.Index;
                 if (carrier == w)
                 {
@@ -187,11 +186,11 @@ namespace ClearTheWay
                 {
                     ctrlDesc = "null";
                 }
-                else if (!EntityManager.Exists(carrier) || EntityManager.HasComponent<Deleted>(carrier))
+                else if (!EntityManager.Exists(carrier) || Lookups.HasComponent<Deleted>(carrier))
                 {
                     ctrlDesc = "dead";
                 }
-                else if (EntityManager.HasComponent<MaintenanceVehicle>(carrier))
+                else if (Lookups.HasComponent<MaintenanceVehicle>(carrier))
                 {
                     ctrlDesc = "recov";
                     carrierLoad = m_TrucksWithLoad.Contains(carrier);
@@ -210,19 +209,19 @@ namespace ClearTheWay
             // negative means it is already past due and only our hold is keeping it alive.
             bool claimed = RecoveryClaim.IsClaimed(EntityManager, w);
             uint giveUpAge = claimed ? kWreckClaimedGiveUpAge : kWreckGiveUpAge;
-            long vanillaIn = EntityManager.HasComponent<Game.Events.InvolvedInAccident>(w)
+            long vanillaIn = Lookups.TryGetComponent(w, out Game.Events.InvolvedInAccident wInvolvedInAccident)
                 ? (long)kVanillaDeleteAge -
-                  (frame - EntityManager.GetComponentData<Game.Events.InvolvedInAccident>(w).m_InvolvedFrame)
+                  (frame - wInvolvedInAccident.m_InvolvedFrame)
                 : 0L;
             Mod.Log.Info($"[orphanfind] wreck={w.Index} strandedFor={strandedFor}f " +
                 $"claimed={(claimed ? 1 : 0)} giveUp={giveUpAge}f vanillaIn={vanillaIn}f " +
                 $"ctrl={ctrlDesc} carrier={carrierIdx} carrierHauling={(carrierLoad ? 1 : 0)} " +
-                $"invAcc={(EntityManager.HasComponent<Game.Events.InvolvedInAccident>(w) ? 1 : 0)} " +
-                $"tow={(EntityManager.HasComponent<TowMarker>(w) ? 1 : 0)} " +
-                $"dmg={(EntityManager.HasComponent<Damaged>(w) ? 1 : 0)} " +
-                $"dstr={(EntityManager.HasComponent<Destroyed>(w) ? 1 : 0)} " +
-                $"outctl={(EntityManager.HasComponent<OutOfControl>(w) ? 1 : 0)} " +
-                $"relicRec={(EntityManager.HasComponent<RelicRecovery>(w) ? 1 : 0)}");
+                $"invAcc={(Lookups.HasComponent<Game.Events.InvolvedInAccident>(w) ? 1 : 0)} " +
+                $"tow={(Lookups.HasComponent<TowMarker>(w) ? 1 : 0)} " +
+                $"dmg={(Lookups.HasComponent<Damaged>(w) ? 1 : 0)} " +
+                $"dstr={(Lookups.HasComponent<Destroyed>(w) ? 1 : 0)} " +
+                $"outctl={(Lookups.HasComponent<OutOfControl>(w) ? 1 : 0)} " +
+                $"relicRec={(Lookups.HasComponent<RelicRecovery>(w) ? 1 : 0)}");
         }
     }
 }

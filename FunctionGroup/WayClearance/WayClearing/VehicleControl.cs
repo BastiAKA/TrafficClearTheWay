@@ -50,12 +50,11 @@ namespace ClearTheWay.FunctionGroup.WayClearance.WayClearing
         /// </summary>
         private bool IsHaulingHome(Entity entity)
         {
-            if (!EntityManager.HasComponent<Game.Vehicles.MaintenanceVehicle>(entity))
+            if (!Lookups.TryGetComponent(entity, out Game.Vehicles.MaintenanceVehicle maintenance))
             {
                 return false;
             }
-            Game.Vehicles.MaintenanceVehicleFlags state =
-                EntityManager.GetComponentData<Game.Vehicles.MaintenanceVehicle>(entity).m_State;
+            Game.Vehicles.MaintenanceVehicleFlags state = maintenance.m_State;
             return (state & Game.Vehicles.MaintenanceVehicleFlags.Returning) != 0 &&
                    (state & Game.Vehicles.MaintenanceVehicleFlags.Full) != 0;
         }
@@ -115,15 +114,14 @@ namespace ClearTheWay.FunctionGroup.WayClearance.WayClearing
         /// </summary>
         public void ClearStuck(Entity entity)
         {
-            if (!EntityManager.HasComponent<PathOwner>(entity))
+            if (!Lookups.TryGetComponent(entity, out PathOwner pathOwner))
             {
                 return;
             }
-            PathOwner pathOwner = EntityManager.GetComponentData<PathOwner>(entity);
             if ((pathOwner.m_State & PathFlags.Stuck) != 0)
             {
                 pathOwner.m_State &= ~PathFlags.Stuck;
-                EntityManager.SetComponentData(entity, pathOwner);
+                Lookups.SetComponentData(entity, pathOwner);
             }
         }
 
@@ -135,15 +133,14 @@ namespace ClearTheWay.FunctionGroup.WayClearance.WayClearing
         /// </summary>
         public void ClearStuckAndFailed(Entity entity)
         {
-            if (!EntityManager.HasComponent<PathOwner>(entity))
+            if (!Lookups.TryGetComponent(entity, out PathOwner pathOwner))
             {
                 return;
             }
-            PathOwner pathOwner = EntityManager.GetComponentData<PathOwner>(entity);
             if ((pathOwner.m_State & (PathFlags.Stuck | PathFlags.Failed)) != 0)
             {
                 pathOwner.m_State &= ~(PathFlags.Stuck | PathFlags.Failed);
-                EntityManager.SetComponentData(entity, pathOwner);
+                Lookups.SetComponentData(entity, pathOwner);
             }
         }
     }

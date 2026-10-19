@@ -32,8 +32,8 @@ namespace ClearTheWay
     /// </summary>
     internal sealed class TowCoupling
     {
-        // Main-thread profiling switch for this pass - see ModProfiler.
-        private static readonly bool kProfile = false;
+        // Main-thread profiling switch for this pass, set from the Performance options tab - see ModProfiler.
+        private static bool Profiling => ModProfiler.IsOn(ProfiledPass.TowCoupling);
 
         private readonly TowingContext m_Ctx;
         private EntityManager EntityManager => m_Ctx.EntityManager;
@@ -66,7 +66,7 @@ namespace ClearTheWay
 
         public void TryHookup(Entity truck, uint frame)
         {
-            using (ModProfiler.Sample(kProfile, "TowCoupling"))
+            using (ModProfiler.Sample(Profiling, "TowCoupling"))
             {
                 TryHookupImpl(truck, frame);
             }
@@ -76,9 +76,9 @@ namespace ClearTheWay
         {
             bool diag = Mod.Setting.VerboseLogging && frame % 120u == 0u;
             // Only vehicle-recovery capable trucks, one load at a time.
-            Entity prefab = EntityManager.GetComponentData<PrefabRef>(truck).m_Prefab;
-            if (!EntityManager.HasComponent<MaintenanceVehicleData>(prefab) ||
-                (EntityManager.GetComponentData<MaintenanceVehicleData>(prefab).m_MaintenanceType & MaintenanceType.Vehicle) == 0 ||
+            Entity prefab = Lookups.GetComponentData<PrefabRef>(truck).m_Prefab;
+            if (!Lookups.TryGetComponent(prefab, out MaintenanceVehicleData prefabMaintenanceVehicleData) ||
+                (prefabMaintenanceVehicleData.m_MaintenanceType & MaintenanceType.Vehicle) == 0 ||
                 m_TrucksWithLoad.Contains(truck))
             {
                 return;
@@ -89,7 +89,7 @@ namespace ClearTheWay
             // would drawbar-drag the wreck ("Straßenwartungsfahrzeug" without a flatbed). Skip
             // them here so they just clear the wreck the vanilla way and the only towing you see
             // is our proper flatbed. (When TowTruckPrefab is off, every recovery truck drawbars.)
-            if (Mod.Setting.TowTruckPrefab && !EntityManager.HasComponent<CarTractorData>(prefab))
+            if (Mod.Setting.TowTruckPrefab && !Lookups.HasComponent<CarTractorData>(prefab))
             {
                 // ONCE per truck, never on a timer: whether a vehicle has CarTractorData is a
                 // static property of its prefab and cannot change. Logged per pass it produced
@@ -105,13 +105,13 @@ namespace ClearTheWay
                 return;
             }
             // Target must be a settled, not burning wreck.
-            Entity wreck = EntityManager.GetComponentData<Target>(truck).m_Target;
+            Entity wreck = Lookups.GetComponentData<Target>(truck).m_Target;
             // A live accident wreck (InvolvedInAccident) OR a relic we re-armed for recovery
             // (RelicRecovery - it has no InvolvedInAccident, the tag is its "valid target" signal).
             if (wreck == Entity.Null || !EntityManager.Exists(wreck) ||
-                (!EntityManager.HasComponent<Game.Events.InvolvedInAccident>(wreck) &&
-                 !EntityManager.HasComponent<RelicRecovery>(wreck)) ||
-                !EntityManager.HasComponent<Car>(wreck))
+                (!Lookups.HasComponent<Game.Events.InvolvedInAccident>(wreck) &&
+                 !Lookups.HasComponent<RelicRecovery>(wreck)) ||
+                !Lookups.HasComponent<Car>(wreck))
             {
                 // Deliberately loud: RecoveryAssist sends a truck on "Damaged OR
                 // InvolvedInAccident", this gate wants "InvolvedInAccident OR RelicRecovery". A
@@ -121,9 +121,9 @@ namespace ClearTheWay
                     m_InvalidTargetLogged.Add(wreck))
                 {
                     Mod.Log.Info($"[towdiag] truck={truck.Index} wreck={wreck.Index} skipped: not a valid " +
-                        $"target - invAcc={(EntityManager.HasComponent<Game.Events.InvolvedInAccident>(wreck) ? 1 : 0)} " +
-                        $"relicRec={(EntityManager.HasComponent<RelicRecovery>(wreck) ? 1 : 0)} " +
-                        $"car={(EntityManager.HasComponent<Car>(wreck) ? 1 : 0)}");
+                        $"target - invAcc={(Lookups.HasComponent<Game.Events.InvolvedInAccident>(wreck) ? 1 : 0)} " +
+                        $"relicRec={(Lookups.HasComponent<RelicRecovery>(wreck) ? 1 : 0)} " +
+                        $"car={(Lookups.HasComponent<Car>(wreck) ? 1 : 0)}");
                 }
                 return;
             }
@@ -143,7 +143,7 @@ namespace ClearTheWay
             // So the decision belongs to the DISPATCH, not to this gate: something judged this
             // wreck worth a recovery vehicle, the recovery vehicle is here, and it does the job.
             // Only Destroyed remains special elsewhere - it is what vanilla never repairs at all.
-            if (!EntityManager.HasComponent<Damaged>(wreck) && !EntityManager.HasComponent<Destroyed>(wreck))
+            if (!Lookups.HasComponent<Damaged>(wreck) && !Lookups.HasComponent<Destroyed>(wreck))
             {
                 if (diag)
                 {
@@ -152,26 +152,26 @@ namespace ClearTheWay
                 }
                 return;
             }
-            if (!EntityManager.HasComponent<Transform>(wreck) ||
-                !EntityManager.HasComponent<Stopped>(wreck) ||
-                EntityManager.HasComponent<Game.Events.OnFire>(wreck) ||
-                EntityManager.HasComponent<Controller>(wreck) && EntityManager.GetComponentData<Controller>(wreck).m_Controller != wreck)
+            if (!Lookups.TryGetComponent(wreck, out Transform wreckTransform) ||
+                !Lookups.HasComponent<Stopped>(wreck) ||
+                Lookups.HasComponent<Game.Events.OnFire>(wreck) ||
+                Lookups.TryGetComponent(wreck, out Controller wreckController) && wreckController.m_Controller != wreck)
             {
                 if (diag)
                 {
                     Mod.Log.Info($"[towdiag] truck={truck.Index} wreck={wreck.Index} blocked: " +
-                        $"stopped={(EntityManager.HasComponent<Stopped>(wreck) ? 1 : 0)} " +
-                        $"fire={(EntityManager.HasComponent<Game.Events.OnFire>(wreck) ? 1 : 0)} " +
-                        $"hasCtrl={(EntityManager.HasComponent<Controller>(wreck) ? 1 : 0)}");
+                        $"stopped={(Lookups.HasComponent<Stopped>(wreck) ? 1 : 0)} " +
+                        $"fire={(Lookups.HasComponent<Game.Events.OnFire>(wreck) ? 1 : 0)} " +
+                        $"hasCtrl={(Lookups.HasComponent<Controller>(wreck) ? 1 : 0)}");
                 }
                 return;
             }
             // Close and slow = it pulled up next to the wreck.
-            float3 truckPos = EntityManager.GetComponentData<Transform>(truck).m_Position;
-            float3 wreckPos = EntityManager.GetComponentData<Transform>(wreck).m_Position;
+            float3 truckPos = Lookups.GetComponentData<Transform>(truck).m_Position;
+            float3 wreckPos = wreckTransform.m_Position;
             float dist = math.distance(truckPos.xz, wreckPos.xz);
-            float speed = EntityManager.HasComponent<Moving>(truck)
-                ? math.length(EntityManager.GetComponentData<Moving>(truck).m_Velocity) : 0f;
+            float speed = Lookups.TryGetComponent(truck, out Moving truckMoving)
+                ? math.length(truckMoving.m_Velocity) : 0f;
             if (dist > kHookupRange || speed > kHookupMaxSpeed)
             {
                 if (diag && dist < 100f)
@@ -183,9 +183,9 @@ namespace ClearTheWay
 
             // --- Couple the wreck ---
             // Strip everything that made it a managed accident wreck / an AI-driven car.
-            if (EntityManager.HasComponent<Game.Simulation.MaintenanceConsumer>(wreck))
+            if (Lookups.TryGetComponent(wreck, out Game.Simulation.MaintenanceConsumer consumer))
             {
-                Entity request = EntityManager.GetComponentData<Game.Simulation.MaintenanceConsumer>(wreck).m_Request;
+                Entity request = consumer.m_Request;
                 if (request != Entity.Null && EntityManager.Exists(request))
                 {
                     EntityManager.AddComponent<Deleted>(request);
@@ -206,9 +206,13 @@ namespace ClearTheWay
             // moves, no vanilla trailer machinery, no Burst crash. The retired flatbed path is
             // parked in TowFlatbed.cs.
             EntityManager.AddComponentData(wreck, new Controller(truck));
+            // The accident site stays "blocked" on its lanes after the wreck is dragged away, and
+            // the truck stands right behind it - remember the lanes and have them recomputed once
+            // the wreck has moved (TowingContext.ScheduleSitePoke).
+            m_Ctx.ScheduleSitePoke(wreck, frame);
             // Persistent ownership tag: survives our stripping AND save/load, so this wreck is
             // always recognisable as ours even after a load empties m_OurTows (see TowMarker).
-            if (!EntityManager.HasComponent<TowMarker>(wreck))
+            if (!Lookups.HasComponent<TowMarker>(wreck))
             {
                 EntityManager.AddComponent<TowMarker>(wreck);
             }
@@ -219,20 +223,19 @@ namespace ClearTheWay
             // trimmed to the wreck itself: a Deleted entity left inside a LayoutElement
             // buffer is exactly the dangling-reference crash from the wreck-as-trailer
             // branch (CarTrailerMoveSystem reads members' prefabs unguarded).
-            if (EntityManager.HasBuffer<LayoutElement>(wreck))
+            if (Lookups.TryGetBuffer(wreck, out DynamicBuffer<LayoutElement> wreckLayout))
             {
-                DynamicBuffer<LayoutElement> wreckLayout = EntityManager.GetBuffer<LayoutElement>(wreck);
                 for (int i = 0; i < wreckLayout.Length; i++)
                 {
                     Entity member = wreckLayout[i].m_Vehicle;
                     if (member == wreck || member == Entity.Null || !EntityManager.Exists(member) ||
-                        EntityManager.HasComponent<Deleted>(member))
+                        Lookups.HasComponent<Deleted>(member))
                     {
                         continue;
                     }
-                    if (EntityManager.HasComponent<Game.Simulation.MaintenanceConsumer>(member))
+                    if (Lookups.TryGetComponent(member, out Game.Simulation.MaintenanceConsumer memberConsumer))
                     {
-                        Entity memberRequest = EntityManager.GetComponentData<Game.Simulation.MaintenanceConsumer>(member).m_Request;
+                        Entity memberRequest = memberConsumer.m_Request;
                         if (memberRequest != Entity.Null && EntityManager.Exists(memberRequest))
                         {
                             EntityManager.AddComponent<Deleted>(memberRequest);
@@ -251,7 +254,7 @@ namespace ClearTheWay
 
             // --- Send the truck home with its load ---
             Game.Vehicles.MaintenanceVehicle maintenance =
-                EntityManager.GetComponentData<Game.Vehicles.MaintenanceVehicle>(truck);
+                Lookups.GetComponentData<Game.Vehicles.MaintenanceVehicle>(truck);
             if (maintenance.m_TargetRequest != Entity.Null && EntityManager.Exists(maintenance.m_TargetRequest))
             {
                 EntityManager.AddComponent<Deleted>(maintenance.m_TargetRequest);
@@ -272,11 +275,11 @@ namespace ClearTheWay
             // depot and despawns there. (Capacity is efficiency-scaled at runtime, always <= the
             // raw prefab value, so the raw capacity keeps Full asserted.)
             maintenance.m_Maintained = math.max(maintenance.m_Maintained,
-                EntityManager.GetComponentData<MaintenanceVehicleData>(prefab).m_MaintenanceCapacity);
-            EntityManager.SetComponentData(truck, maintenance);
-            if (EntityManager.HasBuffer<ServiceDispatch>(truck))
+                Lookups.GetComponentData<MaintenanceVehicleData>(prefab).m_MaintenanceCapacity);
+            Lookups.SetComponentData(truck, maintenance);
+            if (Lookups.TryGetBuffer(truck, out DynamicBuffer<ServiceDispatch> truckDispatches))
             {
-                EntityManager.GetBuffer<ServiceDispatch>(truck).Clear();
+                truckDispatches.Clear();
             }
             // A new job starts with a clean movement history. The wedge counter is keyed by TRUCK
             // and is now written from two places - the follow pass while hauling, and the empty
@@ -286,24 +289,26 @@ namespace ClearTheWay
             m_Ctx.StuckRecovery.Forget(truck);
             // Aim at the depot and force a fresh path; clear any reached-path-end state so
             // the AI's "Returning + path end => despawn" branch cannot fire at the wreck.
-            Entity depot = EntityManager.GetComponentData<Owner>(truck).m_Owner;
-            EntityManager.SetComponentData(truck, new Target(depot));
-            if (EntityManager.HasComponent<CarCurrentLane>(truck))
+            Entity depot = Lookups.GetComponentData<Owner>(truck).m_Owner;
+            Lookups.SetComponentData(truck, new Target(depot));
+            if (Lookups.TryGetComponent(truck, out CarCurrentLane truckLane))
             {
-                CarCurrentLane truckLane = EntityManager.GetComponentData<CarCurrentLane>(truck);
                 truckLane.m_LaneFlags &= ~(CarLaneFlags.EndOfPath | CarLaneFlags.EndReached);
-                EntityManager.SetComponentData(truck, truckLane);
+                Lookups.SetComponentData(truck, truckLane);
             }
-            if (EntityManager.HasComponent<PathOwner>(truck))
+            // Our own request, with lane blockage ignored: the other car of the same accident
+            // usually still stands right ahead (TowingContext.RequestRouteHome). The game's
+            // Obsolete-triggered request stays as the fallback.
+            if (!m_Ctx.RequestRouteHome(truck, depot) &&
+                Lookups.TryGetComponent(truck, out PathOwner pathOwner))
             {
-                PathOwner pathOwner = EntityManager.GetComponentData<PathOwner>(truck);
                 pathOwner.m_State &= ~(PathFlags.Failed | PathFlags.Stuck);
                 pathOwner.m_State |= PathFlags.Obsolete;
-                EntityManager.SetComponentData(truck, pathOwner);
+                Lookups.SetComponentData(truck, pathOwner);
             }
-            if (EntityManager.HasComponent<Stopped>(truck))
+            if (Lookups.HasComponent<Stopped>(truck))
             {
-                Transform truckTransform = EntityManager.GetComponentData<Transform>(truck);
+                Transform truckTransform = Lookups.GetComponentData<Transform>(truck);
                 EntityManager.RemoveComponent<Stopped>(truck);
                 EntityManager.AddComponentData(truck, new Moving());
                 DynamicBuffer<TransformFrame> truckFrames = EntityManager.AddBuffer<TransformFrame>(truck);

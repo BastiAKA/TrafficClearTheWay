@@ -75,14 +75,14 @@ namespace ClearTheWay
                         Entity relic = relics[i];
                         // Drop the dead null Controller (points at Entity.Null; blocks hookup and
                         // makes OrphanSweep skip it).
-                        if (EntityManager.HasComponent<Controller>(relic))
+                        if (Lookups.HasComponent<Controller>(relic))
                         {
                             EntityManager.RemoveComponent<Controller>(relic);
                         }
                         // Drop any stale recovery request so DamagedVehicleSystem raises a fresh one.
-                        if (EntityManager.HasComponent<Game.Simulation.MaintenanceConsumer>(relic))
+                        if (Lookups.TryGetComponent(relic, out Game.Simulation.MaintenanceConsumer consumer))
                         {
-                            Entity req = EntityManager.GetComponentData<Game.Simulation.MaintenanceConsumer>(relic).m_Request;
+                            Entity req = consumer.m_Request;
                             if (req != Entity.Null && EntityManager.Exists(req))
                             {
                                 EntityManager.AddComponent<Deleted>(req);
@@ -91,11 +91,10 @@ namespace ClearTheWay
                         }
                         // Un-clear a Destroyed wreck so DamagedVehicleSystem requests recovery again
                         // (it removes the consumer while m_Cleared >= 1).
-                        if (EntityManager.HasComponent<Destroyed>(relic))
+                        if (Lookups.TryGetComponent(relic, out Destroyed d))
                         {
-                            Destroyed d = EntityManager.GetComponentData<Destroyed>(relic);
                             d.m_Cleared = 0f;
-                            EntityManager.SetComponentData(relic, d);
+                            Lookups.SetComponentData(relic, d);
                         }
                         EntityManager.AddComponent<RelicRecovery>(relic);
                         m_RelicArmedFrame[relic] = frame;
@@ -123,7 +122,7 @@ namespace ClearTheWay
                 {
                     Entity relic = armed[i];
                     // Actively on our hook now - let the tow finish (it will SafeDelete at the depot).
-                    if (EntityManager.HasComponent<TowMarker>(relic))
+                    if (Lookups.HasComponent<TowMarker>(relic))
                     {
                         continue;
                     }
@@ -174,13 +173,13 @@ namespace ClearTheWay
                 for (int i = 0; i < cars.Length; i++)
                 {
                     Entity car = cars[i];
-                    bool hasCtrl = EntityManager.HasComponent<Controller>(car);
+                    bool hasCtrl = Lookups.TryGetComponent(car, out Controller carController);
                     bool ctrlIsRecovery = hasCtrl &&
-                        EntityManager.GetComponentData<Controller>(car).m_Controller != car &&
-                        EntityManager.Exists(EntityManager.GetComponentData<Controller>(car).m_Controller) &&
-                        EntityManager.HasComponent<Game.Vehicles.MaintenanceVehicle>(
-                            EntityManager.GetComponentData<Controller>(car).m_Controller);
-                    bool tow = EntityManager.HasComponent<TowMarker>(car);
+                        carController.m_Controller != car &&
+                        EntityManager.Exists(carController.m_Controller) &&
+                        Lookups.HasComponent<Game.Vehicles.MaintenanceVehicle>(
+                            carController.m_Controller);
+                    bool tow = Lookups.HasComponent<TowMarker>(car);
                     if (tow)
                     {
                         tagged++;
@@ -192,21 +191,21 @@ namespace ClearTheWay
                         logged++;
                         // Resolve the carrier so we understand WHY OrphanSweep leaves it: it only
                         // deletes when the carrier is gone or a parked recovery truck.
-                        Entity carrier = hasCtrl ? EntityManager.GetComponentData<Controller>(car).m_Controller : Entity.Null;
+                        Entity carrier = hasCtrl ? carController.m_Controller : Entity.Null;
                         bool carrierExists = carrier != Entity.Null && carrier != car && EntityManager.Exists(carrier) &&
-                            !EntityManager.HasComponent<Deleted>(carrier);
-                        bool carrierRecov = carrierExists && EntityManager.HasComponent<Game.Vehicles.MaintenanceVehicle>(carrier);
-                        bool carrierParked = carrierExists && EntityManager.HasComponent<ParkedCar>(carrier);
+                            !Lookups.HasComponent<Deleted>(carrier);
+                        bool carrierRecov = carrierExists && Lookups.HasComponent<Game.Vehicles.MaintenanceVehicle>(carrier);
+                        bool carrierParked = carrierExists && Lookups.HasComponent<ParkedCar>(carrier);
                         Mod.Log.Info($"[relic] car={car.Index} " +
-                            $"dstr={(EntityManager.HasComponent<Destroyed>(car) ? 1 : 0)} " +
-                            $"dmg={(EntityManager.HasComponent<Damaged>(car) ? 1 : 0)} " +
+                            $"dstr={(Lookups.HasComponent<Destroyed>(car) ? 1 : 0)} " +
+                            $"dmg={(Lookups.HasComponent<Damaged>(car) ? 1 : 0)} " +
                             $"ctrl={(hasCtrl ? 1 : 0)} tow={(tow ? 1 : 0)} " +
-                            $"stop={(EntityManager.HasComponent<Stopped>(car) ? 1 : 0)} " +
-                            $"mov={(EntityManager.HasComponent<Moving>(car) ? 1 : 0)} " +
-                            $"outctl={(EntityManager.HasComponent<Game.Vehicles.OutOfControl>(car) ? 1 : 0)} " +
-                            $"owner={(EntityManager.HasComponent<Owner>(car) ? 1 : 0)} " +
-                            $"ctlane={(EntityManager.HasComponent<CarTrailerLane>(car) ? 1 : 0)} " +
-                            $"cartrl={(EntityManager.HasComponent<CarTrailer>(car) ? 1 : 0)} " +
+                            $"stop={(Lookups.HasComponent<Stopped>(car) ? 1 : 0)} " +
+                            $"mov={(Lookups.HasComponent<Moving>(car) ? 1 : 0)} " +
+                            $"outctl={(Lookups.HasComponent<Game.Vehicles.OutOfControl>(car) ? 1 : 0)} " +
+                            $"owner={(Lookups.HasComponent<Owner>(car) ? 1 : 0)} " +
+                            $"ctlane={(Lookups.HasComponent<CarTrailerLane>(car) ? 1 : 0)} " +
+                            $"cartrl={(Lookups.HasComponent<CarTrailer>(car) ? 1 : 0)} " +
                             $"| carrier={carrier.Index} exists={(carrierExists ? 1 : 0)} " +
                             $"recov={(carrierRecov ? 1 : 0)} parked={(carrierParked ? 1 : 0)}");
                     }

@@ -67,25 +67,21 @@ namespace ClearTheWay.FunctionGroup.WayClearance.Squeezing
             {
                 return false;
             }
-            if (!EntityManager.HasComponent<SlaveLane>(blockerLane.m_Lane) ||
-                !EntityManager.HasComponent<Owner>(blockerLane.m_Lane) ||
-                !EntityManager.HasComponent<Curve>(blockerLane.m_Lane))
+            if (!Lookups.TryGetComponent(blockerLane.m_Lane, out SlaveLane slaveLane) ||
+                !Lookups.TryGetComponent(blockerLane.m_Lane, out Owner owner) ||
+                !Lookups.TryGetComponent(blockerLane.m_Lane, out Curve curve))
             {
                 return false;
             }
-            Curve curve = EntityManager.GetComponentData<Curve>(blockerLane.m_Lane);
             bool inverted = blockerLane.m_CurvePosition.z < blockerLane.m_CurvePosition.x;
             if (curve.m_Length * math.abs(blockerLane.m_CurvePosition.z - blockerLane.m_CurvePosition.x) < kOvertakeMinRemaining)
             {
                 return false; // too little lane left to finish a change
             }
-            SlaveLane slaveLane = EntityManager.GetComponentData<SlaveLane>(blockerLane.m_Lane);
-            Owner owner = EntityManager.GetComponentData<Owner>(blockerLane.m_Lane);
-            if (!EntityManager.HasBuffer<Game.Net.SubLane>(owner.m_Owner))
+            if (!Lookups.TryGetBuffer(owner.m_Owner, out DynamicBuffer<Game.Net.SubLane> subLanes, isReadOnly: true))
             {
                 return false;
             }
-            DynamicBuffer<Game.Net.SubLane> subLanes = EntityManager.GetBuffer<Game.Net.SubLane>(owner.m_Owner, isReadOnly: true);
             int maxIndex = math.min(slaveLane.m_MaxIndex, subLanes.Length - 1);
             int myIndex = -1;
             for (int i = slaveLane.m_MinIndex; i <= maxIndex; i++)
@@ -96,7 +92,7 @@ namespace ClearTheWay.FunctionGroup.WayClearance.Squeezing
             {
                 return false;
             }
-            bool laneInverted = (EntityManager.GetComponentData<Game.Net.CarLane>(blockerLane.m_Lane).m_Flags & Game.Net.CarLaneFlags.Invert) != 0;
+            bool laneInverted = (Lookups.GetComponentData<Game.Net.CarLane>(blockerLane.m_Lane).m_Flags & Game.Net.CarLaneFlags.Invert) != 0;
             // Positive lane-position is right of travel, so pushDir>0 => move to the physical
             // right neighbour, pushDir<0 => the left one (matches leftIndex/rightIndex above).
             bool towardRight = pushDir > 0f;
@@ -109,12 +105,12 @@ namespace ClearTheWay.FunctionGroup.WayClearance.Squeezing
             Entity candidateLane = candidate.m_SubLane;
             if ((candidate.m_PathMethods & PathMethod.Road) == 0 ||
                 candidateLane == blockerLane.m_Lane ||
-                !EntityManager.HasComponent<Game.Net.CarLane>(candidateLane) ||
-                EntityManager.HasComponent<MasterLane>(candidateLane))
+                !Lookups.TryGetComponent(candidateLane, out Game.Net.CarLane candidateLaneCarLane) ||
+                Lookups.HasComponent<MasterLane>(candidateLane))
             {
                 return false;
             }
-            Game.Net.CarLaneFlags candidateFlags = EntityManager.GetComponentData<Game.Net.CarLane>(candidateLane).m_Flags;
+            Game.Net.CarLaneFlags candidateFlags = candidateLaneCarLane.m_Flags;
             if ((candidateFlags & Game.Net.CarLaneFlags.Forbidden) != 0)
             {
                 return false;
@@ -137,9 +133,9 @@ namespace ClearTheWay.FunctionGroup.WayClearance.Squeezing
 
         public bool TrySqueezePastBlocker(Entity vehicle, ref CarCurrentLane currentLane, uint frame)
         {
-            Blocker blocker = EntityManager.GetComponentData<Blocker>(vehicle);
+            Blocker blocker = Lookups.GetComponentData<Blocker>(vehicle);
             Entity blockingEntity = blocker.m_Blocker;
-            bool vehicleSlow = math.lengthsq(EntityManager.GetComponentData<Moving>(vehicle).m_Velocity) <= kMaxSqueezeSpeed * kMaxSqueezeSpeed;
+            bool vehicleSlow = math.lengthsq(Lookups.GetComponentData<Moving>(vehicle).m_Velocity) <= kMaxSqueezeSpeed * kMaxSqueezeSpeed;
 
             // Track how long we have been stuck behind traffic. The timer measures a CONTINUOUS
             // blocked spell, NOT time behind one exact entity: in a real jam Blocker.m_Blocker
@@ -159,8 +155,8 @@ namespace ClearTheWay.FunctionGroup.WayClearance.Squeezing
             // kAssistProgressMeters for the recovery side ("an instantaneous speed check reset the
             // timer on every creep, so the escalation never fired once") - it belongs here too.
             m_StuckStates.TryGetValue(vehicle, out StuckState stuck);
-            float3 position = EntityManager.HasComponent<Transform>(vehicle)
-                ? EntityManager.GetComponentData<Transform>(vehicle).m_Position
+            float3 position = Lookups.TryGetComponent(vehicle, out Transform vehicleTransform)
+                ? vehicleTransform.m_Position
                 : default;
             bool spellRunning = stuck.m_Blocker != Entity.Null;
             if (blockingEntity == Entity.Null || (!spellRunning && !vehicleSlow))
@@ -201,8 +197,8 @@ namespace ClearTheWay.FunctionGroup.WayClearance.Squeezing
                 blockingEntity == Entity.Null ||
                 (blocker.m_Type != BlockerType.Continuing && blocker.m_Type != BlockerType.Temporary && blocker.m_Type != BlockerType.Crossing) ||
                 !EntityManager.Exists(blockingEntity) ||
-                !EntityManager.HasComponent<Transform>(blockingEntity) ||
-                EntityManager.HasComponent<Game.Creatures.Creature>(blockingEntity))
+                !Lookups.HasComponent<Transform>(blockingEntity) ||
+                Lookups.HasComponent<Game.Creatures.Creature>(blockingEntity))
             {
                 return false;
             }
@@ -210,13 +206,15 @@ namespace ClearTheWay.FunctionGroup.WayClearance.Squeezing
             // Never drive through another emergency vehicle (check a trailer's controller
             // too) or anything that is still moving too fast.
             Entity blockerHead = VehicleTrailerExt.ResolveHead(EntityManager, blockingEntity);
-            if (EntityManager.HasComponent<Car>(blockerHead) &&
-                (EntityManager.GetComponentData<Car>(blockerHead).m_Flags & CarFlags.Emergency) != 0)
+            if (Lookups.TryGetComponent(blockerHead, out Car blockerHeadCar) &&
+                (blockerHeadCar.m_Flags & CarFlags.Emergency) != 0)
             {
                 return false;
             }
-            if (EntityManager.HasComponent<Moving>(blockingEntity) &&
-                math.lengthsq(EntityManager.GetComponentData<Moving>(blockingEntity).m_Velocity) > kMaxBlockerSpeed * kMaxBlockerSpeed)
+            // Read once, used again for the standing-colleague test below.
+            bool blockerHasMoving = Lookups.TryGetComponent(blockingEntity, out Moving blockingEntityMoving);
+            if (blockerHasMoving &&
+                math.lengthsq(blockingEntityMoving.m_Velocity) > kMaxBlockerSpeed * kMaxBlockerSpeed)
             {
                 return false;
             }
@@ -224,9 +222,8 @@ namespace ClearTheWay.FunctionGroup.WayClearance.Squeezing
             // Known-aside state only exists for cars with lane data; trailers and parked
             // vehicles rely on the measured separation alone.
             bool aside = false;
-            if (EntityManager.HasComponent<CarCurrentLane>(blockingEntity))
+            if (Lookups.TryGetComponent(blockingEntity, out CarCurrentLane blockerLane))
             {
-                CarCurrentLane blockerLane = EntityManager.GetComponentData<CarCurrentLane>(blockingEntity);
                 aside = math.abs(blockerLane.m_LanePosition) >= kMinAsidePosition ||
                         blockerLane.m_ChangeLane != Entity.Null;
             }
@@ -252,9 +249,9 @@ namespace ClearTheWay.FunctionGroup.WayClearance.Squeezing
             // over any further than the corridor already asked it to, so waiting for the full
             // clearance means waiting forever (the deadlocked tow-truck chain). Both vehicles
             // are stationary here, so passing a little closer is safe.
-            bool standingColleague = EntityManager.HasComponent<Game.Vehicles.MaintenanceVehicle>(blockerHead) &&
-                (!EntityManager.HasComponent<Moving>(blockingEntity) ||
-                 math.lengthsq(EntityManager.GetComponentData<Moving>(blockingEntity).m_Velocity) < 0.25f);
+            bool standingColleague = Lookups.HasComponent<Game.Vehicles.MaintenanceVehicle>(blockerHead) &&
+                (!blockerHasMoving ||
+                 math.lengthsq(blockingEntityMoving.m_Velocity) < 0.25f);
             float requiredSeparation = standingColleague ? kColleagueSqueezeSeparation : kMinSqueezeSeparation;
             if (m_Geometry.GetLateralSeparation(vehicle, currentLane, blockingEntity) < requiredSeparation)
             {

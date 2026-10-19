@@ -49,12 +49,12 @@ namespace ClearTheWay.FunctionGroup.WayClearance.WayClearing.VehicleTypes
         /// Is this entity a towed part rather than a vehicle in its own right? Trailers follow
         /// their controller, so every pass skips them and works on the tractor instead.
         /// </summary>
-        public static bool IsTrailer(EntityManager entityManager, Entity entity)
+        public static bool IsTrailer(Entity entity)
         {
 
             //if the controller is not the entity itself it must be a trailer, as it follows 
-            return entityManager.HasComponent<Controller>(entity) &&
-                entityManager.GetComponentData<Controller>(entity).m_Controller != entity;
+            return Lookups.TryGetComponent(entity, out Controller entityController) &&
+                entityController.m_Controller != entity;
         }
 
         /// <summary>The vehicle a part belongs to: a trailer resolves to its tractor, anything
@@ -62,9 +62,9 @@ namespace ClearTheWay.FunctionGroup.WayClearance.WayClearing.VehicleTypes
         /// property of the whole rig, not of the box that happens to be in the way.</summary>
         public static Entity ResolveHead(EntityManager entityManager, Entity entity)
         {
-            if (entityManager.HasComponent<Controller>(entity))
+            if (Lookups.TryGetComponent(entity, out Controller entityController))
             {
-                Entity controller = entityManager.GetComponentData<Controller>(entity).m_Controller;
+                Entity controller = entityController.m_Controller;
                 if (controller != Entity.Null && entityManager.Exists(controller))
                 {
                     return controller;
@@ -74,10 +74,10 @@ namespace ClearTheWay.FunctionGroup.WayClearance.WayClearing.VehicleTypes
         }
 
         /// <summary>Tractor + trailer(s): more than one part in the vehicle's layout.</summary>
-        public static bool IsArticulated(EntityManager entityManager, Entity vehicle)
+        public static bool IsArticulated(Entity vehicle)
         {
-            return entityManager.HasBuffer<LayoutElement>(vehicle) &&
-                entityManager.GetBuffer<LayoutElement>(vehicle, isReadOnly: true).Length > 1;
+            return Lookups.TryGetBuffer(vehicle, out DynamicBuffer<LayoutElement> vehicleLayoutElement, isReadOnly: true) &&
+                vehicleLayoutElement.Length > 1;
         }
 
         /// <summary>
@@ -90,8 +90,8 @@ namespace ClearTheWay.FunctionGroup.WayClearance.WayClearing.VehicleTypes
         public void MakeWay(Entity rig, ref CarCurrentLane rigLane, CorridorLane corridorLane,
             float corridorLaneWidth, float aheadDistance, uint frame)
         {
-            float rigSpeed = EntityManager.HasComponent<Moving>(rig)
-                ? math.length(EntityManager.GetComponentData<Moving>(rig).m_Velocity)
+            float rigSpeed = Lookups.TryGetComponent(rig, out Moving rigMoving)
+                ? math.length(rigMoving.m_Velocity)
                 : 0f;
 
 
@@ -135,7 +135,7 @@ namespace ClearTheWay.FunctionGroup.WayClearance.WayClearing.VehicleTypes
                 }
                 if (rigChanged)
                 {
-                    EntityManager.SetComponentData(rig, rigLane);
+                    Lookups.SetComponentData(rig, rigLane);
                 }
             }
             // Deliberately do NOT hold a rig still: freezing a truck at kHoldSpeed the

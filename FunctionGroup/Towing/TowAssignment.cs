@@ -56,13 +56,13 @@ namespace ClearTheWay
 
         public void DispatchWreck(Entity wreck, NativeArray<Entity> vans, uint frame, Setting setting)
         {
-            Entity request = EntityManager.GetComponentData<Game.Simulation.MaintenanceConsumer>(wreck).m_Request;
+            Entity request = Lookups.GetComponentData<Game.Simulation.MaintenanceConsumer>(wreck).m_Request;
             if (request == Entity.Null || !EntityManager.Exists(request) ||
-                !EntityManager.HasComponent<MaintenanceRequest>(request))
+                !Lookups.HasComponent<MaintenanceRequest>(request))
             {
                 return; // no open request (yet) - vanilla will create one, we act next pass
             }
-            float3 wreckPos = EntityManager.GetComponentData<Transform>(wreck).m_Position;
+            float3 wreckPos = Lookups.GetComponentData<Transform>(wreck).m_Position;
 
             // Survey the vans. The responder is whichever van pass 1 resolved to THIS wreck -
             // m_VanJob is the single source of truth and holds each van exactly once, so a
@@ -76,7 +76,7 @@ namespace ClearTheWay
             for (int i = 0; i < vans.Length; i++)
             {
                 Entity van = vans[i];
-                float dist = math.distance(EntityManager.GetComponentData<Transform>(van).m_Position.xz, wreckPos.xz);
+                float dist = math.distance(Lookups.GetComponentData<Transform>(van).m_Position.xz, wreckPos.xz);
                 if (m_VanJob.TryGetValue(van, out Entity job))
                 {
                     if (job == wreck)
@@ -117,8 +117,8 @@ namespace ClearTheWay
             }
             else if (responderDist > kHandsOffRange)
             {
-                bool responderIsTowTruck = EntityManager.HasComponent<CarTractorData>(
-                    EntityManager.GetComponentData<PrefabRef>(responder).m_Prefab);
+                bool responderIsTowTruck = Lookups.HasComponent<CarTractorData>(
+                    Lookups.GetComponentData<PrefabRef>(responder).m_Prefab);
                 // A van much closer than the current responder takes over - but only if the swap
                 // is actually WORTH it. Three guards, all learned from one field case (2026-07-26,
                 // van 2270668 cancelled just short of its wreck):
@@ -181,14 +181,14 @@ namespace ClearTheWay
         /// guard exists to tolerate.</summary>
         private bool IsOnAHook(Entity wreck)
         {
-            if (!EntityManager.HasComponent<Controller>(wreck))
+            if (!Lookups.TryGetComponent(wreck, out Controller wreckController))
             {
                 return false;
             }
-            Entity carrier = EntityManager.GetComponentData<Controller>(wreck).m_Controller;
+            Entity carrier = wreckController.m_Controller;
             return carrier != Entity.Null && carrier != wreck && EntityManager.Exists(carrier) &&
-                !EntityManager.HasComponent<Deleted>(carrier) &&
-                EntityManager.HasComponent<Game.Vehicles.MaintenanceVehicle>(carrier);
+                !Lookups.HasComponent<Deleted>(carrier) &&
+                Lookups.HasComponent<Game.Vehicles.MaintenanceVehicle>(carrier);
         }
 
         /// <summary>
@@ -202,15 +202,15 @@ namespace ClearTheWay
         public bool TargetsHookedWreck(Entity van)
         {
             if (m_HookupSystem.TrucksWithLoad.Contains(van) ||
-                !EntityManager.HasComponent<Target>(van) ||
-                (EntityManager.GetComponentData<Game.Vehicles.MaintenanceVehicle>(van).m_State &
+                !Lookups.TryGetComponent(van, out Target vanTarget) ||
+                (Lookups.GetComponentData<Game.Vehicles.MaintenanceVehicle>(van).m_State &
                  MaintenanceVehicleFlags.Returning) != 0)
             {
                 return false;
             }
-            Entity target = EntityManager.GetComponentData<Target>(van).m_Target;
+            Entity target = vanTarget.m_Target;
             return target != Entity.Null && EntityManager.Exists(target) && IsOnAHook(target) &&
-                EntityManager.GetComponentData<Controller>(target).m_Controller != van;
+                Lookups.GetComponentData<Controller>(target).m_Controller != van;
         }
 
         private bool OwnVanStillComing(Entity wreck, float3 wreckPos, uint frame)
@@ -220,7 +220,7 @@ namespace ClearTheWay
                 return false;
             }
             if (van == Entity.Null || !EntityManager.Exists(van) ||
-                EntityManager.HasComponent<Deleted>(van))
+                Lookups.HasComponent<Deleted>(van))
             {
                 m_LastAssignedVan.Remove(wreck);
                 return false;
@@ -234,8 +234,8 @@ namespace ClearTheWay
             }
             // Still actually heading here? A van whose Target has moved on is not ours any more,
             // whatever we once decided.
-            if (!EntityManager.HasComponent<Target>(van) ||
-                EntityManager.GetComponentData<Target>(van).m_Target != wreck)
+            if (!Lookups.TryGetComponent(van, out Target vanTarget) ||
+                vanTarget.m_Target != wreck)
             {
                 m_LastAssignedVan.Remove(wreck);
                 return false;
@@ -255,7 +255,7 @@ namespace ClearTheWay
             }
             if (Mod.Setting.VerboseLogging)
             {
-                float dist = math.distance(EntityManager.GetComponentData<Transform>(van).m_Position.xz, wreckPos.xz);
+                float dist = math.distance(Lookups.GetComponentData<Transform>(van).m_Position.xz, wreckPos.xz);
                 Mod.Log.Info($"[dispatch] wreck={wreck.Index} keeps van={van.Index} ({dist:F0} m out) - no depot dispatch");
             }
             return true;
@@ -265,14 +265,14 @@ namespace ClearTheWay
         /// <summary>Vehicle-capable, on duty, not towing, not full, not already on another wreck.</summary>
         public bool IsSuitable(Entity van, Entity wreck)
         {
-            Entity prefab = EntityManager.GetComponentData<PrefabRef>(van).m_Prefab;
-            if (!EntityManager.HasComponent<MaintenanceVehicleData>(prefab) ||
-                (EntityManager.GetComponentData<MaintenanceVehicleData>(prefab).m_MaintenanceType & MaintenanceType.Vehicle) == 0)
+            Entity prefab = Lookups.GetComponentData<PrefabRef>(van).m_Prefab;
+            if (!Lookups.TryGetComponent(prefab, out MaintenanceVehicleData prefabMaintenanceVehicleData) ||
+                (prefabMaintenanceVehicleData.m_MaintenanceType & MaintenanceType.Vehicle) == 0)
             {
                 return false;
             }
             Game.Vehicles.MaintenanceVehicle maintenance =
-                EntityManager.GetComponentData<Game.Vehicles.MaintenanceVehicle>(van);
+                Lookups.GetComponentData<Game.Vehicles.MaintenanceVehicle>(van);
             if ((maintenance.m_State & (MaintenanceVehicleFlags.Full |
                 MaintenanceVehicleFlags.EstimatedFull | MaintenanceVehicleFlags.Disabled)) != 0)
             {
@@ -283,11 +283,11 @@ namespace ClearTheWay
                 return false; // hauling a wreck home already
             }
             // Already dispatched to a different wreck? Leave it on that job.
-            if (EntityManager.HasComponent<Target>(van))
+            if (Lookups.TryGetComponent(van, out Target vanTarget))
             {
-                Entity target = EntityManager.GetComponentData<Target>(van).m_Target;
+                Entity target = vanTarget.m_Target;
                 if (target != Entity.Null && target != wreck && EntityManager.Exists(target) &&
-                    EntityManager.HasComponent<Game.Events.InvolvedInAccident>(target))
+                    Lookups.HasComponent<Game.Events.InvolvedInAccident>(target))
                 {
                     return false;
                 }
@@ -304,8 +304,8 @@ namespace ClearTheWay
             // Remember OUR decision, so the depot branch does not compete for the same request
             // while this van is on its way (see OwnVanStillComing).
             m_LastAssignedVan[wreck] = van;
-            DynamicBuffer<ServiceDispatch> dispatches = EntityManager.HasBuffer<ServiceDispatch>(van)
-                ? EntityManager.GetBuffer<ServiceDispatch>(van)
+            DynamicBuffer<ServiceDispatch> dispatches = Lookups.TryGetBuffer(van, out DynamicBuffer<ServiceDispatch> vanServiceDispatch)
+                ? vanServiceDispatch
                 : EntityManager.AddBuffer<ServiceDispatch>(van);
             for (int i = 0; i < dispatches.Length; i++)
             {
@@ -321,17 +321,17 @@ namespace ClearTheWay
             m_VanJob[van] = wreck;
             dispatches.Insert(0, new ServiceDispatch(request));
             Game.Vehicles.MaintenanceVehicle maintenance =
-                EntityManager.GetComponentData<Game.Vehicles.MaintenanceVehicle>(van);
+                Lookups.GetComponentData<Game.Vehicles.MaintenanceVehicle>(van);
             maintenance.m_RequestCount++;
             maintenance.m_State &= ~(MaintenanceVehicleFlags.Returning | MaintenanceVehicleFlags.TryWork |
                 MaintenanceVehicleFlags.Working | MaintenanceVehicleFlags.ClearingDebris |
                 MaintenanceVehicleFlags.EdgeTarget | MaintenanceVehicleFlags.TransformTarget);
             maintenance.m_State |= MaintenanceVehicleFlags.TransformTarget;
-            EntityManager.SetComponentData(van, maintenance);
-            Car car = EntityManager.GetComponentData<Car>(van);
+            Lookups.SetComponentData(van, maintenance);
+            Car car = Lookups.GetComponentData<Car>(van);
             car.m_Flags |= CarFlags.StayOnRoad;
-            EntityManager.SetComponentData(van, car);
-            EntityManager.SetComponentData(van, new Target(wreck));
+            Lookups.SetComponentData(van, car);
+            Lookups.SetComponentData(van, new Target(wreck));
             m_Ctx.Beeline.Repath(van);
             m_Ctx.Beeline.CreateHandleRequest(request, van);
             m_LastAction[wreck] = frame;
@@ -370,13 +370,13 @@ namespace ClearTheWay
             {
                 for (int i = 0; i < depots.Length; i++)
                 {
-                    Entity prefab = EntityManager.GetComponentData<PrefabRef>(depots[i]).m_Prefab;
-                    if (!EntityManager.HasComponent<MaintenanceDepotData>(prefab) ||
-                        EntityManager.GetComponentData<MaintenanceDepotData>(prefab).m_MaintenanceType != MaintenanceType.Vehicle)
+                    Entity prefab = Lookups.GetComponentData<PrefabRef>(depots[i]).m_Prefab;
+                    if (!Lookups.TryGetComponent(prefab, out MaintenanceDepotData prefabMaintenanceDepotData) ||
+                        prefabMaintenanceDepotData.m_MaintenanceType != MaintenanceType.Vehicle)
                     {
                         continue;
                     }
-                    float dist = math.distance(EntityManager.GetComponentData<Transform>(depots[i]).m_Position.xz, wreckPos.xz);
+                    float dist = math.distance(Lookups.GetComponentData<Transform>(depots[i]).m_Position.xz, wreckPos.xz);
                     if (dist < depotDist)
                     {
                         depot = depots[i];
@@ -392,8 +392,8 @@ namespace ClearTheWay
             {
                 return false; // no tow depot built - leave the vanilla assignment alone
             }
-            DynamicBuffer<ServiceDispatch> dispatches = EntityManager.HasBuffer<ServiceDispatch>(depot)
-                ? EntityManager.GetBuffer<ServiceDispatch>(depot)
+            DynamicBuffer<ServiceDispatch> dispatches = Lookups.TryGetBuffer(depot, out DynamicBuffer<ServiceDispatch> depotServiceDispatch)
+                ? depotServiceDispatch
                 : EntityManager.AddBuffer<ServiceDispatch>(depot);
             for (int i = 0; i < dispatches.Length; i++)
             {
@@ -402,13 +402,13 @@ namespace ClearTheWay
                     return true; // already queued there
                 }
             }
-            if (EntityManager.HasComponent<PathInformation>(request))
+            if (Lookups.HasComponent<PathInformation>(request))
             {
                 EntityManager.RemoveComponent<PathInformation>(request);
             }
-            if (EntityManager.HasBuffer<PathElement>(request))
+            if (Lookups.TryGetBuffer(request, out DynamicBuffer<PathElement> requestPath))
             {
-                EntityManager.GetBuffer<PathElement>(request).Clear();
+                requestPath.Clear();
             }
             dispatches.Add(new ServiceDispatch(request));
             m_LastAction[wreck] = frame;

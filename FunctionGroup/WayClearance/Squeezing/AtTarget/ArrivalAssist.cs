@@ -34,8 +34,8 @@ namespace ClearTheWay.FunctionGroup.WayClearance.Squeezing.AtTarget
     /// </summary>
     internal sealed class ArrivalAssist
     {
-        // Main-thread profiling switch for this pass - see ModProfiler.
-        private static readonly bool kProfile = false;
+        // Main-thread profiling switch for this pass, set from the Performance options tab - see ModProfiler.
+        private static bool Profiling => ModProfiler.IsOn(ProfiledPass.ArrivalAssist);
 
         private readonly WayClearanceContext m_Ctx;
         private EntityManager EntityManager => m_Ctx.EntityManager;
@@ -65,7 +65,7 @@ namespace ClearTheWay.FunctionGroup.WayClearance.Squeezing.AtTarget
         /// </summary>
         public bool TryArrivalAssist(Entity vehicle, ref CarCurrentLane currentLane, float side, uint frame, out bool nearTarget)
         {
-            using (ModProfiler.Sample(kProfile, "ArrivalAssist"))
+            using (ModProfiler.Sample(Profiling, "ArrivalAssist"))
             {
                 return TryArrivalAssistImpl(vehicle, ref currentLane, side, frame, out nearTarget);
             }
@@ -83,26 +83,26 @@ namespace ClearTheWay.FunctionGroup.WayClearance.Squeezing.AtTarget
             if ((currentLane.m_LaneFlags & (CarLaneFlags.EndOfPath | CarLaneFlags.EndReached |
                     CarLaneFlags.ParkingSpace | CarLaneFlags.Area | CarLaneFlags.TransformTarget)) != 0 ||
                 (!committed && currentLane.m_ChangeLane != Entity.Null) ||
-                !EntityManager.HasComponent<Game.Net.CarLane>(currentLane.m_Lane) ||
-                !EntityManager.HasComponent<Target>(vehicle))
+                !Lookups.HasComponent<Game.Net.CarLane>(currentLane.m_Lane) ||
+                !Lookups.TryGetComponent(vehicle, out Target vehicleTarget))
             {
                 return false;
             }
             // Never force an arrival on a RETURNING unit: with EndOfPath set mid-road the
             // AIs' returning branch deletes the vehicle instead of parking it, and its
             // "target" is the station anyway.
-            if (EntityManager.HasComponent<Game.Vehicles.PoliceCar>(vehicle) &&
-                (EntityManager.GetComponentData<Game.Vehicles.PoliceCar>(vehicle).m_State & PoliceCarFlags.Returning) != 0)
+            if (Lookups.TryGetComponent(vehicle, out Game.Vehicles.PoliceCar vehiclePoliceCar) &&
+                (vehiclePoliceCar.m_State & PoliceCarFlags.Returning) != 0)
             {
                 return false;
             }
-            if (EntityManager.HasComponent<Game.Vehicles.Ambulance>(vehicle) &&
-                (EntityManager.GetComponentData<Game.Vehicles.Ambulance>(vehicle).m_State & AmbulanceFlags.Returning) != 0)
+            if (Lookups.TryGetComponent(vehicle, out Game.Vehicles.Ambulance vehicleAmbulance) &&
+                (vehicleAmbulance.m_State & AmbulanceFlags.Returning) != 0)
             {
                 return false;
             }
-            if (EntityManager.HasComponent<Game.Vehicles.FireEngine>(vehicle) &&
-                (EntityManager.GetComponentData<Game.Vehicles.FireEngine>(vehicle).m_State & FireEngineFlags.Returning) != 0)
+            if (Lookups.TryGetComponent(vehicle, out Game.Vehicles.FireEngine vehicleFireEngine) &&
+                (vehicleFireEngine.m_State & FireEngineFlags.Returning) != 0)
             {
                 return false;
             }
@@ -111,14 +111,14 @@ namespace ClearTheWay.FunctionGroup.WayClearance.Squeezing.AtTarget
             // EndOfPath forced mid-road runs its returning branch, and that branch does not park
             // it where it stands. Its "target" while returning is the depot, so there is nothing
             // to assist there anyway.
-            if (EntityManager.HasComponent<Game.Vehicles.MaintenanceVehicle>(vehicle) &&
-                (EntityManager.GetComponentData<Game.Vehicles.MaintenanceVehicle>(vehicle).m_State
+            if (Lookups.TryGetComponent(vehicle, out Game.Vehicles.MaintenanceVehicle vehicleMaintenanceVehicle) &&
+                (vehicleMaintenanceVehicle.m_State
                     & MaintenanceVehicleFlags.Returning) != 0)
             {
                 return false;
             }
-            Entity target = EntityManager.GetComponentData<Target>(vehicle).m_Target;
-            float3 position = EntityManager.GetComponentData<Transform>(vehicle).m_Position;
+            Entity target = vehicleTarget.m_Target;
+            float3 position = Lookups.GetComponentData<Transform>(vehicle).m_Position;
             float dist = m_Ctx.ArrivalTarget.DistanceToDispatchTarget(target, position);
             // The tight 30 m ring is the "it has effectively arrived, stop meddling" signal
             // (gates our corridor/speed machinery off at the scene). The wider orbit ring is
@@ -230,9 +230,9 @@ namespace ClearTheWay.FunctionGroup.WayClearance.Squeezing.AtTarget
             // the-corner shot): those lanes are curved and any lateral offset plants the
             // vehicle across the corner. Roll on at a creep until a straight edge lane is
             // under the wheels, then stop there.
-            if (!EntityManager.HasComponent<Owner>(currentLane.m_Lane) ||
-                !EntityManager.HasComponent<Game.Net.Edge>(
-                    EntityManager.GetComponentData<Owner>(currentLane.m_Lane).m_Owner))
+            if (!Lookups.TryGetComponent(currentLane.m_Lane, out Owner laneOwner) ||
+                !Lookups.HasComponent<Game.Net.Edge>(
+                    laneOwner.m_Owner))
             {
                 m_Control.SetCeiling(vehicle, kArriveRollSpeed);
                 m_StuckStates[vehicle] = stuck;
@@ -262,7 +262,7 @@ namespace ClearTheWay.FunctionGroup.WayClearance.Squeezing.AtTarget
             float kerbUnits = math.min(kEvadeMeters, m_Ctx.PrefabGeometry.MaxLateralMeters(vehicle)) / m_Ctx.PrefabGeometry.LateralSlack(vehicle, currentLane.m_Lane);
             currentLane.m_LanePosition = math.lerp(currentLane.m_LanePosition, side * kerbUnits, kPullRate * 1.5f);
             bool atKerb = math.abs(currentLane.m_LanePosition) >= kerbUnits - 0.1f;
-            float arriveSpeed = math.length(EntityManager.GetComponentData<Moving>(vehicle).m_Velocity);
+            float arriveSpeed = math.length(Lookups.GetComponentData<Moving>(vehicle).m_Velocity);
             if (arriveSpeed > kArriveStopSpeed)
             {
                 // Still rolling: creep to the shoulder (do not race the wreck), then hold at a
@@ -284,20 +284,19 @@ namespace ClearTheWay.FunctionGroup.WayClearance.Squeezing.AtTarget
             // route the vehicle away from its forced arrival.
             currentLane.m_CurvePosition.z = currentLane.m_CurvePosition.y;
             currentLane.m_LaneFlags |= CarLaneFlags.EndOfPath;
-            if (EntityManager.HasBuffer<CarNavigationLane>(vehicle))
+            if (Lookups.TryGetBuffer(vehicle, out DynamicBuffer<CarNavigationLane> navigationLanes))
             {
-                EntityManager.GetBuffer<CarNavigationLane>(vehicle).Clear();
+                navigationLanes.Clear();
             }
-            if (EntityManager.HasComponent<PathOwner>(vehicle))
+            if (Lookups.TryGetComponent(vehicle, out PathOwner pathOwner))
             {
-                PathOwner pathOwner = EntityManager.GetComponentData<PathOwner>(vehicle);
                 pathOwner.m_ElementIndex = 0;
                 pathOwner.m_State &= ~(PathFlags.Obsolete | PathFlags.DivertObsolete);
-                EntityManager.SetComponentData(vehicle, pathOwner);
+                Lookups.SetComponentData(vehicle, pathOwner);
             }
-            if (EntityManager.HasBuffer<PathElement>(vehicle))
+            if (Lookups.TryGetBuffer(vehicle, out DynamicBuffer<PathElement> pathElements))
             {
-                EntityManager.GetBuffer<PathElement>(vehicle).Clear();
+                pathElements.Clear();
             }
             if (Mod.Setting.VerboseLogging)
             {

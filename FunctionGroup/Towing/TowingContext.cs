@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using ClearTheWay.FunctionGroup.WayClearance.WayClearing;
 using Game.Simulation;
+using Unity.Collections;
 using Unity.Entities;
 using Unity.Mathematics;
 
@@ -32,6 +33,11 @@ namespace ClearTheWay
         /// capping its speed? Without it a motionless loaded truck is indistinguishable from one
         /// our own corridor is holding.</summary>
         public ClearTheWaySystem WayClearance;
+        /// <summary>The game's pathfind request queue, for <see cref="RequestRouteHome"/>.</summary>
+        public PathfindSetupSystem PathfindSetup;
+        /// <summary>The system that owns our path requests (PathfindSetupSystem keys its queues by
+        /// the requesting system).</summary>
+        public SystemBase RequestingSystem;
 
         // Queries the passes below run on; created by TowHookupSystem (only a system can).
         public EntityQuery OrphanQuery;
@@ -44,18 +50,176 @@ namespace ClearTheWay
         public EntityQuery FrozenReleaseQuery;
         public EntityQuery AccidentSiteQuery;
 
-        /// <summary>Deletes a settled wreck safely. A Moving-less entity that still carries a
+        /// <summary>Deletes a vehicle safely. A Moving-less entity that still carries a
         /// Game.Simulation.UpdateFrame null-derefs UpdateGroupSystem ("UpdateFrame added to
-        /// unsupported type" - a hard crash chased down in an earlier towing rework), so strip
-        /// it before adding Deleted.</summary>
-        public void SafeDelete(Entity wreck)
+        /// unsupported type" - a hard crash chased down in an earlier towing rework), so a settled
+        /// wreck loses it before Deleted.
+        ///
+        /// A DRIVING vehicle keeps it: it is a supported type, and the entity lives until the end
+        /// of the frame. If the player has it selected or follows it with the camera,
+        /// SelectedInfoUISystem.GetInterpolatedPosition reads UpdateFrame unguarded for every
+        /// entity with a TransformFrame ring - stripping it from a truck threw the
+        /// "AssertionException ... MarkerIconSystem / CameraUpdateSystem" of 2026-10-17.</summary>
+        public void SafeDelete(Entity vehicle)
         {
-            if (EntityManager.HasComponent<Game.Simulation.UpdateFrame>(wreck))
+            if (!Lookups.HasComponent<Game.Objects.Moving>(vehicle) &&
+                EntityManager.HasComponent<Game.Simulation.UpdateFrame>(vehicle))
             {
-                EntityManager.RemoveComponent<Game.Simulation.UpdateFrame>(wreck);
+                EntityManager.RemoveComponent<Game.Simulation.UpdateFrame>(vehicle);
             }
-            EntityManager.AddComponent<Game.Common.Deleted>(wreck);
+            EntityManager.AddComponent<Game.Common.Deleted>(vehicle);
         }
+
+        /// <summary>
+        /// Remembers the lanes a wreck blocked at the moment it is hooked, so their blockage can
+        /// be recomputed once it has been dragged away - THE reason loaded trucks stood still on a
+        /// free road, failed every pathfind and were deleted (7 of 8 tows on 2026-10-17, 2 of 2 that
+        /// morning on 0.1.13.3, 5 of 15 on 2026-10-11).
+        ///
+        /// The blockage is LANE data: CarLane.m_BlockageStart/End, computed by LaneDataSystem
+        /// (CheckBlockage: every lane object without Moving) and only when the lane carries
+        /// Updated or PathfindUpdated. AccidentVehicleSystem flags the lanes when the car comes
+        /// to rest; dragging the wreck away moves its lane objects (LaneObjectUpdater), but
+        /// nothing flags the lanes again - so the accident site stays "blocked" after the wreck
+        /// is gone. PathfindJobs.IsValidDelta lets no route through that range, and the truck
+        /// stands right behind it: no way forward, and cars cannot turn mid-segment. The same
+        /// gap WreckClearing.PokeBlockedLanes closes after moving a wreck aside.
+        ///
+        /// The wreck must NOT be taken out of the lane registry instead: a Car without
+        /// CarCurrentLane is an invalid state (PathfindTargetSeeker.GetCarLane and
+        /// ImpactSystem read it unguarded) and crashed the game at the next hookup.
+        /// </summary>
+        public void ScheduleSitePoke(Entity wreck, uint frame)
+        {
+            if (!Lookups.TryGetBuffer(wreck, out DynamicBuffer<Game.Objects.BlockedLane> blockedLanes, isReadOnly: true) ||
+                blockedLanes.Length == 0)
+            {
+                return;
+            }
+            var lanes = new List<Entity>(blockedLanes.Length);
+            for (int i = 0; i < blockedLanes.Length; i++)
+            {
+                lanes.Add(blockedLanes[i].m_Lane);
+            }
+            m_SitePokes[wreck] = new SitePoke { m_DueFrame = frame + kSitePokeDelayFrames, m_Lanes = lanes };
+        }
+
+        /// <summary>
+        /// Flags the remembered accident-site lanes PathfindUpdated once the wreck's lane objects
+        /// have moved with it (two navigation cycles after the hookup), so LaneDataSystem drops
+        /// the stale blockage. Returns true on the tick it fired, so the caller can ask the truck
+        /// for a fresh route right away instead of waiting for the next retry.
+        /// </summary>
+        public bool RunSitePokeIfDue(Entity wreck, uint frame)
+        {
+            if (!m_SitePokes.TryGetValue(wreck, out SitePoke poke) || frame < poke.m_DueFrame)
+            {
+                return false;
+            }
+            m_SitePokes.Remove(wreck);
+            for (int i = 0; i < poke.m_Lanes.Count; i++)
+            {
+                Entity lane = poke.m_Lanes[i];
+                if (EntityManager.Exists(lane) && Lookups.HasComponent<Game.Net.CarLane>(lane) &&
+                    !Lookups.HasComponent<Game.Common.PathfindUpdated>(lane))
+                {
+                    EntityManager.AddComponent<Game.Common.PathfindUpdated>(lane);
+                }
+            }
+            return true;
+        }
+
+        /// <summary>
+        /// Asks for a route home for a loaded truck - the game's own request, with one rule
+        /// relaxed: lane blockages are ignored.
+        ///
+        /// The game builds a returning maintenance vehicle's request in
+        /// MaintenanceVehicleAISystem.FindNewPath, and that request respects lane blockage. An
+        /// accident is nearly always two cars; the truck comes from behind, hooks the rear one,
+        /// and the front one still stands on its lane - a real blockage that PathfindJobs.IsValid-
+        /// Delta lets no route through, while the truck cannot turn mid-segment. Every request
+        /// failed until the give-up deleted the truck. With RuleFlags.HasBlockage ignored (the
+        /// game does the same for reachability: ResourceAvailabilitySystem, ServiceCoverageSystem)
+        /// the route leads past the second wreck, and TowFollow.PassStandingWreck handles the
+        /// physical passing. Everything else is a copy of FindNewPath for a Returning vehicle.
+        ///
+        /// Returns false when the truck lacks what the request needs; the caller then leaves the
+        /// game's own (Obsolete-triggered) request in place.
+        /// </summary>
+        public bool RequestRouteHome(Entity truck, Entity depot)
+        {
+            if (PathfindSetup == null || RequestingSystem == null || depot == Entity.Null ||
+                !Lookups.TryGetComponent(truck, out Game.Prefabs.PrefabRef prefabRef) ||
+                !Lookups.TryGetComponent(prefabRef.m_Prefab, out Game.Prefabs.CarData carData) ||
+                !Lookups.TryGetComponent(truck, out Game.Vehicles.CarCurrentLane currentLane) ||
+                !Lookups.TryGetComponent(truck, out Game.Pathfind.PathOwner pathOwner))
+            {
+                return false;
+            }
+            Lookups.TryGetComponent(prefabRef.m_Prefab, out Game.Prefabs.ObjectGeometryData geometry);
+            // VehicleUtils.GetParkingSource, with our lookups.
+            Entity parkingSource = truck;
+            if (Lookups.HasComponent<Game.Net.ParkingLane>(currentLane.m_Lane) ||
+                (Lookups.TryGetComponent(currentLane.m_Lane, out Game.Net.ConnectionLane connection) &&
+                 (connection.m_Flags & Game.Net.ConnectionLaneFlags.Parking) != 0))
+            {
+                parkingSource = currentLane.m_Lane;
+            }
+            var parameters = new Game.Pathfind.PathfindParameters
+            {
+                m_MaxSpeed = carData.m_MaxSpeed,
+                m_WalkSpeed = 5.555556f,
+                m_Weights = new Game.Pathfind.PathfindWeights(1f, 1f, 1f, 1f),
+                m_Methods = Game.Pathfind.PathMethod.Road | Game.Pathfind.PathMethod.SpecialParking,
+                m_ParkingTarget = parkingSource,
+                m_ParkingDelta = currentLane.m_CurvePosition.z,
+                m_ParkingSize = Game.Vehicles.VehicleUtils.GetParkingSize(geometry, out float _),
+                m_IgnoredRules = Game.Vehicles.VehicleUtils.GetIgnoredPathfindRules(carData) |
+                    Game.Pathfind.RuleFlags.ForbidCombustionEngines | Game.Pathfind.RuleFlags.ForbidTransitTraffic |
+                    Game.Pathfind.RuleFlags.ForbidHeavyTraffic | Game.Pathfind.RuleFlags.ForbidPrivateTraffic |
+                    Game.Pathfind.RuleFlags.HasBlockage
+            };
+            var origin = new Game.Pathfind.SetupQueueTarget
+            {
+                m_Type = Game.Pathfind.SetupTargetType.CurrentLocation,
+                m_Methods = Game.Pathfind.PathMethod.Road | Game.Pathfind.PathMethod.SpecialParking,
+                m_RoadTypes = Game.Net.RoadTypes.Car
+            };
+            var destination = new Game.Pathfind.SetupQueueTarget
+            {
+                m_Type = Game.Pathfind.SetupTargetType.CurrentLocation,
+                m_Methods = Game.Pathfind.PathMethod.Road | Game.Pathfind.PathMethod.SpecialParking,
+                m_RoadTypes = Game.Net.RoadTypes.Car,
+                m_Entity = depot,
+                m_RandomCost = 30f
+            };
+            NativeQueue<Game.Pathfind.SetupQueueItem> queue = PathfindSetup.GetQueue(RequestingSystem, 64);
+            Game.Vehicles.VehicleUtils.SetupPathfind(ref currentLane, ref pathOwner, queue.AsParallelWriter(),
+                new Game.Pathfind.SetupQueueItem(truck, parameters, origin, destination));
+            PathfindSetup.AddQueueWriter(default);
+            Lookups.SetComponentData(truck, currentLane);
+            Lookups.SetComponentData(truck, pathOwner);
+            return true;
+        }
+
+        /// <summary>Drops a pending poke for a wreck that leaves the tow early (released, deleted).</summary>
+        public void ForgetSitePoke(Entity wreck)
+        {
+            m_SitePokes.Remove(wreck);
+        }
+
+        /// <summary>Two CarNavigationSystem cycles (it updates each vehicle every 16 frames): by
+        /// then the wreck's lane objects have moved off the accident site, so the recompute sees
+        /// the site empty.</summary>
+        private const uint kSitePokeDelayFrames = 32u;
+
+        private struct SitePoke
+        {
+            public uint m_DueFrame;
+            public List<Entity> m_Lanes;
+        }
+
+        private readonly Dictionary<Entity, SitePoke> m_SitePokes = new Dictionary<Entity, SitePoke>();
 
         // Passes.
         public TowCoupling Coupling;

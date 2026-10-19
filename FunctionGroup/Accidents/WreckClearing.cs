@@ -66,14 +66,13 @@ namespace ClearTheWay.FunctionGroup.GeneralImprovements
                 for (int i = 0; i < nets.Length; i++)
                 {
                     Entity candidate = nets[i];
-                    if (!EntityManager.HasComponent<Game.Net.Edge>(candidate) ||
-                        !EntityManager.HasComponent<Game.Net.Road>(candidate) ||
-                        !EntityManager.HasComponent<Curve>(candidate) ||
-                        !EntityManager.HasBuffer<Game.Net.SubLane>(candidate))
+                    if (!Lookups.HasComponent<Game.Net.Edge>(candidate) ||
+                        !Lookups.HasComponent<Game.Net.Road>(candidate) ||
+                        !Lookups.TryGetComponent(candidate, out Curve curve) ||
+                        !Lookups.HasBuffer<Game.Net.SubLane>(candidate))
                     {
                         continue;
                     }
-                    Curve curve = EntityManager.GetComponentData<Curve>(candidate);
                     float dist = MathUtils.Distance(curve.m_Bezier, wreckPos, out float t);
                     if (dist < bestDist)
                     {
@@ -92,7 +91,7 @@ namespace ClearTheWay.FunctionGroup.GeneralImprovements
                 return false;
             }
 
-            Curve edgeCurve = EntityManager.GetComponentData<Curve>(bestEdge);
+            Curve edgeCurve = Lookups.GetComponentData<Curve>(bestEdge);
             float3 edgePos = MathUtils.Position(edgeCurve.m_Bezier, bestT);
             float2 tangent = math.normalizesafe(MathUtils.Tangent(edgeCurve.m_Bezier, bestT).xz);
             float2 rightDir = MathUtils.Right(tangent);
@@ -102,7 +101,7 @@ namespace ClearTheWay.FunctionGroup.GeneralImprovements
             // Outermost proper car lane on that side; also tally how many of that
             // carriageway's car lanes are currently blocked (see the full-block gate below).
             const float kSideLaneMinOffset = 0.2f; // ignore the opposite carriageway / center
-            DynamicBuffer<Game.Net.SubLane> subLanes = EntityManager.GetBuffer<Game.Net.SubLane>(bestEdge, isReadOnly: true);
+            DynamicBuffer<Game.Net.SubLane> subLanes = Lookups.GetBuffer<Game.Net.SubLane>(bestEdge, isReadOnly: true);
             Entity bestLane = Entity.Null;
             float bestOffset = kSideLaneMinOffset;
             float3 targetPos = default;
@@ -113,13 +112,12 @@ namespace ClearTheWay.FunctionGroup.GeneralImprovements
             {
                 Entity lane = subLanes[i].m_SubLane;
                 if ((subLanes[i].m_PathMethods & PathMethod.Road) == 0 ||
-                    !EntityManager.HasComponent<Game.Net.CarLane>(lane) ||
-                    EntityManager.HasComponent<MasterLane>(lane) ||
-                    !EntityManager.HasComponent<Curve>(lane))
+                    !Lookups.TryGetComponent(lane, out Game.Net.CarLane carLane) ||
+                    Lookups.HasComponent<MasterLane>(lane) ||
+                    !Lookups.TryGetComponent(lane, out Curve laneCurve))
                 {
                     continue;
                 }
-                Curve laneCurve = EntityManager.GetComponentData<Curve>(lane);
                 MathUtils.Distance(laneCurve.m_Bezier, wreckPos, out float laneT);
                 float3 lanePos = MathUtils.Position(laneCurve.m_Bezier, laneT);
                 float offset = math.dot(lanePos.xz - edgePos.xz, rightDir) * side;
@@ -128,7 +126,6 @@ namespace ClearTheWay.FunctionGroup.GeneralImprovements
                     continue; // other side of the road - a wreck here doesn't stop this carriageway
                 }
                 sideLaneCount++;
-                Game.Net.CarLane carLane = EntityManager.GetComponentData<Game.Net.CarLane>(lane);
                 // LaneDataSystem resets an unblocked lane to (start=255, end=0) and otherwise
                 // fills a real blockage range from its lane objects (incl. accident wrecks).
                 if (!(carLane.m_BlockageStart == byte.MaxValue && carLane.m_BlockageEnd == 0))
@@ -161,7 +158,7 @@ namespace ClearTheWay.FunctionGroup.GeneralImprovements
             }
 
             // Remember the previously blocked lanes so we can poke their pathfind data.
-            Transform wreckTransform = EntityManager.GetComponentData<Transform>(wreck);
+            Transform wreckTransform = Lookups.GetComponentData<Transform>(wreck);
             float3 forward = new float3(targetTangent.x, 0f, targetTangent.y);
             float3 currentForward = math.forward(wreckTransform.m_Rotation);
             if (math.dot(currentForward.xz, targetTangent) < 0f)
@@ -170,7 +167,7 @@ namespace ClearTheWay.FunctionGroup.GeneralImprovements
             }
             wreckTransform.m_Position = targetPos;
             wreckTransform.m_Rotation = quaternion.LookRotationSafe(forward, math.up());
-            EntityManager.SetComponentData(wreck, wreckTransform);
+            Lookups.SetComponentData(wreck, wreckTransform);
             EntityManager.AddComponent<Updated>(wreck);
             EntityManager.AddComponent<BatchesUpdated>(wreck);
             m_Ctx.WreckClearing.PokeBlockedLanes(wreck);
@@ -179,25 +176,23 @@ namespace ClearTheWay.FunctionGroup.GeneralImprovements
             // move aside too - otherwise the trailer stays where it crashed and keeps the
             // lane blocked ("Aufräumtool hat den Hänger vergessen"). Line each one up behind
             // the moved wreck on the outer lane, keeping its original hitch distance.
-            if (EntityManager.HasBuffer<LayoutElement>(wreck))
+            if (Lookups.TryGetBuffer(wreck, out DynamicBuffer<LayoutElement> layout, isReadOnly: true))
             {
-                DynamicBuffer<LayoutElement> layout = EntityManager.GetBuffer<LayoutElement>(wreck, isReadOnly: true);
                 float3 newForward = math.forward(wreckTransform.m_Rotation);
                 for (int i = 0; i < layout.Length; i++)
                 {
                     Entity member = layout[i].m_Vehicle;
                     if (member == wreck || member == Entity.Null || !EntityManager.Exists(member) ||
-                        EntityManager.HasComponent<Deleted>(member) ||
-                        !EntityManager.HasComponent<Transform>(member))
+                        Lookups.HasComponent<Deleted>(member) ||
+                        !Lookups.TryGetComponent(member, out Transform memberTransform))
                     {
                         continue;
                     }
-                    Transform memberTransform = EntityManager.GetComponentData<Transform>(member);
                     float hitch = math.max(3f, math.distance(memberTransform.m_Position.xz, wreckPos.xz));
                     memberTransform.m_Position = targetPos - newForward * hitch;
                     memberTransform.m_Position.y = targetPos.y;
                     memberTransform.m_Rotation = wreckTransform.m_Rotation;
-                    EntityManager.SetComponentData(member, memberTransform);
+                    Lookups.SetComponentData(member, memberTransform);
                     EntityManager.AddComponent<Updated>(member);
                     EntityManager.AddComponent<BatchesUpdated>(member);
                     m_Ctx.WreckClearing.PokeBlockedLanes(member);
@@ -214,17 +209,15 @@ namespace ClearTheWay.FunctionGroup.GeneralImprovements
         /// be recomputed after it was teleported aside.</summary>
         public void PokeBlockedLanes(Entity obj)
         {
-            if (!EntityManager.HasBuffer<Game.Objects.BlockedLane>(obj))
+            if (!Lookups.TryGetBuffer(obj, out DynamicBuffer<Game.Objects.BlockedLane> oldLanes, isReadOnly: true))
             {
                 return;
             }
-            DynamicBuffer<Game.Objects.BlockedLane> oldLanes =
-                EntityManager.GetBuffer<Game.Objects.BlockedLane>(obj, isReadOnly: true);
             for (int i = 0; i < oldLanes.Length; i++)
             {
                 Entity lane = oldLanes[i].m_Lane;
-                if (EntityManager.HasComponent<Game.Net.CarLane>(lane) &&
-                    !EntityManager.HasComponent<PathfindUpdated>(lane))
+                if (Lookups.HasComponent<Game.Net.CarLane>(lane) &&
+                    !Lookups.HasComponent<PathfindUpdated>(lane))
                 {
                     EntityManager.AddComponent<PathfindUpdated>(lane);
                 }

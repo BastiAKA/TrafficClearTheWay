@@ -88,8 +88,8 @@ namespace ClearTheWay
                 // lanes while looking perfectly correct on the others. Two lanes of the same road
                 // with opposite inv= must report the room on the same physical side; if they
                 // mirror each other instead, the laneInverted factor is the wrong way round.
-                bool inv = EntityManager.HasComponent<Game.Net.CarLane>(lane) &&
-                    (EntityManager.GetComponentData<Game.Net.CarLane>(lane).m_Flags & Game.Net.CarLaneFlags.Invert) != 0;
+                bool inv = Lookups.TryGetComponent(lane, out Game.Net.CarLane laneCarLane) &&
+                    (laneCarLane.m_Flags & Game.Net.CarLaneFlags.Invert) != 0;
                 Mod.Log.Info($"[room] lane={lane.Index} left={entry.m_Left:F1}m right={entry.m_Right:F1}m inv={(inv ? 1 : 0)}");
             }
             PruneStale(frame);
@@ -103,18 +103,17 @@ namespace ClearTheWay
         /// </summary>
         private float Measure(Entity lane, float pushDirection)
         {
-            if (!EntityManager.HasComponent<Game.Common.Owner>(lane))
+            if (!Lookups.TryGetComponent(lane, out Game.Common.Owner laneOwner))
             {
                 return 0f;
             }
-            Entity owner = EntityManager.GetComponentData<Game.Common.Owner>(lane).m_Owner;
+            Entity owner = laneOwner.m_Owner;
             if (owner == Entity.Null || !EntityManager.Exists(owner) ||
-                !EntityManager.HasBuffer<Game.Net.SubLane>(owner) ||
-                !EntityManager.HasComponent<Game.Net.CarLane>(lane))
+                !Lookups.TryGetBuffer(owner, out DynamicBuffer<Game.Net.SubLane> subLanes, isReadOnly: true) ||
+                !Lookups.TryGetComponent(lane, out Game.Net.CarLane laneCarLane))
             {
                 return 0f;
             }
-            DynamicBuffer<Game.Net.SubLane> subLanes = EntityManager.GetBuffer<Game.Net.SubLane>(owner, isReadOnly: true);
             int ownIdx = -1;
             for (int i = 0; i < subLanes.Length; i++)
             {
@@ -142,7 +141,7 @@ namespace ClearTheWay
             // at lanePos 6.22, roughly twelve times the offset that already puts it on the
             // pavement.)
             bool laneInverted =
-                (EntityManager.GetComponentData<Game.Net.CarLane>(lane).m_Flags & Game.Net.CarLaneFlags.Invert) != 0;
+                (laneCarLane.m_Flags & Game.Net.CarLaneFlags.Invert) != 0;
             bool physicalLeftSide = (pushDirection < 0f) != laneInverted;
             int step = physicalLeftSide ? -1 : 1;
 
@@ -157,13 +156,13 @@ namespace ClearTheWay
                 }
                 // Another driving lane: whatever lies beyond it is none of our business, and
                 // hopping across it would drop the car into moving traffic.
-                if (EntityManager.HasComponent<Game.Net.CarLane>(sl) &&
-                    !EntityManager.HasComponent<Game.Net.MasterLane>(sl))
+                if (Lookups.HasComponent<Game.Net.CarLane>(sl) &&
+                    !Lookups.HasComponent<Game.Net.MasterLane>(sl))
                 {
                     break;
                 }
                 // Tram bed - crossable, but only while empty.
-                if (EntityManager.HasComponent<Game.Net.TrackLane>(sl))
+                if (Lookups.HasComponent<Game.Net.TrackLane>(sl))
                 {
                     if (IsOccupied(sl))
                     {
@@ -174,7 +173,7 @@ namespace ClearTheWay
                 }
                 // Parking / shoulder: half its width, the same allowance the channel planner makes
                 // (enough to reach onto it without parking the car on the far kerb).
-                if (EntityManager.HasComponent<Game.Net.ParkingLane>(sl))
+                if (Lookups.HasComponent<Game.Net.ParkingLane>(sl))
                 {
                     room += m_Ctx.PrefabGeometry.LaneWidth(sl) * 0.5f;
                     continue;
@@ -182,7 +181,7 @@ namespace ClearTheWay
                 // A footway is where the pedestrians are - the hard-evade already reaches onto it
                 // deliberately and in a controlled way, so this pass stops here rather than
                 // handing out the whole pavement as free room.
-                if (EntityManager.HasComponent<Game.Net.PedestrianLane>(sl))
+                if (Lookups.HasComponent<Game.Net.PedestrianLane>(sl))
                 {
                     footwayAhead = true;
                     break;
@@ -218,22 +217,20 @@ namespace ClearTheWay
         /// </summary>
         private float SurfaceMeters(Entity lane, Entity owner, float pushDirection, bool laneInverted)
         {
-            if (!EntityManager.HasComponent<Composition>(owner) ||
-                !EntityManager.HasComponent<Curve>(owner) ||
-                !EntityManager.HasComponent<Curve>(lane))
+            if (!Lookups.TryGetComponent(owner, out Composition ownerComposition) ||
+                !Lookups.TryGetComponent(owner, out Curve edgeCurve) ||
+                !Lookups.TryGetComponent(lane, out Curve laneCurve))
             {
                 return 0f;
             }
-            Entity composition = EntityManager.GetComponentData<Composition>(owner).m_Edge;
+            Entity composition = ownerComposition.m_Edge;
             if (composition == Entity.Null || !EntityManager.Exists(composition) ||
-                !EntityManager.HasBuffer<Game.Prefabs.NetCompositionPiece>(composition))
+                !Lookups.TryGetBuffer(composition, out DynamicBuffer<Game.Prefabs.NetCompositionPiece> pieces, isReadOnly: true))
             {
                 return 0f;
             }
             // Where our lane sits across the road, in the EDGE's own frame (+ = edge-right). Same
             // idiom WreckClearing uses to keep a wreck on its own side of the road.
-            Curve edgeCurve = EntityManager.GetComponentData<Curve>(owner);
-            Curve laneCurve = EntityManager.GetComponentData<Curve>(lane);
             float3 edgePos = MathUtils.Position(edgeCurve.m_Bezier, 0.5f);
             float2 tangent = math.normalizesafe(MathUtils.Tangent(edgeCurve.m_Bezier, 0.5f).xz);
             float2 rightDir = MathUtils.Right(tangent);
@@ -246,8 +243,6 @@ namespace ClearTheWay
             // Work in an "outward" coordinate so both sides read the same: bigger = further out.
             float from = ourX * sideSign + m_Ctx.PrefabGeometry.LaneWidth(lane) * 0.5f;
 
-            DynamicBuffer<Game.Prefabs.NetCompositionPiece> pieces =
-                EntityManager.GetBuffer<Game.Prefabs.NetCompositionPiece>(composition, isReadOnly: true);
             float blockedAt = float.MaxValue;
             float surfaceEnd = from;
             for (int i = 0; i < pieces.Length; i++)
@@ -280,8 +275,8 @@ namespace ClearTheWay
         /// </summary>
         private bool IsOccupied(Entity lane)
         {
-            return EntityManager.HasBuffer<LaneObject>(lane) &&
-                   EntityManager.GetBuffer<LaneObject>(lane, isReadOnly: true).Length != 0;
+            return Lookups.TryGetBuffer(lane, out DynamicBuffer<LaneObject> laneLaneObject, isReadOnly: true) &&
+                   laneLaneObject.Length != 0;
         }
 
         /// <summary>Drop entries for lanes nobody has asked about in a while, so a long session

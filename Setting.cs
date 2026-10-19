@@ -1,17 +1,24 @@
 using Colossal.IO.AssetDatabase;
+using Colossal.Localization;
 using Game.Modding;
+using Game.SceneFlow;
 using Game.Settings;
 using Game.UI;
+using Game.UI.Localization;
 
 namespace ClearTheWay
 {
     [FileLocation(nameof(ClearTheWay))]
-    [SettingsUIGroupOrder(kBehaviorGroup)]
-    [SettingsUIShowGroupName(kBehaviorGroup)]
+    [SettingsUITabOrder(kSection, kPerfSection)]
+    [SettingsUIGroupOrder(kBehaviorGroup, kPerfGroup)]
+    [SettingsUIShowGroupName(kBehaviorGroup, kPerfGroup)]
     public class Setting : ModSetting
     {
         public const string kSection = "Main";
         public const string kBehaviorGroup = "Behavior";
+        public const string kPerfSection = "Performance";
+        public const string kPerfGroup = "Profiling";
+        public const string kPerfButtonGroup = "ProfilingAll";
 
         public Setting(IMod mod) : base(mod)
         {
@@ -99,6 +106,146 @@ namespace ClearTheWay
         [SettingsUISection(kSection, kBehaviorGroup)]
         public string WatchVehicle { get; set; }
 
+        // --- Performance tab: runtime switches for ModProfiler. All default off; while one is
+        // on, Logs/ClearTheWay.log gets [perf] lines every 300 frames. Read once per tick by
+        // ModProfiler.Refresh, so they can be flipped mid-session for an A/B cut.
+        // The options UI has no multi-select or collapsible group, so this is built from what it
+        // does have: two buttons that set all 13 toggles, and a toggle that shows/hides them.
+
+        /// <summary>Button: switches every pass below on.</summary>
+        [SettingsUIButton]
+        [SettingsUIButtonGroup(kPerfButtonGroup)]
+        [SettingsUISection(kPerfSection, kPerfGroup)]
+        public bool ProfileAllOn
+        {
+            set { SetAllProfiled(true); }
+        }
+
+        /// <summary>Button: switches every pass below off.</summary>
+        [SettingsUIButton]
+        [SettingsUIButtonGroup(kPerfButtonGroup)]
+        [SettingsUISection(kPerfSection, kPerfGroup)]
+        public bool ProfileAllOff
+        {
+            set { SetAllProfiled(false); }
+        }
+
+        /// <summary>Stands in for an expander: shows the single-pass toggles. Its label carries
+        /// the live "n of 13 on" count, so passes left on behind a collapsed list are not missed.</summary>
+        [SettingsUIDisplayName(typeof(Setting), nameof(ShowProfiledPassesLabel))]
+        [SettingsUISection(kPerfSection, kPerfGroup)]
+        public bool ShowProfiledPasses { get; set; }
+
+        /// <summary>Time the main corridor pass (ClearTheWaySystem), including everything it calls.</summary>
+        [SettingsUIHideByCondition(typeof(Setting), nameof(ShowProfiledPasses), true)]
+        [SettingsUISection(kPerfSection, kPerfGroup)]
+        public bool ProfileMainSystem { get; set; }
+
+        /// <summary>Time the second pass before car movement (speed and steering overrides).</summary>
+        [SettingsUIHideByCondition(typeof(Setting), nameof(ShowProfiledPasses), true)]
+        [SettingsUISection(kPerfSection, kPerfGroup)]
+        public bool ProfilePostSystem { get; set; }
+
+        /// <summary>Time the path-end guard.</summary>
+        [SettingsUIHideByCondition(typeof(Setting), nameof(ShowProfiledPasses), true)]
+        [SettingsUISection(kPerfSection, kPerfGroup)]
+        public bool ProfilePathEndGuard { get; set; }
+
+        /// <summary>Time the pedestrian hold.</summary>
+        [SettingsUIHideByCondition(typeof(Setting), nameof(ShowProfiledPasses), true)]
+        [SettingsUISection(kPerfSection, kPerfGroup)]
+        public bool ProfilePedestrians { get; set; }
+
+        /// <summary>Time the escalation chain per responder.</summary>
+        [SettingsUIHideByCondition(typeof(Setting), nameof(ShowProfiledPasses), true)]
+        [SettingsUISection(kPerfSection, kPerfGroup)]
+        public bool ProfileEmergencyEscalation { get; set; }
+
+        /// <summary>Time the corridor builder.</summary>
+        [SettingsUIHideByCondition(typeof(Setting), nameof(ShowProfiledPasses), true)]
+        [SettingsUISection(kPerfSection, kPerfGroup)]
+        public bool ProfileCorridorBuilder { get; set; }
+
+        /// <summary>Time the lane change.</summary>
+        [SettingsUIHideByCondition(typeof(Setting), nameof(ShowProfiledPasses), true)]
+        [SettingsUISection(kPerfSection, kPerfGroup)]
+        public bool ProfileLaneChange { get; set; }
+
+        /// <summary>Time pulling cars aside.</summary>
+        [SettingsUIHideByCondition(typeof(Setting), nameof(ShowProfiledPasses), true)]
+        [SettingsUISection(kPerfSection, kPerfGroup)]
+        public bool ProfilePushVehicles { get; set; }
+
+        /// <summary>Time the oncoming-lane state machine.</summary>
+        [SettingsUIHideByCondition(typeof(Setting), nameof(ShowProfiledPasses), true)]
+        [SettingsUISection(kPerfSection, kPerfGroup)]
+        public bool ProfileDesperateBehaviour { get; set; }
+
+        /// <summary>Time the arrival assist.</summary>
+        [SettingsUIHideByCondition(typeof(Setting), nameof(ShowProfiledPasses), true)]
+        [SettingsUISection(kPerfSection, kPerfGroup)]
+        public bool ProfileArrivalAssist { get; set; }
+
+        /// <summary>Time the accident pass (plus its Lifetime/ClearAside/Sweep/Protect sub-timers).</summary>
+        [SettingsUIHideByCondition(typeof(Setting), nameof(ShowProfiledPasses), true)]
+        [SettingsUISection(kPerfSection, kPerfGroup)]
+        public bool ProfileAccidentGuard { get; set; }
+
+        /// <summary>Time the recovery-vehicle assist.</summary>
+        [SettingsUIHideByCondition(typeof(Setting), nameof(ShowProfiledPasses), true)]
+        [SettingsUISection(kPerfSection, kPerfGroup)]
+        public bool ProfileRecoveryAssist { get; set; }
+
+        /// <summary>Time the tow coupling.</summary>
+        [SettingsUIHideByCondition(typeof(Setting), nameof(ShowProfiledPasses), true)]
+        [SettingsUISection(kPerfSection, kPerfGroup)]
+        public bool ProfileTowCoupling { get; set; }
+
+        /// <summary>Time the waits for the game's jobs, per component type.</summary>
+        [SettingsUIHideByCondition(typeof(Setting), nameof(ShowProfiledPasses), true)]
+        [SettingsUISection(kPerfSection, kPerfGroup)]
+        public bool ProfileJobSync { get; set; }
+
+        private void SetAllProfiled(bool on)
+        {
+            ProfileMainSystem = on;
+            ProfilePostSystem = on;
+            ProfilePathEndGuard = on;
+            ProfilePedestrians = on;
+            ProfileEmergencyEscalation = on;
+            ProfileCorridorBuilder = on;
+            ProfileLaneChange = on;
+            ProfilePushVehicles = on;
+            ProfileDesperateBehaviour = on;
+            ProfileArrivalAssist = on;
+            ProfileAccidentGuard = on;
+            ProfileRecoveryAssist = on;
+            ProfileTowCoupling = on;
+            ProfileJobSync = on;
+            // A plain button only calls the setter; toggles save themselves, this has to.
+            ApplyAndSave();
+        }
+
+        /// <summary>
+        /// Label of <see cref="ShowProfiledPasses"/>: the locale entry is a format string with
+        /// {0} = passes on and {1} = passes in total. Re-evaluated by the options UI, so the
+        /// count follows the buttons and toggles live.
+        /// </summary>
+        private LocalizedString ShowProfiledPassesLabel()
+        {
+            string id = GetOptionLabelLocaleID(nameof(ShowProfiledPasses));
+            LocalizationDictionary dictionary = GameManager.instance?.localizationManager?.activeDictionary;
+            if (dictionary == null || !dictionary.TryGetValue(id, out string format))
+            {
+                return LocalizedString.Id(id);
+            }
+            return LocalizedString.Value(string.Format(format, ModProfiler.CountOn(this), ModProfiler.kPassCount));
+        }
+
+        /// <summary>Default of every profiling switch. TRUE only for dev-channel builds - flip to
+        /// false before a release-page upload.</summary>
+        private const bool kDevPerfDefaults = false;
+
         public sealed override void SetDefaults()
         {
             Enabled = true;
@@ -120,6 +267,23 @@ namespace ClearTheWay
             TowTruckPrefab = true; // dedicated tow-truck prefab + flatbed towing (on by default per Sebastian)
             VerboseLogging = false;
             WatchVehicle = "";
+            // Profiling defaults come from kDevPerfDefaults: true only for a dev build that should
+            // ship with every timer on (0.1.14.0 did), false otherwise - always false on release.
+            ShowProfiledPasses = kDevPerfDefaults;
+            ProfileMainSystem = kDevPerfDefaults;
+            ProfilePostSystem = kDevPerfDefaults;
+            ProfilePathEndGuard = kDevPerfDefaults;
+            ProfilePedestrians = kDevPerfDefaults;
+            ProfileEmergencyEscalation = kDevPerfDefaults;
+            ProfileCorridorBuilder = kDevPerfDefaults;
+            ProfileLaneChange = kDevPerfDefaults;
+            ProfilePushVehicles = kDevPerfDefaults;
+            ProfileDesperateBehaviour = kDevPerfDefaults;
+            ProfileArrivalAssist = kDevPerfDefaults;
+            ProfileAccidentGuard = kDevPerfDefaults;
+            ProfileRecoveryAssist = kDevPerfDefaults;
+            ProfileTowCoupling = kDevPerfDefaults;
+            ProfileJobSync = kDevPerfDefaults;
         }
     }
 }

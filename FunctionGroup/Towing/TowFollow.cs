@@ -1,5 +1,7 @@
 using System.Collections.Generic;
+using ClearTheWay.FunctionGroup.WayClearance.WayClearing.VehicleTypes.Geometry;
 using Colossal.Collections;
+using Colossal.Mathematics;
 using Game.Common;
 using Game.Net;
 using Game.Objects;
@@ -58,7 +60,7 @@ namespace ClearTheWay
         /// (Plan-C drawbar follow); the retired deck-ride variant lives in TowFlatbed.cs.</summary>
         public void FollowOrFinish(Entity wreck, uint frame, Setting setting)
         {
-            Entity carrier = EntityManager.GetComponentData<Controller>(wreck).m_Controller;
+            Entity carrier = Lookups.GetComponentData<Controller>(wreck).m_Controller;
             if (carrier == wreck)
             {
                 return; // not ours
@@ -70,10 +72,10 @@ namespace ClearTheWay
             // the carrier is really gone do we fall through - m_OurTows then says whether
             // the wreck was ever on OUR hook.
             bool carrierAlive = carrier != Entity.Null && EntityManager.Exists(carrier) &&
-                !EntityManager.HasComponent<Deleted>(carrier) &&
-                !EntityManager.HasComponent<ParkedCar>(carrier) &&
-                EntityManager.HasComponent<Transform>(carrier);
-            if (carrierAlive && !EntityManager.HasComponent<Game.Vehicles.MaintenanceVehicle>(carrier))
+                !Lookups.HasComponent<Deleted>(carrier) &&
+                !Lookups.HasComponent<ParkedCar>(carrier) &&
+                Lookups.HasComponent<Transform>(carrier);
+            if (carrierAlive && !Lookups.HasComponent<Game.Vehicles.MaintenanceVehicle>(carrier))
             {
                 return; // controller is not a recovery truck: not our tow
             }
@@ -84,11 +86,12 @@ namespace ClearTheWay
                 // it a towed wreck whose truck despawned across the load was never cleaned up and
                 // stood on the road forever (the leftover-relic bug).
                 bool wasOurs = m_OurTows.Remove(wreck);
-                if (!wasOurs && !EntityManager.HasComponent<TowMarker>(wreck))
+                if (!wasOurs && !Lookups.HasComponent<TowMarker>(wreck))
                 {
                     return; // never on our hook - leave it alone
                 }
                 m_Ctx.SafeDelete(wreck);
+                m_Ctx.ForgetSitePoke(wreck);
                 m_TowTravelDir.Remove(carrier);
                 m_LastTruckPos.Remove(carrier);
                 if (setting.VerboseLogging)
@@ -110,9 +113,9 @@ namespace ClearTheWay
             // vehicles to a job that no longer exists - 96 redundant dispatches to 17 towed wrecks
             // in ten minutes (2026-10-11). Take it off again whenever it reappears; the same two
             // operations the hookup performs.
-            if (EntityManager.HasComponent<Game.Simulation.MaintenanceConsumer>(wreck))
+            if (Lookups.TryGetComponent(wreck, out Game.Simulation.MaintenanceConsumer consumer))
             {
-                Entity staleRequest = EntityManager.GetComponentData<Game.Simulation.MaintenanceConsumer>(wreck).m_Request;
+                Entity staleRequest = consumer.m_Request;
                 if (staleRequest != Entity.Null && EntityManager.Exists(staleRequest))
                 {
                     EntityManager.AddComponent<Deleted>(staleRequest);
@@ -121,7 +124,7 @@ namespace ClearTheWay
             }
             // Re-tag if missing: covers tows that were coupled before the tag existed and re-asserts
             // ownership after a load, so the persistent tag always tracks what we are hauling.
-            if (!EntityManager.HasComponent<TowMarker>(wreck))
+            if (!Lookups.HasComponent<TowMarker>(wreck))
             {
                 EntityManager.AddComponent<TowMarker>(wreck);
             }
@@ -132,19 +135,23 @@ namespace ClearTheWay
             // it. Strip both and re-assert Stopped so it stays the inert object we drag along. This
             // is what lets a tow survive loading: the broadened m_TowedQuery still finds it, and
             // this pass (which also calls KeepTruckReturning below) keeps the truck on its load.
-            if (EntityManager.HasComponent<Game.Events.InvolvedInAccident>(wreck))
+            if (Lookups.HasComponent<Game.Events.InvolvedInAccident>(wreck))
             {
                 EntityManager.RemoveComponent<Game.Events.InvolvedInAccident>(wreck);
             }
-            if (EntityManager.HasComponent<Moving>(wreck))
+            if (Lookups.HasComponent<Moving>(wreck))
             {
                 EntityManager.RemoveComponent<Moving>(wreck);
             }
-            if (!EntityManager.HasComponent<Stopped>(wreck))
+            if (!Lookups.HasComponent<Stopped>(wreck))
             {
                 EntityManager.AddComponent<Stopped>(wreck);
             }
             Entity truck = carrier; // already confirmed to be a live recovery truck above
+            // Two navigation cycles after the hookup the wreck has left the accident site: drop
+            // the site's stale lane blockage, so the rest of the traffic stops routing around a
+            // wreck that is no longer there. (The truck's own route ignores blockage anyway.)
+            m_Ctx.RunSitePokeIfDue(wreck, frame);
             // Let go of a tow whose truck has been routeless too long. The path shield keeps the
             // truck alive, but a vehicle with no route drives dead straight - and it drags the
             // teleported wreck with it, which is how tow trucks and their loads ended up scattered
@@ -174,7 +181,7 @@ namespace ClearTheWay
             // It used to be REPOSITIONED here instead. That wrote the vehicle's lane fields by
             // hand, which bypasses the game's lane registry and hard-crashes a Burst job (see
             // TowStuckRecovery). Losing a truck is the cheaper failure by a wide margin.
-            Transform stuckCheck = EntityManager.GetComponentData<Transform>(truck);
+            Transform stuckCheck = Lookups.GetComponentData<Transform>(truck);
             if (m_Ctx.StuckRecovery.IsWedged(truck, stuckCheck.m_Position, frame))
             {
                 bool onRoad = false;
@@ -209,6 +216,7 @@ namespace ClearTheWay
                 }
                 m_Ctx.StuckRecovery.NoteOnRoadStrike(truck, frame, setting);
             }
+            PassStandingWreck(truck, wreck, frame, setting);
             m_TrucksWithLoad.Add(truck);
             LogHaulState(truck, wreck, frame, setting);
             // A loaded truck must ALWAYS deliver first. The game's MaintenanceVehicleAISystem can
@@ -217,8 +225,8 @@ namespace ClearTheWay
             // isn't enough - re-assert it every frame until the wreck is delivered.
             KeepTruckReturning(truck);
 
-            Transform truckTransform = EntityManager.GetComponentData<Transform>(truck);
-            Transform wreckTransform = EntityManager.GetComponentData<Transform>(wreck);
+            Transform truckTransform = Lookups.GetComponentData<Transform>(truck);
+            Transform wreckTransform = Lookups.GetComponentData<Transform>(wreck);
 
             // Anchor the rope to the truck's RENDERED position, not its sim Transform. A moving
             // vehicle is DRAWN interpolated between two HISTORICAL TransformFrame slots -
@@ -231,10 +239,9 @@ namespace ClearTheWay
             // own interpolation from the truck's ring keeps the wreck glued behind the VISIBLE
             // truck at any speed, and works even off-camera (pure sim data, no render state).
             Transform truckVisual = truckTransform;
-            if (EntityManager.HasBuffer<TransformFrame>(truck) &&
+            if (Lookups.TryGetBuffer(truck, out DynamicBuffer<TransformFrame> ring, isReadOnly: true) &&
                 EntityManager.HasComponent<Game.Simulation.UpdateFrame>(truck))
             {
-                DynamicBuffer<TransformFrame> ring = EntityManager.GetBuffer<TransformFrame>(truck, isReadOnly: true);
                 if (ring.Length == 4)
                 {
                     uint batch = EntityManager.GetSharedComponent<Game.Simulation.UpdateFrame>(truck).m_Index;
@@ -289,7 +296,7 @@ namespace ClearTheWay
 
             wreckTransform.m_Position = newPos;
             wreckTransform.m_Rotation = newRot;
-            EntityManager.SetComponentData(wreck, wreckTransform);
+            Lookups.SetComponentData(wreck, wreckTransform);
             // NO InterpolatedTransform sync needed: for an entity without a TransformFrame ring
             // the renderer itself sets InterpolatedTransform = Transform every render frame
             // (ObjectInterpolateSystem.UpdateStaticAnimations), so the wreck is always drawn
@@ -324,18 +331,17 @@ namespace ClearTheWay
         /// </summary>
         private void ReleaseLanePins(Entity truck, Setting setting)
         {
-            if (!EntityManager.HasComponent<CarCurrentLane>(truck))
+            if (!Lookups.TryGetComponent(truck, out CarCurrentLane lane))
             {
                 return;
             }
-            CarCurrentLane lane = EntityManager.GetComponentData<CarCurrentLane>(truck);
             float oldPos = lane.m_LanePosition;
             bool wasPinned = (lane.m_LaneFlags & Game.Vehicles.CarLaneFlags.FixedLane) != 0;
             lane.m_LaneFlags &= ~Game.Vehicles.CarLaneFlags.FixedLane;
             // Back inside the lane, not to dead centre: +-0.5 is the lane edge, anything beyond
             // is kerb or the neighbouring lane.
             lane.m_LanePosition = math.clamp(lane.m_LanePosition, -0.5f, 0.5f);
-            EntityManager.SetComponentData(truck, lane);
+            Lookups.SetComponentData(truck, lane);
             m_Ctx.WayClearance?.ForgetForcedChange(truck);
             if (setting.VerboseLogging && (wasPinned || oldPos != lane.m_LanePosition))
             {
@@ -353,12 +359,11 @@ namespace ClearTheWay
         /// </summary>
         public void KeepTruckReturning(Entity truck)
         {
-            if (!EntityManager.HasComponent<Game.Vehicles.MaintenanceVehicle>(truck))
+            if (!Lookups.TryGetComponent(truck, out Game.Vehicles.MaintenanceVehicle m))
             {
                 return;
             }
-            Entity prefab = EntityManager.GetComponentData<PrefabRef>(truck).m_Prefab;
-            Game.Vehicles.MaintenanceVehicle m = EntityManager.GetComponentData<Game.Vehicles.MaintenanceVehicle>(truck);
+            Entity prefab = Lookups.GetComponentData<PrefabRef>(truck).m_Prefab;
             if (m.m_TargetRequest != Entity.Null && EntityManager.Exists(m.m_TargetRequest))
             {
                 EntityManager.AddComponent<Deleted>(m.m_TargetRequest);
@@ -370,12 +375,12 @@ namespace ClearTheWay
                 MaintenanceVehicleFlags.EdgeTarget);
             m.m_State |= MaintenanceVehicleFlags.Returning | MaintenanceVehicleFlags.Full |
                 MaintenanceVehicleFlags.EstimatedFull;
-            if (EntityManager.HasComponent<MaintenanceVehicleData>(prefab))
+            if (Lookups.TryGetComponent(prefab, out MaintenanceVehicleData prefabMaintenanceVehicleData))
             {
                 m.m_Maintained = math.max(m.m_Maintained,
-                    EntityManager.GetComponentData<MaintenanceVehicleData>(prefab).m_MaintenanceCapacity);
+                    prefabMaintenanceVehicleData.m_MaintenanceCapacity);
             }
-            EntityManager.SetComponentData(truck, m);
+            Lookups.SetComponentData(truck, m);
             // Shield its path, every tick, for as long as it carries a load.
             //
             // This method pins Returning permanently - which means HALF of vanilla's delete branch
@@ -389,16 +394,25 @@ namespace ClearTheWay
             // truck with no route, carrying straight on over the kerb. PathShield therefore also
             // asks for a new path, at once on the first failure and throttled after that.
             uint nowFrame = m_SimulationSystem.frameIndex;
-            if (PathShield.Shield(EntityManager, m_Ctx.PathRetry, truck, nowFrame))
+            if (PathShield.Shield(m_Ctx.PathRetry, truck, nowFrame))
             {
+                // The shield decided a retry is due (it set Obsolete). Answer it with our own
+                // request instead of the game's: the game's respects lane blockage, and the second
+                // wreck of the accident usually blocks the truck's lane (RequestRouteHome).
+                if (Lookups.TryGetComponent(truck, out PathOwner retryPath) &&
+                    (retryPath.m_State & PathFlags.Obsolete) != 0 &&
+                    Lookups.TryGetComponent(truck, out Owner retryOwner))
+                {
+                    m_Ctx.RequestRouteHome(truck, retryOwner.m_Owner);
+                }
                 if (!m_Ctx.PathFailingSince.ContainsKey(truck))
                 {
                     m_Ctx.PathFailingSince[truck] = nowFrame;
                 }
             }
             else if (m_Ctx.PathFailingSince.ContainsKey(truck) &&
-                EntityManager.HasComponent<PathOwner>(truck) &&
-                (EntityManager.GetComponentData<PathOwner>(truck).m_State &
+                Lookups.TryGetComponent(truck, out PathOwner truckPathOwner) &&
+                (truckPathOwner.m_State &
                  (PathFlags.Pending | PathFlags.Obsolete)) == 0)
             {
                 // Has a route again - and only then. "No Failed flag this tick" is not that: the
@@ -409,22 +423,22 @@ namespace ClearTheWay
                 // and a truck with no route home stood forever.
                 m_Ctx.PathFailingSince.Remove(truck);
             }
-            if (EntityManager.HasBuffer<ServiceDispatch>(truck))
+            if (Lookups.TryGetBuffer(truck, out DynamicBuffer<ServiceDispatch> truckDispatches))
             {
-                EntityManager.GetBuffer<ServiceDispatch>(truck).Clear();
+                truckDispatches.Clear();
             }
             // Steer back to the depot only if the game re-targeted the truck elsewhere (avoid churn).
-            if (EntityManager.HasComponent<Owner>(truck) && EntityManager.HasComponent<Target>(truck))
+            if (Lookups.TryGetComponent(truck, out Owner truckOwner) && Lookups.TryGetComponent(truck, out Target truckTarget))
             {
-                Entity depot = EntityManager.GetComponentData<Owner>(truck).m_Owner;
-                if (depot != Entity.Null && EntityManager.GetComponentData<Target>(truck).m_Target != depot)
+                Entity depot = truckOwner.m_Owner;
+                if (depot != Entity.Null && truckTarget.m_Target != depot)
                 {
-                    EntityManager.SetComponentData(truck, new Target(depot));
-                    if (EntityManager.HasComponent<PathOwner>(truck))
+                    Lookups.SetComponentData(truck, new Target(depot));
+                    if (!m_Ctx.RequestRouteHome(truck, depot) &&
+                        Lookups.TryGetComponent(truck, out PathOwner po))
                     {
-                        PathOwner po = EntityManager.GetComponentData<PathOwner>(truck);
                         po.m_State |= PathFlags.Obsolete; // re-path home
-                        EntityManager.SetComponentData(truck, po);
+                        Lookups.SetComponentData(truck, po);
                     }
                 }
             }
@@ -454,23 +468,22 @@ namespace ClearTheWay
             {
                 return;
             }
-            float speed = EntityManager.HasComponent<Moving>(truck)
-                ? math.length(EntityManager.GetComponentData<Moving>(truck).m_Velocity) : 0f;
+            float speed = Lookups.TryGetComponent(truck, out Moving truckMoving)
+                ? math.length(truckMoving.m_Velocity) : 0f;
             if (speed > 0.5f)
             {
                 return; // rolling along - nothing to explain
             }
             string blockerInfo = "none";
-            if (EntityManager.HasComponent<Blocker>(truck))
+            if (Lookups.TryGetComponent(truck, out Blocker b))
             {
-                Blocker b = EntityManager.GetComponentData<Blocker>(truck);
                 if (b.m_Blocker != Entity.Null && EntityManager.Exists(b.m_Blocker))
                 {
-                    float bspeed = EntityManager.HasComponent<Moving>(b.m_Blocker)
-                        ? math.length(EntityManager.GetComponentData<Moving>(b.m_Blocker).m_Velocity) : 0f;
-                    bool bMaint = EntityManager.HasComponent<Game.Vehicles.MaintenanceVehicle>(b.m_Blocker);
-                    bool bEmerg = EntityManager.HasComponent<Car>(b.m_Blocker) &&
-                        (EntityManager.GetComponentData<Car>(b.m_Blocker).m_Flags & CarFlags.Emergency) != 0;
+                    float bspeed = Lookups.TryGetComponent(b.m_Blocker, out Moving blockerMoving)
+                        ? math.length(blockerMoving.m_Velocity) : 0f;
+                    bool bMaint = Lookups.HasComponent<Game.Vehicles.MaintenanceVehicle>(b.m_Blocker);
+                    bool bEmerg = Lookups.TryGetComponent(b.m_Blocker, out Car blockerCar) &&
+                        (blockerCar.m_Flags & CarFlags.Emergency) != 0;
                     blockerInfo = $"{b.m_Blocker.Index} type={b.m_Type} spd={bspeed:F1} " +
                         $"emerg={(bEmerg ? 1 : 0)} maint={(bMaint ? 1 : 0)}";
                 }
@@ -485,29 +498,201 @@ namespace ClearTheWay
             {
                 ourCap = cap.ToString();
             }
-            string pathState = EntityManager.HasComponent<Game.Pathfind.PathOwner>(truck)
-                ? EntityManager.GetComponentData<Game.Pathfind.PathOwner>(truck).m_State.ToString()
+            string pathState = Lookups.TryGetComponent(truck, out Game.Pathfind.PathOwner truckPathOwner)
+                ? truckPathOwner.m_State.ToString()
                 : "n/a";
-            Entity target = EntityManager.HasComponent<Target>(truck)
-                ? EntityManager.GetComponentData<Target>(truck).m_Target : Entity.Null;
-            Entity depot = EntityManager.HasComponent<Owner>(truck)
-                ? EntityManager.GetComponentData<Owner>(truck).m_Owner : Entity.Null;
+            Entity target = Lookups.TryGetComponent(truck, out Target truckTarget)
+                ? truckTarget.m_Target : Entity.Null;
+            Entity depot = Lookups.TryGetComponent(truck, out Owner truckOwner)
+                ? truckOwner.m_Owner : Entity.Null;
+            // Lane blockage under the truck: the pathfinder cannot route through
+            // [BlockageStart..BlockageEnd] (PathfindJobs.IsValidDelta), so a truck standing just
+            // before that range has no route forward (see TowingContext.ScheduleSitePoke).
+            string laneBlock = "n/a";
+            if (Lookups.TryGetComponent(truck, out CarCurrentLane truckLane))
+            {
+                laneBlock = Lookups.TryGetComponent(truckLane.m_Lane, out Game.Net.CarLane truckCarLane) &&
+                    truckCarLane.m_BlockageEnd >= truckCarLane.m_BlockageStart
+                    ? $"{truckCarLane.m_BlockageStart / 255f:F2}..{truckCarLane.m_BlockageEnd / 255f:F2}@{truckLane.m_CurvePosition.x:F2}"
+                    : $"none@{truckLane.m_CurvePosition.x:F2}";
+            }
             Mod.Log.Info($"[towhaul] truck={truck.Index} wreck={wreck.Index} standing spd={speed:F1} " +
                 $"target={target.Index} depot={depot.Index} targetIsDepot={(target == depot && depot != Entity.Null ? 1 : 0)} " +
-                $"path={pathState} ourCap={ourCap} blockedBy=[{blockerInfo}]");
+                $"path={pathState} ourCap={ourCap} blockedBy=[{blockerInfo}] " +
+                $"laneBlock={laneBlock}");
+        }
+
+        /// <summary>
+        /// Eases a loaded truck past a STANDING wreck in its way - usually the other car of the
+        /// same accident, or an old relic. Its route leads past it (TowingContext.RequestRouteHome
+        /// ignores lane blockage); this is the physical part, run as one manoeuvre per truck:
+        ///  - starts only when the truck has (nearly) stopped and its blocker is a standing wreck
+        ///    (never its own load) right in front of it. Starting on any wreck-typed blocker sent
+        ///    a truck 800 m across town with up to 4 m of offset (2104259, 2026-10-17): the
+        ///    blocker can be a wreck far ahead, and the truck simply drove on and turned off;
+        ///  - picks its side ONCE - away from the wreck, toward the centre line when it stands dead
+        ///    ahead - and keeps it. Re-deciding every tick flipped the side as the truck moved and
+        ///    it swung left and right on the spot for a minute (truck 3177332, 2026-10-17);
+        ///  - holds the offset and passes that one entity (IgnoreBlocker) until the wreck is
+        ///    BEHIND it, or the truck has moved well away from it in any direction (turned off).
+        ///    Easing back as soon as the wreck stopped being the blocker steered it straight back
+        ///    into the wreck - it stops being the blocker while still alongside;
+        ///  - gives up after kHaulPassTimeoutFrames, then eases back into its lane.
+        /// </summary>
+        private void PassStandingWreck(Entity truck, Entity hooked, uint frame, Setting setting)
+        {
+            GeometryProvider geometry = m_Ctx.WayClearance?.PrefabGeometry;
+            if (geometry == null || !Lookups.TryGetComponent(truck, out CarCurrentLane lane) ||
+                !Lookups.TryGetComponent(truck, out Transform truckTransform))
+            {
+                return;
+            }
+            // m_LanePosition is in lane units (+ = right of the lane's own direction) and flips
+            // sign when the lane is driven backwards.
+            float laneSign = lane.m_CurvePosition.z < lane.m_CurvePosition.x ? -1f : 1f;
+            float slack = math.max(0.5f, geometry.LaneWidth(lane.m_Lane) - geometry.VehicleWidth(truck));
+            float2 forward = math.normalizesafe(math.forward(truckTransform.m_Rotation).xz);
+            float2 right = MathUtils.Right(forward);
+
+            bool active = m_HaulPasses.TryGetValue(truck, out HaulPass pass);
+            if (!active || pass.m_Returning)
+            {
+                Entity blocking = Entity.Null;
+                if (Lookups.TryGetComponent(truck, out Blocker blocker) && blocker.m_Blocker != Entity.Null &&
+                    blocker.m_Blocker != hooked && // its own load is never in its way
+                    EntityManager.Exists(blocker.m_Blocker) && IsStandingWreck(blocker.m_Blocker))
+                {
+                    blocking = blocker.m_Blocker;
+                }
+                float truckSpeed = Lookups.TryGetComponent(truck, out Moving truckMoving)
+                    ? math.length(truckMoving.m_Velocity) : 0f;
+                if (blocking != Entity.Null && truckSpeed <= kHaulPassStartSpeed &&
+                    Lookups.TryGetComponent(blocking, out Transform blockingTransform) &&
+                    IsRightInFront(truck, blocking, blockingTransform.m_Position.xz - truckTransform.m_Position.xz, forward, right, geometry))
+                {
+                    // A new manoeuvre - the side is decided here, once.
+                    float side = math.dot(blockingTransform.m_Position.xz - truckTransform.m_Position.xz, right); // + = right
+                    float dir = side > 0.3f ? -1f
+                        : side < -0.3f ? 1f
+                        : (m_Ctx.WayClearance.LeftHandTraffic ? 1f : -1f); // dead ahead: toward the centre line
+                    pass = new HaulPass { m_Wreck = blocking, m_Dir = dir, m_SinceFrame = frame };
+                    m_HaulPasses[truck] = pass;
+                    active = true;
+                    if (setting.VerboseLogging)
+                    {
+                        Mod.Log.Info($"[towpass] truck={truck.Index} passing standing wreck={blocking.Index} " +
+                            $"on the {(dir < 0f ? "left" : "right")}");
+                    }
+                }
+            }
+            if (!active)
+            {
+                return;
+            }
+
+            if (!pass.m_Returning)
+            {
+                Transform wreckTransform = default;
+                bool wreckGone = !EntityManager.Exists(pass.m_Wreck) || !IsStandingWreck(pass.m_Wreck) ||
+                    !Lookups.TryGetComponent(pass.m_Wreck, out wreckTransform);
+                bool passed = false;
+                bool movedAway = false;
+                float targetLateral = 0f;
+                if (!wreckGone)
+                {
+                    float2 toWreck = wreckTransform.m_Position.xz - truckTransform.m_Position.xz;
+                    float along = math.dot(toWreck, forward);
+                    float halfLengths = (geometry.VehicleLength(truck) + geometry.VehicleLength(pass.m_Wreck)) * 0.5f;
+                    passed = along < -(halfLengths + 1f);
+                    // Turned off or drove on some other way: the wreck is no longer anywhere near.
+                    movedAway = math.length(toWreck) > halfLengths + 2f * kHaulPassStartGap;
+                    float truckLateral = lane.m_LanePosition * laneSign * slack;   // physical, + = right
+                    float wreckLateral = truckLateral + math.dot(toWreck, right);
+                    float clear = (geometry.VehicleWidth(truck) + geometry.VehicleWidth(pass.m_Wreck)) * 0.5f + kHaulPassClearance;
+                    targetLateral = math.clamp(wreckLateral + pass.m_Dir * clear, -kHaulPassMaxMeters, kHaulPassMaxMeters);
+                }
+                bool timedOut = frame - pass.m_SinceFrame > kHaulPassTimeoutFrames;
+                if (wreckGone || passed || movedAway || timedOut)
+                {
+                    pass.m_Returning = true;
+                    m_HaulPasses[truck] = pass;
+                    if (setting.VerboseLogging)
+                    {
+                        string why = passed ? "passed" : wreckGone ? "wreck gone" : movedAway ? "moved away" : "timed out";
+                        Mod.Log.Info($"[towpass] truck={truck.Index} wreck={pass.m_Wreck.Index} {why} - back into its lane");
+                    }
+                }
+                else
+                {
+                    float targetPosition = targetLateral / slack * laneSign;
+                    lane.m_LanePosition = math.lerp(lane.m_LanePosition, targetPosition, kHaulPassRate);
+                    bool ready = math.abs(lane.m_LanePosition * laneSign * slack - targetLateral) <= kHaulPassReadyMeters;
+                    if (ready && Lookups.TryGetComponent(truck, out Blocker current) && current.m_Blocker == pass.m_Wreck)
+                    {
+                        lane.m_LaneFlags |= CarLaneFlags.IgnoreBlocker;
+                    }
+                    Lookups.SetComponentData(truck, lane);
+                    return;
+                }
+            }
+
+            // Returning: ease back into the lane, then the manoeuvre is over.
+            float back = math.lerp(lane.m_LanePosition, 0f, kHaulPassReturnRate);
+            if (math.abs(back) < 0.05f)
+            {
+                back = 0f;
+                m_HaulPasses.Remove(truck);
+            }
+            lane.m_LanePosition = back;
+            Lookups.SetComponentData(truck, lane);
+        }
+
+        /// <summary>One truck's manoeuvre past one standing wreck.</summary>
+        private struct HaulPass
+        {
+            public Entity m_Wreck;
+            public float m_Dir;          // -1 = pass on the left, +1 = on the right (physical)
+            public uint m_SinceFrame;
+            public bool m_Returning;     // done (passed, wreck gone or timed out) - easing back
+        }
+
+        private readonly Dictionary<Entity, HaulPass> m_HaulPasses = new Dictionary<Entity, HaulPass>();
+
+        /// <summary>
+        /// Is the wreck the one the truck is actually standing behind: ahead of it (not behind),
+        /// within half the two lengths plus kHaulPassStartGap, and no further to the side than a
+        /// pass could ever shift (kHaulPassMaxMeters).
+        /// </summary>
+        private static bool IsRightInFront(Entity truck, Entity wreck, float2 toWreck, float2 forward, float2 right,
+            GeometryProvider geometry)
+        {
+            float along = math.dot(toWreck, forward);
+            float reach = (geometry.VehicleLength(truck) + geometry.VehicleLength(wreck)) * 0.5f + kHaulPassStartGap;
+            return along > 0f && along <= reach && math.abs(math.dot(toWreck, right)) <= kHaulPassMaxMeters;
+        }
+
+        /// <summary>A crashed car standing on the road: damaged or destroyed, or still in an
+        /// accident, and not moving.</summary>
+        private bool IsStandingWreck(Entity entity)
+        {
+            return Lookups.HasComponent<Car>(entity) && !Lookups.HasComponent<Moving>(entity) &&
+                (Lookups.HasComponent<Damaged>(entity) || Lookups.HasComponent<Destroyed>(entity) ||
+                 Lookups.HasComponent<Game.Events.InvolvedInAccident>(entity));
         }
 
         private void ReleaseTow(Entity wreck, Entity truck, uint frame, Setting setting, string reason)
         {
-            if (EntityManager.HasComponent<Controller>(wreck))
+            m_HaulPasses.Remove(truck);
+            if (Lookups.HasComponent<Controller>(wreck))
             {
                 EntityManager.RemoveComponent<Controller>(wreck);
             }
-            if (EntityManager.HasComponent<TowMarker>(wreck))
+            m_Ctx.ForgetSitePoke(wreck);
+            if (Lookups.HasComponent<TowMarker>(wreck))
             {
                 EntityManager.RemoveComponent<TowMarker>(wreck);
             }
-            if (!EntityManager.HasComponent<RelicRecovery>(wreck))
+            if (!Lookups.HasComponent<RelicRecovery>(wreck))
             {
                 EntityManager.AddComponent<RelicRecovery>(wreck);
             }

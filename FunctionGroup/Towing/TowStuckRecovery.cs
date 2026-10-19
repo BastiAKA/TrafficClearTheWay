@@ -107,26 +107,23 @@ namespace ClearTheWay
                 for (int i = 0; i < nets.Length; i++)
                 {
                     Entity edge = nets[i];
-                    if (!EntityManager.HasComponent<Game.Net.Edge>(edge) ||
-                        !EntityManager.HasComponent<Game.Net.Road>(edge) ||
-                        !EntityManager.HasBuffer<Game.Net.SubLane>(edge))
+                    if (!Lookups.HasComponent<Game.Net.Edge>(edge) ||
+                        !Lookups.HasComponent<Game.Net.Road>(edge) ||
+                        !Lookups.TryGetBuffer(edge, out DynamicBuffer<Game.Net.SubLane> subLanes, isReadOnly: true))
                     {
                         continue;
                     }
-                    DynamicBuffer<Game.Net.SubLane> subLanes =
-                        EntityManager.GetBuffer<Game.Net.SubLane>(edge, isReadOnly: true);
                     for (int j = 0; j < subLanes.Length; j++)
                     {
                         Entity lane = subLanes[j].m_SubLane;
                         // A real driving lane only - not a parking aisle (that is how it got in
                         // here), not a footway, not the master lane of a group.
-                        if (!EntityManager.HasComponent<Game.Net.CarLane>(lane) ||
-                            EntityManager.HasComponent<Game.Net.MasterLane>(lane) ||
-                            !EntityManager.HasComponent<Curve>(lane))
+                        if (!Lookups.HasComponent<Game.Net.CarLane>(lane) ||
+                            Lookups.HasComponent<Game.Net.MasterLane>(lane) ||
+                            !Lookups.TryGetComponent(lane, out Curve laneCurve))
                         {
                             continue;
                         }
-                        Curve laneCurve = EntityManager.GetComponentData<Curve>(lane);
                         if (MathUtils.Distance(laneCurve.m_Bezier, pos, out float _) <= kTowOnRoadMeters)
                         {
                             return true;
@@ -191,20 +188,20 @@ namespace ClearTheWay
                     // Only a truck actually EN ROUTE to a wreck. One going home or parked is
                     // allowed to stand still for as long as it likes.
                     Game.Vehicles.MaintenanceVehicle maintenance =
-                        EntityManager.GetComponentData<Game.Vehicles.MaintenanceVehicle>(truck);
+                        Lookups.GetComponentData<Game.Vehicles.MaintenanceVehicle>(truck);
                     if ((maintenance.m_State & MaintenanceVehicleFlags.Returning) != 0 ||
-                        EntityManager.HasComponent<Game.Vehicles.ParkedCar>(truck))
+                        Lookups.HasComponent<Game.Vehicles.ParkedCar>(truck))
                     {
                         continue;
                     }
-                    Entity target = EntityManager.GetComponentData<Target>(truck).m_Target;
+                    Entity target = Lookups.GetComponentData<Target>(truck).m_Target;
                     if (target == Entity.Null || !EntityManager.Exists(target) ||
-                        (!EntityManager.HasComponent<Damaged>(target) &&
-                         !EntityManager.HasComponent<Game.Events.InvolvedInAccident>(target)))
+                        (!Lookups.HasComponent<Damaged>(target) &&
+                         !Lookups.HasComponent<Game.Events.InvolvedInAccident>(target)))
                     {
                         continue;
                     }
-                    float3 pos = EntityManager.GetComponentData<Transform>(truck).m_Position;
+                    float3 pos = Lookups.GetComponentData<Transform>(truck).m_Position;
                     if (!IsWedged(truck, pos, frame))
                     {
                         continue;
@@ -280,14 +277,14 @@ namespace ClearTheWay
             if (setting.VerboseLogging)
             {
                 string where = string.Empty;
-                if (EntityManager.HasComponent<Transform>(truck))
+                if (Lookups.TryGetComponent(truck, out Transform truckTransform))
                 {
-                    float3 p = EntityManager.GetComponentData<Transform>(truck).m_Position;
+                    float3 p = truckTransform.m_Position;
                     where = $" pos=({p.x:F0},{p.z:F0})";
                     if (job != Entity.Null && EntityManager.Exists(job) &&
-                        EntityManager.HasComponent<Transform>(job))
+                        Lookups.TryGetComponent(job, out Transform jobTransform))
                     {
-                        float3 t = EntityManager.GetComponentData<Transform>(job).m_Position;
+                        float3 t = jobTransform.m_Position;
                         where += $" wreck={job.Index}@({t.x:F0},{t.z:F0}) dist={math.distance(p.xz, t.xz):F0}";
                     }
                     else if (job != Entity.Null)

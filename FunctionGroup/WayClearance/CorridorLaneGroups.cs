@@ -43,17 +43,15 @@ namespace ClearTheWay
 
         public void AddMasterLaneGroup(Entity masterLane, float side, bool inverted, float minPos, float startOffset)
         {
-            if (!EntityManager.HasComponent<Owner>(masterLane))
+            if (!Lookups.TryGetComponent(masterLane, out Owner owner))
             {
                 return;
             }
-            MasterLane master = EntityManager.GetComponentData<MasterLane>(masterLane);
-            Owner owner = EntityManager.GetComponentData<Owner>(masterLane);
-            if (!EntityManager.HasBuffer<Game.Net.SubLane>(owner.m_Owner))
+            MasterLane master = Lookups.GetComponentData<MasterLane>(masterLane);
+            if (!Lookups.TryGetBuffer(owner.m_Owner, out DynamicBuffer<Game.Net.SubLane> subLanes, isReadOnly: true))
             {
                 return;
             }
-            DynamicBuffer<Game.Net.SubLane> subLanes = EntityManager.GetBuffer<Game.Net.SubLane>(owner.m_Owner, isReadOnly: true);
             int max = math.min(master.m_MaxIndex, subLanes.Length - 1);
 
             // ONLY THE MASTER LANE'S OWN DIRECTION. The SubLane buffer belongs to the edge and
@@ -73,9 +71,9 @@ namespace ClearTheWay
             // Where the master carries no CarLane we fall back to the first usable sub-lane, which
             // is what the old code did implicitly; the filter below then still keeps the group
             // internally consistent instead of mixing two carriageways.
-            bool haveReference = EntityManager.HasComponent<Game.Net.CarLane>(masterLane);
+            bool haveReference = Lookups.TryGetComponent(masterLane, out Game.Net.CarLane masterLaneCarLane);
             bool groupInverted = haveReference &&
-                (EntityManager.GetComponentData<Game.Net.CarLane>(masterLane).m_Flags & Game.Net.CarLaneFlags.Invert) != 0;
+                (masterLaneCarLane.m_Flags & Game.Net.CarLaneFlags.Invert) != 0;
 
             // German-style corridor on an undecided lane group: the corridor-side edge
             // lane (leftmost in right-hand traffic) evades outward, all others the other
@@ -86,12 +84,12 @@ namespace ClearTheWay
             {
                 Entity subLane = subLanes[i].m_SubLane;
                 if (subLane == masterLane ||
-                    !EntityManager.HasComponent<Game.Net.CarLane>(subLane) ||
-                    EntityManager.HasComponent<MasterLane>(subLane))
+                    !Lookups.TryGetComponent(subLane, out Game.Net.CarLane subLaneCarLane) ||
+                    Lookups.HasComponent<MasterLane>(subLane))
                 {
                     continue;
                 }
-                bool subInverted = (EntityManager.GetComponentData<Game.Net.CarLane>(subLane).m_Flags & Game.Net.CarLaneFlags.Invert) != 0;
+                bool subInverted = (subLaneCarLane.m_Flags & Game.Net.CarLaneFlags.Invert) != 0;
                 if (!haveReference)
                 {
                     groupInverted = subInverted; // first usable lane defines the group
@@ -116,12 +114,12 @@ namespace ClearTheWay
             {
                 Entity subLane = subLanes[i].m_SubLane;
                 if (subLane == masterLane ||
-                    !EntityManager.HasComponent<Game.Net.CarLane>(subLane) ||
-                    EntityManager.HasComponent<MasterLane>(subLane))
+                    !Lookups.TryGetComponent(subLane, out Game.Net.CarLane subLaneCarLane) ||
+                    Lookups.HasComponent<MasterLane>(subLane))
                 {
                     continue;
                 }
-                if (((EntityManager.GetComponentData<Game.Net.CarLane>(subLane).m_Flags & Game.Net.CarLaneFlags.Invert) != 0) != groupInverted)
+                if (((subLaneCarLane.m_Flags & Game.Net.CarLaneFlags.Invert) != 0) != groupInverted)
                 {
                     continue; // same filter as the pass above - both loops must agree
                 }

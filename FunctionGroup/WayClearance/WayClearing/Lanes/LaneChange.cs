@@ -31,8 +31,8 @@ namespace ClearTheWay.FunctionGroup.WayClearance.WayClearing.LanePathFinding
     /// </summary>
     internal sealed class LaneChange
     {
-        // Main-thread profiling switch for this pass - see ModProfiler.
-        private static readonly bool kProfile = false;
+        // Main-thread profiling switch for this pass, set from the Performance options tab - see ModProfiler.
+        private static bool Profiling => ModProfiler.IsOn(ProfiledPass.LaneChange);
 
         private readonly WayClearanceContext m_Ctx;
         private EntityManager EntityManager => m_Ctx.EntityManager;
@@ -65,11 +65,10 @@ namespace ClearTheWay.FunctionGroup.WayClearance.WayClearing.LanePathFinding
         public int GetUpcomingTurn(Entity vehicle, out float distance)
         {
             distance = 0f;
-            if (!EntityManager.HasBuffer<CarNavigationLane>(vehicle))
+            if (!Lookups.TryGetBuffer(vehicle, out DynamicBuffer<CarNavigationLane> navLanes, isReadOnly: true))
             {
                 return 0;
             }
-            DynamicBuffer<CarNavigationLane> navLanes = EntityManager.GetBuffer<CarNavigationLane>(vehicle, isReadOnly: true);
             for (int i = 0; i < navLanes.Length; i++)
             {
                 CarNavigationLane navLane = navLanes[i];
@@ -86,9 +85,9 @@ namespace ClearTheWay.FunctionGroup.WayClearance.WayClearing.LanePathFinding
                 {
                     break;
                 }
-                if (EntityManager.HasComponent<Curve>(navLane.m_Lane))
+                if (Lookups.TryGetComponent(navLane.m_Lane, out Curve laneCurve))
                 {
-                    float len = EntityManager.GetComponentData<Curve>(navLane.m_Lane).m_Length;
+                    float len = laneCurve.m_Length;
                     distance += len * math.abs(navLane.m_CurvePosition.y - navLane.m_CurvePosition.x);
                 }
             }
@@ -97,7 +96,7 @@ namespace ClearTheWay.FunctionGroup.WayClearance.WayClearing.LanePathFinding
 
         public bool TryOvertakeLaneChange(Entity vehicle, ref CarCurrentLane currentLane, uint frame, int turnHint, bool relaxDensity = false, float preferDir = 0f)
         {
-            using (ModProfiler.Sample(kProfile, "LaneChange"))
+            using (ModProfiler.Sample(Profiling, "LaneChange"))
             {
                 return TryOvertakeLaneChangeImpl(vehicle, ref currentLane, frame, turnHint, relaxDensity, preferDir);
             }
@@ -110,27 +109,23 @@ namespace ClearTheWay.FunctionGroup.WayClearance.WayClearing.LanePathFinding
             {
                 return false;
             }
-            if (!EntityManager.HasComponent<SlaveLane>(currentLane.m_Lane) ||
-                !EntityManager.HasComponent<Owner>(currentLane.m_Lane) ||
-                !EntityManager.HasComponent<Curve>(currentLane.m_Lane))
+            if (!Lookups.TryGetComponent(currentLane.m_Lane, out SlaveLane slaveLane) ||
+                !Lookups.TryGetComponent(currentLane.m_Lane, out Owner owner) ||
+                !Lookups.TryGetComponent(currentLane.m_Lane, out Curve curve))
             {
                 return false;
             }
 
-            Curve curve = EntityManager.GetComponentData<Curve>(currentLane.m_Lane);
             bool inverted = currentLane.m_CurvePosition.z < currentLane.m_CurvePosition.x;
             if (curve.m_Length * math.abs(currentLane.m_CurvePosition.z - currentLane.m_CurvePosition.x) < kOvertakeMinRemaining)
             {
                 return false;
             }
 
-            SlaveLane slaveLane = EntityManager.GetComponentData<SlaveLane>(currentLane.m_Lane);
-            Owner owner = EntityManager.GetComponentData<Owner>(currentLane.m_Lane);
-            if (!EntityManager.HasBuffer<Game.Net.SubLane>(owner.m_Owner))
+            if (!Lookups.TryGetBuffer(owner.m_Owner, out DynamicBuffer<Game.Net.SubLane> subLanes, isReadOnly: true))
             {
                 return false;
             }
-            DynamicBuffer<Game.Net.SubLane> subLanes = EntityManager.GetBuffer<Game.Net.SubLane>(owner.m_Owner, isReadOnly: true);
             int maxIndex = math.min(slaveLane.m_MaxIndex, subLanes.Length - 1);
             int myIndex = -1;
             for (int i = slaveLane.m_MinIndex; i <= maxIndex; i++)
@@ -146,8 +141,8 @@ namespace ClearTheWay.FunctionGroup.WayClearance.WayClearing.LanePathFinding
                 return false;
             }
 
-            bool laneInverted = (EntityManager.GetComponentData<Game.Net.CarLane>(currentLane.m_Lane).m_Flags & Game.Net.CarLaneFlags.Invert) != 0;
-            Car car = EntityManager.GetComponentData<Car>(vehicle);
+            bool laneInverted = (Lookups.GetComponentData<Game.Net.CarLane>(currentLane.m_Lane).m_Flags & Game.Net.CarLaneFlags.Invert) != 0;
+            Car car = Lookups.GetComponentData<Car>(vehicle);
             int currentDensity = m_Geometry.LaneVehiclesAhead(currentLane.m_Lane, currentLane.m_CurvePosition.x, inverted);
 
             // leftIndex/rightIndex are the physically left/right neighbour sublanes.
@@ -192,12 +187,12 @@ namespace ClearTheWay.FunctionGroup.WayClearance.WayClearing.LanePathFinding
                 Entity candidateLane = candidate.m_SubLane;
                 if ((candidate.m_PathMethods & PathMethod.Road) == 0 ||
                     candidateLane == currentLane.m_Lane ||
-                    !EntityManager.HasComponent<Game.Net.CarLane>(candidateLane) ||
-                    EntityManager.HasComponent<MasterLane>(candidateLane))
+                    !Lookups.TryGetComponent(candidateLane, out Game.Net.CarLane candidateLaneCarLane) ||
+                    Lookups.HasComponent<MasterLane>(candidateLane))
                 {
                     continue;
                 }
-                Game.Net.CarLaneFlags candidateFlags = EntityManager.GetComponentData<Game.Net.CarLane>(candidateLane).m_Flags;
+                Game.Net.CarLaneFlags candidateFlags = candidateLaneCarLane.m_Flags;
                 if ((candidateFlags & Game.Net.CarLaneFlags.Forbidden) != 0)
                 {
                     continue;

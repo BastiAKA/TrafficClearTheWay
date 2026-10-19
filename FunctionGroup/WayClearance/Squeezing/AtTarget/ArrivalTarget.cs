@@ -54,29 +54,27 @@ namespace ClearTheWay.FunctionGroup.WayClearance.Squeezing.AtTarget
             {
                 return float.MaxValue;
             }
-            if (EntityManager.HasComponent<Transform>(target))
+            if (Lookups.TryGetComponent(target, out Transform targetTransform))
             {
                 return math.distance(position,
-                    EntityManager.GetComponentData<Transform>(target).m_Position);
+                    targetTransform.m_Position);
             }
-            if (EntityManager.HasComponent<Game.Events.AccidentSite>(target))
+            if (Lookups.TryGetComponent(target, out Game.Events.AccidentSite targetAccidentSite))
             {
-                Entity accidentEvent = EntityManager.GetComponentData<Game.Events.AccidentSite>(target).m_Event;
+                Entity accidentEvent = targetAccidentSite.m_Event;
                 if (accidentEvent != Entity.Null &&
-                    EntityManager.HasBuffer<Game.Events.TargetElement>(accidentEvent))
+                    Lookups.TryGetBuffer(accidentEvent, out DynamicBuffer<Game.Events.TargetElement> involved, isReadOnly: true))
                 {
-                    DynamicBuffer<Game.Events.TargetElement> involved =
-                        EntityManager.GetBuffer<Game.Events.TargetElement>(accidentEvent, isReadOnly: true);
                     float best = float.MaxValue;
                     for (int i = 0; i < involved.Length; i++)
                     {
                         Entity entity = involved[i].m_Entity;
-                        if (EntityManager.HasComponent<Game.Events.InvolvedInAccident>(entity) &&
-                            EntityManager.HasComponent<Transform>(entity) &&
-                            EntityManager.GetComponentData<Game.Events.InvolvedInAccident>(entity).m_Event == accidentEvent)
+                        if (Lookups.TryGetComponent(entity, out Game.Events.InvolvedInAccident entityInvolvedInAccident) &&
+                            Lookups.TryGetComponent(entity, out Transform entityTransform) &&
+                            entityInvolvedInAccident.m_Event == accidentEvent)
                         {
                             best = math.min(best, math.distance(position,
-                                EntityManager.GetComponentData<Transform>(entity).m_Position));
+                                entityTransform.m_Position));
                         }
                     }
                     return best;
@@ -95,9 +93,8 @@ namespace ClearTheWay.FunctionGroup.WayClearance.Squeezing.AtTarget
         /// </summary>
         public bool RouteEndsOffStreet(Entity vehicle)
         {
-            if (EntityManager.HasBuffer<CarNavigationLane>(vehicle))
+            if (Lookups.TryGetBuffer(vehicle, out DynamicBuffer<CarNavigationLane> navLanes, isReadOnly: true))
             {
-                DynamicBuffer<CarNavigationLane> navLanes = EntityManager.GetBuffer<CarNavigationLane>(vehicle, isReadOnly: true);
                 for (int i = 0; i < navLanes.Length; i++)
                 {
                     if ((navLanes[i].m_Flags & (CarLaneFlags.ParkingSpace | CarLaneFlags.Area | CarLaneFlags.TransformTarget)) != 0 ||
@@ -107,11 +104,9 @@ namespace ClearTheWay.FunctionGroup.WayClearance.Squeezing.AtTarget
                     }
                 }
             }
-            if (EntityManager.HasComponent<PathOwner>(vehicle) &&
-                EntityManager.HasBuffer<PathElement>(vehicle))
+            if (Lookups.TryGetComponent(vehicle, out PathOwner pathOwner) &&
+                Lookups.TryGetBuffer(vehicle, out DynamicBuffer<PathElement> path, isReadOnly: true))
             {
-                PathOwner pathOwner = EntityManager.GetComponentData<PathOwner>(vehicle);
-                DynamicBuffer<PathElement> path = EntityManager.GetBuffer<PathElement>(vehicle, isReadOnly: true);
                 for (int i = math.max(pathOwner.m_ElementIndex, path.Length - 8); i < path.Length; i++)
                 {
                     if (modContext.ArrivalTarget.IsOffStreetLane(path[i].m_Target))
@@ -125,9 +120,9 @@ namespace ClearTheWay.FunctionGroup.WayClearance.Squeezing.AtTarget
 
         public bool IsOffStreetLane(Entity lane)
         {
-            return EntityManager.HasComponent<Game.Net.ConnectionLane>(lane) ||
-                   EntityManager.HasComponent<Game.Net.ParkingLane>(lane) ||
-                   EntityManager.HasComponent<Game.Net.GarageLane>(lane);
+            return Lookups.HasComponent<Game.Net.ConnectionLane>(lane) ||
+                   Lookups.HasComponent<Game.Net.ParkingLane>(lane) ||
+                   Lookups.HasComponent<Game.Net.GarageLane>(lane);
         }
 
         /// <summary>
@@ -146,13 +141,12 @@ namespace ClearTheWay.FunctionGroup.WayClearance.Squeezing.AtTarget
             {
                 return false;
             }
-            if (!EntityManager.HasComponent<SlaveLane>(currentLane.m_Lane) ||
-                !EntityManager.HasComponent<Owner>(currentLane.m_Lane) ||
-                !EntityManager.HasComponent<Curve>(currentLane.m_Lane))
+            if (!Lookups.TryGetComponent(currentLane.m_Lane, out SlaveLane slaveLane) ||
+                !Lookups.TryGetComponent(currentLane.m_Lane, out Owner owner) ||
+                !Lookups.TryGetComponent(currentLane.m_Lane, out Curve curve))
             {
                 return false;
             }
-            Curve curve = EntityManager.GetComponentData<Curve>(currentLane.m_Lane);
             bool inverted = currentLane.m_CurvePosition.z < currentLane.m_CurvePosition.x;
             // Enough lane left to physically swing over at creep speed; shorter than the
             // overtake minimum on purpose - this is a low-speed maneuver right at the scene.
@@ -160,13 +154,10 @@ namespace ClearTheWay.FunctionGroup.WayClearance.Squeezing.AtTarget
             {
                 return false;
             }
-            SlaveLane slaveLane = EntityManager.GetComponentData<SlaveLane>(currentLane.m_Lane);
-            Owner owner = EntityManager.GetComponentData<Owner>(currentLane.m_Lane);
-            if (!EntityManager.HasBuffer<Game.Net.SubLane>(owner.m_Owner))
+            if (!Lookups.TryGetBuffer(owner.m_Owner, out DynamicBuffer<Game.Net.SubLane> subLanes, isReadOnly: true))
             {
                 return false;
             }
-            DynamicBuffer<Game.Net.SubLane> subLanes = EntityManager.GetBuffer<Game.Net.SubLane>(owner.m_Owner, isReadOnly: true);
             int maxIndex = math.min(slaveLane.m_MaxIndex, subLanes.Length - 1);
             int myIndex = -1;
             for (int i = slaveLane.m_MinIndex; i <= maxIndex; i++)
@@ -181,7 +172,7 @@ namespace ClearTheWay.FunctionGroup.WayClearance.Squeezing.AtTarget
             {
                 return false;
             }
-            bool laneInverted = (EntityManager.GetComponentData<Game.Net.CarLane>(currentLane.m_Lane).m_Flags & Game.Net.CarLaneFlags.Invert) != 0;
+            bool laneInverted = (Lookups.GetComponentData<Game.Net.CarLane>(currentLane.m_Lane).m_Flags & Game.Net.CarLaneFlags.Invert) != 0;
             // Physically kerb-side neighbour: the right one in right-hand traffic (side>0),
             // the left one in left-hand traffic - mirrored again on an inverted lane.
             int kerbIndex = (side > 0f)
@@ -195,17 +186,17 @@ namespace ClearTheWay.FunctionGroup.WayClearance.Squeezing.AtTarget
             Entity candidateLane = candidate.m_SubLane;
             if ((candidate.m_PathMethods & PathMethod.Road) == 0 ||
                 candidateLane == currentLane.m_Lane ||
-                !EntityManager.HasComponent<Game.Net.CarLane>(candidateLane) ||
-                EntityManager.HasComponent<MasterLane>(candidateLane))
+                !Lookups.TryGetComponent(candidateLane, out Game.Net.CarLane candidateLaneCarLane) ||
+                Lookups.HasComponent<MasterLane>(candidateLane))
             {
                 return false;
             }
-            Game.Net.CarLaneFlags candidateFlags = EntityManager.GetComponentData<Game.Net.CarLane>(candidateLane).m_Flags;
+            Game.Net.CarLaneFlags candidateFlags = candidateLaneCarLane.m_Flags;
             if ((candidateFlags & Game.Net.CarLaneFlags.Forbidden) != 0)
             {
                 return false;
             }
-            Car car = EntityManager.GetComponentData<Car>(vehicle);
+            Car car = Lookups.GetComponentData<Car>(vehicle);
             if ((candidateFlags & Game.Net.CarLaneFlags.PublicOnly) != 0 && (car.m_Flags & CarFlags.UsePublicTransportLanes) == 0)
             {
                 return false;

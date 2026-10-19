@@ -90,6 +90,13 @@ namespace ClearTheWay
             m_ForcedChanges.Remove(vehicle);
         }
 
+        /// <summary>Vehicle and lane measurements, shared with the towing passes (a loaded
+        /// truck easing past a second wreck needs the same widths the corridor uses).</summary>
+        internal GeometryProvider PrefabGeometry => modContext.PrefabGeometry;
+
+        /// <summary>True in a left-hand-traffic city: the centre line is then on the right.</summary>
+        internal bool LeftHandTraffic => m_CityConfigurationSystem.leftHandTraffic;
+
         protected override void OnCreate()
         {
             base.OnCreate();
@@ -160,12 +167,20 @@ namespace ClearTheWay
 
         // Main-thread profiling switch for this pass - see ModProfiler for how to use it.
         // Everything here runs on the sim thread, so a slow tick shows up as a frame-rate
-        // drop with CPU and GPU both idle. Flip to true, rebuild, read the [perf] lines.
-        private static readonly bool kProfile = false;
+        // drop with CPU and GPU both idle. Switch it on in the options, read the [perf] lines.
+        private static bool Profiling => ModProfiler.IsOn(ProfiledPass.MainSystem);
 
         protected override void OnUpdate()
         {
+            // Numbers in the log with '.', whatever the game language - see InvariantCultureScope.
+            using InvariantCultureScope culture = InvariantCultureScope.Enter();
+            // New epoch for the shared component lookups: the game's jobs ran since our last system.
+            Lookups.Begin(this);
             Setting setting = Mod.Setting;
+            // The one place the profiling toggles are read: every pass in every system tests
+            // the same static mask, so a toggle takes effect within a tick. Before the Enabled
+            // check, so it still runs with the mod switched off.
+            ModProfiler.Refresh(setting, m_SimulationSystem.frameIndex);
             if (setting == null || !setting.Enabled)
             {
                 if (modContext.PushedCars.PushedCarCount != 0)
@@ -175,11 +190,11 @@ namespace ClearTheWay
                 return;
             }
 
-            using (ModProfiler.Sample(kProfile, "ClearTheWaySystem"))
+            using (ModProfiler.Sample(Profiling, "ClearTheWaySystem"))
             {
                 RunPass(setting);
             }
-            ModProfiler.EndTick(kProfile, "ClearTheWaySystem");
+            ModProfiler.EndTick(Profiling, "ClearTheWaySystem");
             ModProfiler.Report(m_SimulationSystem.frameIndex);
         }
 
@@ -200,12 +215,12 @@ namespace ClearTheWay
                     for (int i = 0; i < vehicles.Length; i++)
                     {
                         Entity vehicle = vehicles[i];
-                        Car car = EntityManager.GetComponentData<Car>(vehicle);
+                        Car car = Lookups.GetComponentData<Car>(vehicle);
                         if ((car.m_Flags & CarFlags.Emergency) == 0)
                         {
                             continue;
                         }
-                        if (VehicleTrailerExt.IsTrailer(EntityManager, vehicle))
+                        if (VehicleTrailerExt.IsTrailer(vehicle))
                         {
                             continue;
                         }
@@ -238,7 +253,7 @@ namespace ClearTheWay
                     for (int i = 0; i < responders.Length; i++)
                     {
                         Entity responder = responders[i];
-                        PathOwner pathOwner = EntityManager.GetComponentData<PathOwner>(responder);
+                        PathOwner pathOwner = Lookups.GetComponentData<PathOwner>(responder);
                         if ((pathOwner.m_State & (PathFlags.Failed | PathFlags.Stuck)) == 0)
                         {
                             continue;
@@ -250,7 +265,7 @@ namespace ClearTheWay
                         {
                             pathOwner.m_State |= PathFlags.Obsolete;
                         }
-                        EntityManager.SetComponentData(responder, pathOwner);
+                        Lookups.SetComponentData(responder, pathOwner);
                     }
                 }
                 finally
@@ -281,10 +296,10 @@ namespace ClearTheWay
                     {
                         // What the old query guaranteed and the duty set does not: a vehicle that
                         // is actually rolling on a lane. (False for a dead entity as well.)
-                        if (!EntityManager.HasComponent<Game.Objects.Moving>(candidate) ||
-                            !EntityManager.HasComponent<CarCurrentLane>(candidate) ||
-                            !EntityManager.HasComponent<Game.Prefabs.PrefabRef>(candidate) ||
-                            EntityManager.HasComponent<Game.Common.Deleted>(candidate))
+                        if (!Lookups.HasComponent<Game.Objects.Moving>(candidate) ||
+                            !Lookups.HasComponent<CarCurrentLane>(candidate) ||
+                            !Lookups.HasComponent<Game.Prefabs.PrefabRef>(candidate) ||
+                            Lookups.HasComponent<Game.Common.Deleted>(candidate))
                         {
                             continue;
                         }

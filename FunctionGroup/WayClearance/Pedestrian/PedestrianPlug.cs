@@ -183,22 +183,22 @@ namespace ClearTheWay
             Entity current = vehicle;
             for (int hop = 0; hop < kPlugChainHops; hop++)
             {
-                if (!EntityManager.HasComponent<Blocker>(current))
+                if (!Lookups.TryGetComponent(current, out Blocker currentBlocker))
                 {
                     return Entity.Null;
                 }
-                Entity next = EntityManager.GetComponentData<Blocker>(current).m_Blocker;
+                Entity next = currentBlocker.m_Blocker;
                 if (next == Entity.Null || next == current || next == vehicle || !EntityManager.Exists(next))
                 {
                     return Entity.Null;
                 }
-                if (EntityManager.HasComponent<Creature>(next))
+                if (Lookups.HasComponent<Creature>(next))
                 {
                     return next;
                 }
                 // Only keep following CARS. A tram, a train or anything else at the head of the
                 // queue is not a case this guard has an opinion about.
-                if (!EntityManager.HasComponent<Car>(next))
+                if (!Lookups.HasComponent<Car>(next))
                 {
                     return Entity.Null;
                 }
@@ -219,21 +219,21 @@ namespace ClearTheWay
         /// </summary>
         private bool TryRepathPedestrian(Entity pedestrian)
         {
-            if (!EntityManager.HasComponent<Human>(pedestrian) ||
-                !EntityManager.HasComponent<HumanCurrentLane>(pedestrian) ||
-                !EntityManager.HasComponent<PathOwner>(pedestrian))
+            if (!Lookups.TryGetComponent(pedestrian, out Human pedestrianHuman) ||
+                !Lookups.TryGetComponent(pedestrian, out HumanCurrentLane lane) ||
+                !Lookups.HasComponent<PathOwner>(pedestrian))
             {
                 return false;
             }
             // Carried (a child being carried, a casualty) - the game skips the whole re-find
             // branch for these, so setting the flag would do nothing but linger.
-            if ((EntityManager.GetComponentData<Human>(pedestrian).m_Flags & HumanFlags.Carried) != 0)
+            if ((pedestrianHuman.m_Flags & HumanFlags.Carried) != 0)
             {
                 return false;
             }
             // Riding in a vehicle: not on the crossing at all, and its lane belongs to the vehicle.
-            if (EntityManager.HasComponent<CurrentVehicle>(pedestrian) &&
-                EntityManager.GetComponentData<CurrentVehicle>(pedestrian).m_Vehicle != Entity.Null)
+            if (Lookups.TryGetComponent(pedestrian, out CurrentVehicle pedestrianCurrentVehicle) &&
+                pedestrianCurrentVehicle.m_Vehicle != Entity.Null)
             {
                 return false;
             }
@@ -241,14 +241,13 @@ namespace ClearTheWay
             // and the game re-paths a follower by copying the leader's route. Re-pathing a
             // follower would just have it re-find its lane and then fall back in line, so leave
             // groups to the leader - which is itself eligible if it is the one plugging.
-            if (EntityManager.HasComponent<GroupMember>(pedestrian) &&
-                EntityManager.GetComponentData<GroupMember>(pedestrian).m_Leader != Entity.Null)
+            if (Lookups.TryGetComponent(pedestrian, out GroupMember pedestrianGroupMember) &&
+                pedestrianGroupMember.m_Leader != Entity.Null)
             {
                 return false;
             }
-            HumanCurrentLane lane = EntityManager.GetComponentData<HumanCurrentLane>(pedestrian);
             lane.m_Flags |= CreatureLaneFlags.Obsolete;
-            EntityManager.SetComponentData(pedestrian, lane);
+            Lookups.SetComponentData(pedestrian, lane);
             return true;
         }
 

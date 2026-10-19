@@ -64,29 +64,28 @@ namespace ClearTheWay
         public Entity ResolveVanJob(Entity van, out Entity request)
         {
             request = Entity.Null;
-            if (EntityManager.HasComponent<Target>(van))
+            if (Lookups.TryGetComponent(van, out Target vanTarget))
             {
-                Entity target = EntityManager.GetComponentData<Target>(van).m_Target;
+                Entity target = vanTarget.m_Target;
                 if (IsOpenWreck(target, out Entity targetRequest))
                 {
                     request = targetRequest;
                     return target;
                 }
             }
-            if (!EntityManager.HasBuffer<ServiceDispatch>(van))
+            if (!Lookups.TryGetBuffer(van, out DynamicBuffer<ServiceDispatch> dispatches, isReadOnly: true))
             {
                 return Entity.Null;
             }
-            DynamicBuffer<ServiceDispatch> dispatches = EntityManager.GetBuffer<ServiceDispatch>(van, isReadOnly: true);
             for (int i = 0; i < dispatches.Length; i++)
             {
                 Entity candidate = dispatches[i].m_Request;
                 if (candidate == Entity.Null || !EntityManager.Exists(candidate) ||
-                    !EntityManager.HasComponent<MaintenanceRequest>(candidate))
+                    !Lookups.TryGetComponent(candidate, out MaintenanceRequest candidateMaintenanceRequest))
                 {
                     continue;
                 }
-                Entity wreck = EntityManager.GetComponentData<MaintenanceRequest>(candidate).m_Target;
+                Entity wreck = candidateMaintenanceRequest.m_Target;
                 if (IsOpenWreck(wreck, out Entity wreckRequest) && wreckRequest == candidate)
                 {
                     request = candidate;
@@ -115,13 +114,13 @@ namespace ClearTheWay
         /// </summary>
         public void ShieldPath(Entity van, uint frame)
         {
-            if (!EntityManager.HasComponent<PathOwner>(van))
+            if (!Lookups.HasComponent<PathOwner>(van))
             {
                 return;
             }
             // Same shape as the towing case, and it had the same hole: clearing the flag without
             // asking for a new path leaves the van driving blind until the next stagger slot.
-            if (!PathShield.Shield(EntityManager, m_Ctx.PathRetry, van, frame))
+            if (!PathShield.Shield(m_Ctx.PathRetry, van, frame))
             {
                 return;
             }
@@ -136,15 +135,15 @@ namespace ClearTheWay
         {
             request = Entity.Null;
             if (wreck == Entity.Null || !EntityManager.Exists(wreck) ||
-                !EntityManager.HasComponent<Game.Events.InvolvedInAccident>(wreck) ||
-                !EntityManager.HasComponent<Transform>(wreck) ||
-                !EntityManager.HasComponent<Game.Simulation.MaintenanceConsumer>(wreck))
+                !Lookups.HasComponent<Game.Events.InvolvedInAccident>(wreck) ||
+                !Lookups.HasComponent<Transform>(wreck) ||
+                !Lookups.TryGetComponent(wreck, out Game.Simulation.MaintenanceConsumer consumer))
             {
                 return false;
             }
-            request = EntityManager.GetComponentData<Game.Simulation.MaintenanceConsumer>(wreck).m_Request;
+            request = consumer.m_Request;
             return request != Entity.Null && EntityManager.Exists(request) &&
-                EntityManager.HasComponent<MaintenanceRequest>(request);
+                Lookups.HasComponent<MaintenanceRequest>(request);
         }
 
         /// <summary>Keep the responder on a straight line to the wreck: order first in the
@@ -152,11 +151,10 @@ namespace ClearTheWay
         public void EnforceBeeline(Entity van, Entity wreck, Entity request)
         {
             Game.Vehicles.MaintenanceVehicle maintenance =
-                EntityManager.GetComponentData<Game.Vehicles.MaintenanceVehicle>(van);
+                Lookups.GetComponentData<Game.Vehicles.MaintenanceVehicle>(van);
             bool changed = false;
-            if (EntityManager.HasBuffer<ServiceDispatch>(van))
+            if (Lookups.TryGetBuffer(van, out DynamicBuffer<ServiceDispatch> dispatches))
             {
-                DynamicBuffer<ServiceDispatch> dispatches = EntityManager.GetBuffer<ServiceDispatch>(van);
                 int accepted = math.min(maintenance.m_RequestCount, dispatches.Length);
                 for (int i = 1; i < dispatches.Length; i++)
                 {
@@ -203,12 +201,12 @@ namespace ClearTheWay
             }
             if (changed)
             {
-                EntityManager.SetComponentData(van, maintenance);
+                Lookups.SetComponentData(van, maintenance);
             }
-            if (EntityManager.HasComponent<Target>(van) &&
-                EntityManager.GetComponentData<Target>(van).m_Target != wreck)
+            if (Lookups.TryGetComponent(van, out Target vanTarget) &&
+                vanTarget.m_Target != wreck)
             {
-                EntityManager.SetComponentData(van, new Target(wreck));
+                Lookups.SetComponentData(van, new Target(wreck));
                 Repath(van);
                 if (Mod.Setting.VerboseLogging)
                 {
@@ -223,22 +221,22 @@ namespace ClearTheWay
         {
             m_VanJob.Remove(van); // no longer serving a wreck this pass
             m_VanSentHome[van] = frame; // bar it from an instant re-grab by another wreck
-            if (EntityManager.HasBuffer<ServiceDispatch>(van))
+            if (Lookups.TryGetBuffer(van, out DynamicBuffer<ServiceDispatch> vanDispatches))
             {
-                EntityManager.GetBuffer<ServiceDispatch>(van).Clear();
+                vanDispatches.Clear();
             }
             Game.Vehicles.MaintenanceVehicle maintenance =
-                EntityManager.GetComponentData<Game.Vehicles.MaintenanceVehicle>(van);
+                Lookups.GetComponentData<Game.Vehicles.MaintenanceVehicle>(van);
             maintenance.m_RequestCount = 0;
             maintenance.m_MaintainEstimate = 0;
             maintenance.m_State &= ~(MaintenanceVehicleFlags.TransformTarget | MaintenanceVehicleFlags.EdgeTarget |
                 MaintenanceVehicleFlags.TryWork | MaintenanceVehicleFlags.Working | MaintenanceVehicleFlags.ClearingDebris);
             maintenance.m_State |= MaintenanceVehicleFlags.Returning;
-            EntityManager.SetComponentData(van, maintenance);
-            Car car = EntityManager.GetComponentData<Car>(van);
+            Lookups.SetComponentData(van, maintenance);
+            Car car = Lookups.GetComponentData<Car>(van);
             car.m_Flags &= ~(CarFlags.Warning | CarFlags.Working | CarFlags.SignalAnimation1 | CarFlags.SignalAnimation2);
-            EntityManager.SetComponentData(van, car);
-            EntityManager.SetComponentData(van, new Target(EntityManager.GetComponentData<Owner>(van).m_Owner));
+            Lookups.SetComponentData(van, car);
+            Lookups.SetComponentData(van, new Target(Lookups.GetComponentData<Owner>(van).m_Owner));
             Repath(van);
             if (Mod.Setting.VerboseLogging)
             {
@@ -248,11 +246,10 @@ namespace ClearTheWay
 
         public void Repath(Entity vehicle)
         {
-            if (EntityManager.HasComponent<PathOwner>(vehicle))
+            if (Lookups.TryGetComponent(vehicle, out PathOwner pathOwner))
             {
-                PathOwner pathOwner = EntityManager.GetComponentData<PathOwner>(vehicle);
                 pathOwner.m_State |= PathFlags.Obsolete;
-                EntityManager.SetComponentData(vehicle, pathOwner);
+                Lookups.SetComponentData(vehicle, pathOwner);
             }
         }
 
@@ -268,7 +265,7 @@ namespace ClearTheWay
                     new[] { typeof(EntityArchetype) });
             }
             Entity e = (Entity)s_CreateEntityMethod.Invoke(EntityManager, new object[] { m_HandleRequestArchetype });
-            EntityManager.SetComponentData(e, new HandleRequest(request, handler, completed: false, pathConsumed: false));
+            Lookups.SetComponentData(e, new HandleRequest(request, handler, completed: false, pathConsumed: false));
         }
     }
 }

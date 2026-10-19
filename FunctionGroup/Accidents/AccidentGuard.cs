@@ -47,8 +47,8 @@ namespace ClearTheWay.FunctionGroup.Accidents
     /// </summary>
     internal sealed class AccidentGuard
     {
-        // Main-thread profiling switch for this pass - see ModProfiler.
-        private static readonly bool kProfile = false;
+        // Main-thread profiling switch for this pass, set from the Performance options tab - see ModProfiler.
+        private static bool Profiling => ModProfiler.IsOn(ProfiledPass.AccidentGuard);
 
         private readonly WayClearanceContext modContext;
         private EntityManager EntityManager => modContext.EntityManager;
@@ -145,11 +145,11 @@ namespace ClearTheWay.FunctionGroup.Accidents
 
         public void ProtectAccidentQueues(Setting setting, uint frame)
         {
-            using (ModProfiler.Sample(kProfile, "AccidentGuard"))
+            using (ModProfiler.Sample(Profiling, "AccidentGuard"))
             {
                 ProtectAccidentQueuesImpl(setting, frame);
             }
-            ModProfiler.EndTick(kProfile, "AccidentGuard");
+            ModProfiler.EndTick(Profiling, "AccidentGuard");
         }
 
         private void ProtectAccidentQueuesImpl(Setting setting, uint frame)
@@ -182,19 +182,19 @@ namespace ClearTheWay.FunctionGroup.Accidents
                 for (int w = 0; w < wrecks.Length; w++)
                 {
                     Entity wreck = wrecks[w];
-                    if (!EntityManager.HasComponent<Transform>(wreck))
+                    if (!Lookups.HasComponent<Transform>(wreck))
                     {
                         continue;
                     }
                     withPos++;
 
                     uint trueAge;
-                    using (ModProfiler.Sample(kProfile, "AccidentGuard.Lifetime"))
+                    using (ModProfiler.Sample(Profiling, "AccidentGuard.Lifetime"))
                     {
                         trueAge = modContext.WreckLifetime.Apply(wreck, setting, frame, ref stats);
                     }
 
-                    float3 pos = EntityManager.GetComponentData<Transform>(wreck).m_Position;
+                    float3 pos = Lookups.GetComponentData<Transform>(wreck).m_Position;
 
                     // Consolidate settled wrecks onto the outermost lane of their side so at
                     // least one lane stays pathfind-passable (see kWreckClearDelay comment).
@@ -204,11 +204,11 @@ namespace ClearTheWay.FunctionGroup.Accidents
                     if (setting.ClearWrecksAside &&
                         ((frame + (uint)wreck.Index) & kWreckClearRetryMask) == 0u &&
                         trueAge >= kWreckClearDelay && !m_ClearedWrecks.Contains(wreck) &&
-                        EntityManager.HasComponent<Stopped>(wreck) &&
-                        !EntityManager.HasComponent<Moving>(wreck) &&
-                        !EntityManager.HasComponent<Game.Events.OnFire>(wreck))
+                        Lookups.HasComponent<Stopped>(wreck) &&
+                        !Lookups.HasComponent<Moving>(wreck) &&
+                        !Lookups.HasComponent<Game.Events.OnFire>(wreck))
                     {
-                        using (ModProfiler.Sample(kProfile, "AccidentGuard.ClearAside"))
+                        using (ModProfiler.Sample(Profiling, "AccidentGuard.ClearAside"))
                         {
                             if (!netTreeFetched)
                             {
@@ -259,7 +259,7 @@ namespace ClearTheWay.FunctionGroup.Accidents
                     // Rebuild tick: the quadtree traversal and its main-thread job sync happen
                     // here and ONLY here. This is the pass that used to run at 58 Hz.
                     if (NearWreckCacheStale(frame))
-                    using (ModProfiler.Sample(kProfile, "AccidentGuard.Sweep"))
+                    using (ModProfiler.Sample(Profiling, "AccidentGuard.Sweep"))
                     {
                         while (m_ClusterCarsCache.Count < m_ClusterBounds.Count)
                         {
@@ -301,15 +301,15 @@ namespace ClearTheWay.FunctionGroup.Accidents
                                     // before - the dedupe just happens once per sweep now instead
                                     // of once per tick.
                                     if (!m_NearSeenScratch.Add(other) ||
-                                        !EntityManager.HasComponent<Car>(other) ||
-                                        !EntityManager.HasComponent<PathOwner>(other))
+                                        !Lookups.HasComponent<Car>(other) ||
+                                        !Lookups.HasComponent<PathOwner>(other))
                                     {
                                         continue;
                                     }
                                     slot.Add(new NearWreckCar
                                     {
                                         m_Entity = other,
-                                        m_Maintenance = EntityManager.HasComponent<Game.Vehicles.MaintenanceVehicle>(other)
+                                        m_Maintenance = Lookups.HasComponent<Game.Vehicles.MaintenanceVehicle>(other)
                                     });
                                 }
                                 m_CachedClusterBounds.Add(m_ClusterBounds[c]);
@@ -326,7 +326,7 @@ namespace ClearTheWay.FunctionGroup.Accidents
                     // Every tick, rebuild or not: the protection work itself. Entities that died
                     // since the sweep are filtered by the PathOwner test at the top of
                     // ProtectNearWreckCars, so a stale id in the list is harmless.
-                    using (ModProfiler.Sample(kProfile, "AccidentGuard.Protect"))
+                    using (ModProfiler.Sample(Profiling, "AccidentGuard.Protect"))
                     for (int c = 0; c < m_ClusterBounds.Count; c++)
                     {
                         modContext.NearWreck.ProtectNearWreckCars(m_ClusterCarsCache[c], c, setting, frame,
